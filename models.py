@@ -15,7 +15,8 @@ def getASRModel(language: str,use_whisper:bool=True) -> IASRModel:
         model, decoder, utils = torch.hub.load(repo_or_dir='snakers4/silero-models',
                                                model='silero_stt',
                                                language='de',
-                                               device=torch.device('cpu'))
+                                               device=torch.device('cpu'),
+                                               trust_repo=True)
         model.eval()
         return NeuralASR(model, decoder)
 
@@ -23,14 +24,16 @@ def getASRModel(language: str,use_whisper:bool=True) -> IASRModel:
         model, decoder, utils = torch.hub.load(repo_or_dir='snakers4/silero-models',
                                                model='silero_stt',
                                                language='en',
-                                               device=torch.device('cpu'))
+                                               device=torch.device('cpu'),
+                                               trust_repo=True)
         model.eval()
         return NeuralASR(model, decoder)
     elif language == 'fr':
         model, decoder, utils = torch.hub.load(repo_or_dir='snakers4/silero-models',
                                                model='silero_stt',
                                                language='fr',
-                                               device=torch.device('cpu'))
+                                               device=torch.device('cpu'),
+                                               trust_repo=True)
         model.eval()
         return NeuralASR(model, decoder)
     else:
@@ -45,14 +48,16 @@ def getTTSModel(language: str) -> nn.Module:
         model, _ = torch.hub.load(repo_or_dir='snakers4/silero-models',
                                   model='silero_tts',
                                   language=language,
-                                  speaker=speaker)
+                                  speaker=speaker,
+                                  trust_repo=True)
 
     elif language == 'en':
         speaker = 'lj_16khz'  # 16 kHz
         model = torch.hub.load(repo_or_dir='snakers4/silero-models',
                                model='silero_tts',
                                language=language,
-                               speaker=speaker)
+                               speaker=speaker,
+                               trust_repo=True)
     else:
         raise ValueError('Language not implemented')
 
