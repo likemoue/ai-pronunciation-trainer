@@ -1,5 +1,6 @@
 import WordMetrics
 import numpy as np
+from string import punctuation
 from dtwalign import dtw_from_distance_matrix
 from typing import List, Tuple
 
