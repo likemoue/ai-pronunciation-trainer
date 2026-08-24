@@ -8,25 +8,25 @@ import epitran
 import ModelInterfaces as mi
 import AIModels
 import RuleBasedModels
+import language_registry
 from string import punctuation
 import time
 
 
 def getTrainer(language: str):
 
-    asr_model = mo.getASRModel(language,use_whisper=True)
-    
-    if language == 'de':
+    config = language_registry.get(language)
+    asr_model = mo.getASRModel(language, use_whisper=config.asr_use_whisper)
+
+    if config.phonem_type == 'epitran':
         phonem_converter = RuleBasedModels.EpitranPhonemConverter(
-            epitran.Epitran('deu-Latn'))
-    elif language == 'en':
+            epitran.Epitran(config.phonem_args['language_code']))
+    elif config.phonem_type == 'eng_to_ipa':
         phonem_converter = RuleBasedModels.EngPhonemConverter()
     else:
-        raise ValueError('Language not implemented')
+        raise ValueError(f'Unknown phonem type: {config.phonem_type}')
 
-    trainer = PronunciationTrainer(
-        asr_model, phonem_converter)
-
+    trainer = PronunciationTrainer(asr_model, phonem_converter)
     return trainer
 
 
