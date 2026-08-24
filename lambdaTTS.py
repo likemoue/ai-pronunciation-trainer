@@ -3,13 +3,19 @@ import models
 import soundfile as sf
 import json
 import AIModels
-#from flask import Response
 import utilsFileIO
 import os
 import base64
 
-sampling_rate = 16000
-model_TTS_lambda = AIModels.NeuralTTS(models.getTTSModel('de'), sampling_rate)
+_sampling_rate = 16000
+_tts_model = None
+
+
+def _get_tts_model():
+    global _tts_model
+    if _tts_model is None:
+        _tts_model = AIModels.NeuralTTS(models.getTTSModel('de'), _sampling_rate)
+    return _tts_model
 
 
 def lambda_handler(event, context):
@@ -19,7 +25,8 @@ def lambda_handler(event, context):
     text_string = body['value']
 
     linear_factor = 0.2
-    audio = model_TTS_lambda.getAudioFromSentence(
+    model = _get_tts_model()
+    audio = model.getAudioFromSentence(
         text_string).detach().numpy()*linear_factor
     random_file_name = utilsFileIO.generateRandomString(20)+'.wav'
 

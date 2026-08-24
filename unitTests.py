@@ -65,19 +65,18 @@ class TestPhonemConverter(unittest.TestCase):
             phonem_converter, 'Hallo, das ist ein Test', 'haloː, dɑːs ɪst ain tɛst'))
 
 
-trainer_SST_lambda = {}
-trainer_SST_lambda['de'] = pronunciationTrainer.getTrainer("de")
-
-
 class TestScore(unittest.TestCase):
+
+    def setUp(self):
+        self.trainer = pronunciationTrainer.getTrainer("de")
 
     def test_exact_transcription(self):
         words_real = 'Ich habe sehr viel glück, am leben und gesund zu sein'
 
-        real_and_transcribed_words, _, _ = trainer_SST_lambda['de'].matchSampleAndRecordedWords(
+        real_and_transcribed_words, _, _ = self.trainer.matchSampleAndRecordedWords(
             words_real, words_real)
 
-        pronunciation_accuracy, _ = trainer_SST_lambda['de'].getPronunciationAccuracy(
+        pronunciation_accuracy, _ = self.trainer.getPronunciationAccuracy(
             real_and_transcribed_words)
 
         self.assertTrue(int(pronunciation_accuracy) == 100)
@@ -86,10 +85,10 @@ class TestScore(unittest.TestCase):
         words_real = 'Ich habe sehr viel glück, am leben und gesund zu sein'
         words_transcribed = 'Ic hab zeh viel guck am und gesund tu sein'
 
-        real_and_transcribed_words, _, _ = trainer_SST_lambda['de'].matchSampleAndRecordedWords(
+        real_and_transcribed_words, _, _ = self.trainer.matchSampleAndRecordedWords(
             words_real, words_transcribed)
 
-        pronunciation_accuracy, _ = trainer_SST_lambda['de'].getPronunciationAccuracy(
+        pronunciation_accuracy, _ = self.trainer.getPronunciationAccuracy(
             real_and_transcribed_words)
 
         self.assertTrue(int(pronunciation_accuracy) == 71)
