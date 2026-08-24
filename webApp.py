@@ -25,8 +25,9 @@ def main():
 def getAudioFromText():
     body = request.get_json(force=True)
     text = body.get('value', '')
+    language = body.get('language', 'en')
     if piperTTS.is_linux():
-        wav_b64 = piperTTS.generate_wav_base64(text)
+        wav_b64 = piperTTS.generate_wav_base64(text, language=language)
         return {"wavBase64": wav_b64}
     else:
         event = {'body': json.dumps(body)}

@@ -431,7 +431,7 @@ const playAudio = async () => {
         if (isLinux) {
             const res = await fetch(apiMainPathSample + '/getAudioFromText', {
                 method: "POST",
-                body: JSON.stringify({ "value": currentText[0] }),
+                body: JSON.stringify({ "value": currentText[0], "language": AILanguage }),
                 headers: { "Content-Type": "application/json" }
             });
             const data = await res.json();
