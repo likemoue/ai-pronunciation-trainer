@@ -167,11 +167,17 @@ class PronunciationTrainer:
             number_of_phonemes_in_word = len(real_without_punctuation)
             number_of_phonemes += number_of_phonemes_in_word
 
-            current_words_pronunciation_accuracy.append(float(
-                number_of_phonemes_in_word-number_of_word_mismatches)/number_of_phonemes_in_word*100)
+            if number_of_phonemes_in_word > 0:
+                current_words_pronunciation_accuracy.append(float(
+                    number_of_phonemes_in_word-number_of_word_mismatches)/number_of_phonemes_in_word*100)
+            else:
+                current_words_pronunciation_accuracy.append(100.0)
 
-        percentage_of_correct_pronunciations = (
-            number_of_phonemes-total_mismatches)/number_of_phonemes*100
+        if number_of_phonemes > 0:
+            percentage_of_correct_pronunciations = (
+                number_of_phonemes-total_mismatches)/number_of_phonemes*100
+        else:
+            percentage_of_correct_pronunciations = 100.0
 
         return np.round(percentage_of_correct_pronunciations), current_words_pronunciation_accuracy
 
