@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 
 
@@ -9,6 +10,7 @@ class LanguageConfig:
     phonem_type: str
     phonem_args: dict
     csv_path: str
+    asr_language: str
 
 
 _REGISTRY = {
@@ -19,6 +21,7 @@ _REGISTRY = {
         phonem_type='epitran',
         phonem_args={'language_code': 'deu-Latn'},
         csv_path='./databases/data_de.csv',
+        asr_language='german',
     ),
     'en': LanguageConfig(
         asr_use_whisper=True,
@@ -27,10 +30,22 @@ _REGISTRY = {
         phonem_type='eng_to_ipa',
         phonem_args={},
         csv_path='./databases/data_en.csv',
+        asr_language='english',
     ),
 }
 
 SUPPORTED_LANGUAGES = list(_REGISTRY.keys())
+
+# Languages this deployment serves. Every enabled language loads its own ASR
+# model, so the server only accepts the ones listed here (default: English).
+ENABLED_LANGUAGES = [
+    lang.strip() for lang in os.environ.get('ENABLED_LANGUAGES', 'en').split(',')
+    if lang.strip() in _REGISTRY
+] or ['en']
+
+
+def is_enabled(language: str) -> bool:
+    return language in ENABLED_LANGUAGES
 
 
 def get(language: str) -> LanguageConfig:

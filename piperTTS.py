@@ -27,17 +27,17 @@ VOICE_CONFIGS = {
             'de/de_DE/thorsten/low/de_DE-thorsten-low.onnx.json?download=true'
         ),
     },
+    # American voice: the reference IPA comes from eng_to_ipa (CMU dictionary),
+    # which is American English, so the model voice should match it.
     'en': {
-        'filename': 'en_GB-northern_english_male-medium.onnx',
+        'filename': 'en_US-lessac-medium.onnx',
         'model_url': (
-            'https://huggingface.co/rhasspy/piper-voices/resolve/main/'
-            'en/en_GB/northern_english_male/medium/'
-            'en_GB-northern_english_male-medium.onnx?download=true'
+            'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/'
+            'en/en_US/lessac/medium/en_US-lessac-medium.onnx?download=true'
         ),
         'config_url': (
-            'https://huggingface.co/rhasspy/piper-voices/resolve/main/'
-            'en/en_GB/northern_english_male/medium/'
-            'en_GB-northern_english_male-medium.onnx.json?download=true'
+            'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/'
+            'en/en_US/lessac/medium/en_US-lessac-medium.onnx.json?download=true'
         ),
     },
 }

@@ -7,6 +7,12 @@ import base64
 import time
 import audioPreprocessing
 
+class NoSpeechError(Exception):
+    """The recording contained no recognisable speech."""
+
+
+SILENCE_PEAK_THRESHOLD = 0.003
+
 _trainer_cache = {}
 _trainer_cache_lock = threading.Lock()
 # The trainer and the ASR wrapper keep per-call state (transcript, word
@@ -51,10 +57,21 @@ def lambda_handler(event, context):
         }
 
     signal = audioPreprocessing.decode_audio(file_bytes, target_rate=16000)
+    # A muted or disconnected microphone produces (near) digital silence. Do not
+    # send it to Whisper, which would hallucinate text for it.
+    if signal.numel() == 0 or float(signal.abs().max()) < SILENCE_PEAK_THRESHOLD:
+        raise NoSpeechError()
 
     trainer = _get_trainer(language)
     with _inference_lock:
-        result = trainer.processAudioForGivenText(signal, real_text)
+        try:
+            result = trainer.processAudioForGivenText(signal, real_text)
+        except Exception:
+            if not trainer.asr_model.getTranscript().strip():
+                raise NoSpeechError()
+            raise
+    if not result['recording_transcript'].strip():
+        raise NoSpeechError()
 
     start = time.time()
     real_transcripts_ipa = ' '.join(

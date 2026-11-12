@@ -198,5 +198,7 @@ class PronunciationTrainer:
 
     def preprocessAudio(self, audio: torch.tensor) -> torch.tensor:
         audio = audio-torch.mean(audio)
-        audio = audio/torch.max(torch.abs(audio))
+        peak = torch.max(torch.abs(audio))
+        if peak > 0:
+            audio = audio/peak
         return audio

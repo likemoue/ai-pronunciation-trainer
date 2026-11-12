@@ -4,6 +4,29 @@ This tool uses AI to evaluate your pronunciation so you can improve it and be un
 
 ![](images/MainScreen.jpg)
 
+## This fork: English edition
+
+This fork serves an English-only version of the trainer with a redesigned interface:
+
+* **English only** – the language picker is gone; the server only loads the English models (see `ENABLED_LANGUAGES`).
+* **Recording popup with a live waveform** – tapping the microphone (or pressing <kbd>Space</kbd>) opens a popup that shows the sentence, a live waveform and a timer. It warns when it cannot hear you, stops automatically after 30 seconds and shows a progress state while the recording is scored.
+* **Practise your own text** – the "Your own text" tab accepts up to 300 characters of any English text; the reference IPA is generated on the server (`/getCustomSample`).
+* Per-word feedback: tap any word to compare the correct IPA with yours and replay both sounds. A slow-playback toggle helps with long sentences.
+* Server-side voice with [Piper](https://github.com/rhasspy/piper) (American English, downloaded on first use to `models/piper/`), falling back to the browser voice when Piper is not installed.
+
+### Configuration (environment variables)
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `3000` | HTTP port |
+| `OPEN_BROWSER` | `1` | Set to `0` on servers so `webApp.py` does not try to open a browser |
+| `ENABLED_LANGUAGES` | `en` | Languages the API accepts (each one loads its own ASR model) |
+| `PRELOAD_LANGUAGES` | `en` | Models loaded in the background at start-up so the first user does not wait |
+| `WHISPER_MODEL` | `openai/whisper-base` | Hugging Face Whisper checkpoint used for speech recognition |
+| `WHISPER_MAX_NEW_TOKENS` | `160` | Caps transcription length (prevents long hallucinations on noise) |
+| `MAX_CUSTOM_TEXT_CHARS` | `300` | Maximum length of user-provided practice text |
+| `PIPER_CACHE_SIZE` | `256` | Number of synthesised sentences kept in memory |
+
 ## !! Update !! 
 
 I'm happy (and surprised!) that apparently a considerable amount of people are using this tool, and this made -even more- clear that many things could be improved. I tried to solve the most critical issues with small changes on the code base, so that now: 
@@ -58,5 +81,4 @@ As long as your language is supported by Whisper, you need only a database and s
 If you language is not supported by Whisper, you need to have an Speech-To-Text model and add it to the "getASRModel" function in "models.py", and it needs to implement the "IASRModel" interface. Besides this, you need to do the same as above.
 #### Frontend 
 
-1. In the "callback.js" function, add a case for your language 
-2. In the "main.html", add your language in the "languageBox" with corresponding call to the javascript function. 
+The English edition has no language picker. Set `LANGUAGE` in "static/javascript/app.js" and add the language to `ENABLED_LANGUAGES`. 
