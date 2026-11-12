@@ -1,0 +1,8 @@
+.git
+images
+Dockerfile
+.dockerignore
+models
+__pycache__
+*.pyc
+.claude

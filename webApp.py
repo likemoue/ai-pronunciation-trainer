@@ -131,13 +131,19 @@ def _warm_up_models():
             continue
         try:
             lambdaSpeechToScore.warm_up(lang)
+            if piperTTS.is_available() and lang in piperTTS.VOICE_CONFIGS:
+                piperTTS.warm_up(lang)
             print(f'Warm-up done for "{lang}"')
         except Exception as e:
             print(f'Warm-up failed for "{lang}": {e}')
 
 
+# Start loading models as soon as the app is imported. This covers both
+# `python webApp.py` and each gunicorn worker (which imports the app itself).
+threading.Thread(target=_warm_up_models, daemon=True).start()
+
+
 if __name__ == "__main__":
-    threading.Thread(target=_warm_up_models, daemon=True).start()
     if os.environ.get('OPEN_BROWSER', '1') == '1':
         webbrowser.open_new('http://127.0.0.1:3000/')
     app.run(host="0.0.0.0", port=int(os.environ.get('PORT', '3000')))

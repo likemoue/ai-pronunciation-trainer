@@ -83,6 +83,11 @@ def _load_model(language):
         return _models[language]
 
 
+def warm_up(language):
+    """Download (if needed) and load the voice ahead of the first request."""
+    _load_model(language)
+
+
 def generate_wav_base64(text, language='en'):
     key = f'{language}:{hashlib.md5(text.encode()).hexdigest()}'
     with _lock:
