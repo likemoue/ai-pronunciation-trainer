@@ -1,15 +1,19 @@
-import platform
-import hashlib
 import base64
+import hashlib
 import io
 import os
-import wave
+import platform
+import threading
 import urllib.request
+import wave
+from collections import OrderedDict
 
 _models = {}
-_cache = {}
+_cache = OrderedDict()
+_CACHE_MAX_ITEMS = int(os.environ.get('PIPER_CACHE_SIZE', '256'))
+_lock = threading.Lock()
 
-MODEL_DIR = os.path.join(os.path.dirname(__file__), 'models', 'piper')
+MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'piper')
 
 VOICE_CONFIGS = {
     'de': {
@@ -39,6 +43,15 @@ VOICE_CONFIGS = {
 }
 
 
+def is_available() -> bool:
+    """True when the piper-tts package can be imported on this host."""
+    try:
+        import piper  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _download_model(language):
     config = VOICE_CONFIGS[language]
     os.makedirs(MODEL_DIR, exist_ok=True)
@@ -49,33 +62,46 @@ def _download_model(language):
         if os.path.exists(dest):
             continue
         print(f'Downloading Piper model ({language}): {fname} ...')
-        urllib.request.urlretrieve(url, dest)
+        # Download to a temporary name first so an interrupted download
+        # never leaves a truncated model that looks complete on the next run.
+        partial = dest + '.part'
+        urllib.request.urlretrieve(url, partial)
+        os.replace(partial, dest)
         print(f'Downloaded {fname} ({os.path.getsize(dest)} bytes)')
 
 
 def _load_model(language):
-    if language not in _models:
-        _download_model(language)
-        from piper import PiperVoice
-        filename = VOICE_CONFIGS[language]['filename']
-        model_path = os.path.join(MODEL_DIR, filename)
-        _models[language] = PiperVoice.load(model_path)
-    return _models[language]
+    if language not in VOICE_CONFIGS:
+        raise ValueError(f'No Piper voice configured for language "{language}"')
+    with _lock:
+        if language not in _models:
+            _download_model(language)
+            from piper import PiperVoice
+            filename = VOICE_CONFIGS[language]['filename']
+            model_path = os.path.join(MODEL_DIR, filename)
+            _models[language] = PiperVoice.load(model_path)
+        return _models[language]
 
 
 def generate_wav_base64(text, language='en'):
     key = f'{language}:{hashlib.md5(text.encode()).hexdigest()}'
-    if key in _cache:
-        return _cache[key]
+    with _lock:
+        if key in _cache:
+            _cache.move_to_end(key)
+            return _cache[key]
 
     model = _load_model(language)
     wav_buffer = io.BytesIO()
     with wave.open(wav_buffer, 'wb') as wav_file:
         model.synthesize_wav(text, wav_file)
-    wav_buffer.seek(0)
-    audio_bytes = wav_buffer.read()
-    result = base64.b64encode(audio_bytes).decode('utf-8')
-    _cache[key] = result
+    result = base64.b64encode(wav_buffer.getvalue()).decode('utf-8')
+
+    # Bounded LRU: users can submit arbitrary text, so the cache must not grow forever.
+    with _lock:
+        _cache[key] = result
+        _cache.move_to_end(key)
+        while len(_cache) > _CACHE_MAX_ITEMS:
+            _cache.popitem(last=False)
     return result
 
 

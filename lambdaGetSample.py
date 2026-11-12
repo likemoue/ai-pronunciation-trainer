@@ -4,6 +4,7 @@ import json
 import RuleBasedModels
 import epitran
 import random
+import threading
 import language_registry
 
 
@@ -23,29 +24,27 @@ class TextDataset():
 
 _database_cache = {}
 _ipa_converter_cache = {}
-_initialized = False
+_init_lock = threading.Lock()
 
 
-def _ensure_initialized():
-    global _initialized
-    if _initialized:
-        return
-    for language in language_registry.SUPPORTED_LANGUAGES:
+def _ensure_initialized(language):
+    """Load the sentence database and IPA converter for one language on first use."""
+    with _init_lock:
+        if language in _database_cache:
+            return
         config = language_registry.get(language)
         df = pd.read_csv(config.csv_path, delimiter=';')
-        _database_cache[language] = TextDataset(df)
         _ipa_converter_cache[language] = RuleBasedModels.get_phonem_converter(language)
-    _initialized = True
+        _database_cache[language] = TextDataset(df)
 
 
 def lambda_handler(event, context):
-    _ensure_initialized()
-
     body = json.loads(event['body'])
 
     category = int(body['category'])
 
     language = body['language']
+    _ensure_initialized(language)
 
     sample_in_category = False
 

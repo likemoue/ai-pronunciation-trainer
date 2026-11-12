@@ -1,22 +1,29 @@
 
-import torch
 import json
-import os
+import threading
 import WordMatching as wm
-import utilsFileIO
 import pronunciationTrainer
 import base64
 import time
-import numpy as np
 import audioPreprocessing
 
 _trainer_cache = {}
+_trainer_cache_lock = threading.Lock()
+# The trainer and the ASR wrapper keep per-call state (transcript, word
+# locations) on the instance, so concurrent requests must not interleave.
+_inference_lock = threading.Lock()
 
 
 def _get_trainer(language):
-    if language not in _trainer_cache:
-        _trainer_cache[language] = pronunciationTrainer.getTrainer(language)
-    return _trainer_cache[language]
+    with _trainer_cache_lock:
+        if language not in _trainer_cache:
+            _trainer_cache[language] = pronunciationTrainer.getTrainer(language)
+        return _trainer_cache[language]
+
+
+def warm_up(language):
+    """Load the trainer (ASR model + phoneme converter) ahead of the first request."""
+    _get_trainer(language)
 
 
 def lambda_handler(event, context):
@@ -24,8 +31,11 @@ def lambda_handler(event, context):
     data = json.loads(event['body'])
 
     real_text = data['title']
-    file_bytes = base64.b64decode(
-        data['base64Audio'][22:].encode('utf-8'))
+    base64_audio = data['base64Audio']
+    # Strip the data-URL header ("data:audio/ogg;base64,") whatever its length.
+    if ',' in base64_audio[:100]:
+        base64_audio = base64_audio.split(',', 1)[1]
+    file_bytes = base64.b64decode(base64_audio.encode('utf-8'))
     language = data['language']
 
     if len(real_text) == 0:
@@ -43,7 +53,8 @@ def lambda_handler(event, context):
     signal = audioPreprocessing.decode_audio(file_bytes, target_rate=16000)
 
     trainer = _get_trainer(language)
-    result = trainer.processAudioForGivenText(signal, real_text)
+    with _inference_lock:
+        result = trainer.processAudioForGivenText(signal, real_text)
 
     start = time.time()
     real_transcripts_ipa = ' '.join(

@@ -4,6 +4,16 @@ import numpy as np
 import torch
 import audioread
 
+_resamplers = {}
+
+
+def _get_resampler(source_rate, target_rate):
+    key = (source_rate, target_rate)
+    if key not in _resamplers:
+        from torchaudio.transforms import Resample
+        _resamplers[key] = Resample(orig_freq=source_rate, new_freq=target_rate)
+    return _resamplers[key]
+
 
 def decode_audio(raw_bytes, target_rate=16000):
     tmp = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
@@ -20,10 +30,12 @@ def decode_audio(raw_bytes, target_rate=16000):
 
     signal = torch.Tensor(signal)
 
+    if signal.dim() > 1:
+        # Down-mix multi-channel recordings to mono.
+        signal = signal.mean(dim=0)
+
     if source_rate != target_rate:
-        from torchaudio.transforms import Resample
-        resampler = Resample(orig_freq=source_rate, new_freq=target_rate)
-        signal = resampler(signal)
+        signal = _get_resampler(source_rate, target_rate)(signal)
 
     return signal.unsqueeze(0)
 
