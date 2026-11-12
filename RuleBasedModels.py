@@ -17,8 +17,6 @@ def get_phonem_converter(language: str):
     return phonem_converter
 
 class EpitranPhonemConverter(ModelInterfaces.ITextToPhonemModel):
-    word_locations_in_samples = None
-    audio_transcript = None
 
     def __init__(self, epitran_model) -> None:
         super().__init__()

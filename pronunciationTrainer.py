@@ -8,25 +8,25 @@ import epitran
 import ModelInterfaces as mi
 import AIModels
 import RuleBasedModels
+import language_registry
 from string import punctuation
 import time
 
 
 def getTrainer(language: str):
 
-    asr_model = mo.getASRModel(language,use_whisper=True)
-    
-    if language == 'de':
+    config = language_registry.get(language)
+    asr_model = mo.getASRModel(language, use_whisper=config.asr_use_whisper)
+
+    if config.phonem_type == 'epitran':
         phonem_converter = RuleBasedModels.EpitranPhonemConverter(
-            epitran.Epitran('deu-Latn'))
-    elif language == 'en':
+            epitran.Epitran(config.phonem_args['language_code']))
+    elif config.phonem_type == 'eng_to_ipa':
         phonem_converter = RuleBasedModels.EngPhonemConverter()
     else:
-        raise ValueError('Language not implemented')
+        raise ValueError(f'Unknown phonem type: {config.phonem_type}')
 
-    trainer = PronunciationTrainer(
-        asr_model, phonem_converter)
-
+    trainer = PronunciationTrainer(asr_model, phonem_converter)
     return trainer
 
 
@@ -167,11 +167,17 @@ class PronunciationTrainer:
             number_of_phonemes_in_word = len(real_without_punctuation)
             number_of_phonemes += number_of_phonemes_in_word
 
-            current_words_pronunciation_accuracy.append(float(
-                number_of_phonemes_in_word-number_of_word_mismatches)/number_of_phonemes_in_word*100)
+            if number_of_phonemes_in_word > 0:
+                current_words_pronunciation_accuracy.append(float(
+                    number_of_phonemes_in_word-number_of_word_mismatches)/number_of_phonemes_in_word*100)
+            else:
+                current_words_pronunciation_accuracy.append(100.0)
 
-        percentage_of_correct_pronunciations = (
-            number_of_phonemes-total_mismatches)/number_of_phonemes*100
+        if number_of_phonemes > 0:
+            percentage_of_correct_pronunciations = (
+                number_of_phonemes-total_mismatches)/number_of_phonemes*100
+        else:
+            percentage_of_correct_pronunciations = 100.0
 
         return np.round(percentage_of_correct_pronunciations), current_words_pronunciation_accuracy
 

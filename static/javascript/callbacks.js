@@ -422,12 +422,32 @@ const playSoundForAnswerAccuracy = async (accuracy) => {
 
 }
 
+const isLinux = navigator.platform.toLowerCase().includes('linux') || navigator.userAgent.toLowerCase().includes('linux');
+
 const playAudio = async () => {
-
     document.getElementById("main_title").innerHTML = "Generating sound...";
-    playWithMozillaApi(currentText[0]);
-    document.getElementById("main_title").innerHTML = "Current Sound was played";
-
+    blockUI();
+    try {
+        if (isLinux) {
+            const res = await fetch(apiMainPathSample + '/getAudioFromText', {
+                method: "POST",
+                body: JSON.stringify({ "value": currentText[0], "language": AILanguage }),
+                headers: { "Content-Type": "application/json" }
+            });
+            const data = await res.json();
+            const audioBytes = Uint8Array.from(atob(data.wavBase64), c => c.charCodeAt(0));
+            const audio = new Audio(URL.createObjectURL(new Blob([audioBytes], { type: 'audio/wav' })));
+            audio.onended = () => { unblockUI(); document.getElementById("main_title").innerHTML = "Current Sound was played"; };
+            await audio.play();
+        } else {
+            playWithMozillaApi(currentText[0]);
+            document.getElementById("main_title").innerHTML = "Current Sound was played";
+        }
+    } catch (e) {
+        console.error("TTS error:", e);
+        document.getElementById("main_title").innerHTML = "TTS error";
+        unblockUI();
+    }
 };
 
 function playback() {
@@ -489,10 +509,30 @@ const stopRecording = () => {
 
 
 const playCurrentWord = async (word_idx) => {
-
     document.getElementById("main_title").innerHTML = "Generating word...";
-    playWithMozillaApi(currentText[0].split(' ')[word_idx]);
-    document.getElementById("main_title").innerHTML = "Word was played";
+    blockUI();
+    try {
+        if (isLinux) {
+            const word = currentText[0].split(' ')[word_idx];
+            const res = await fetch(apiMainPathSample + '/getAudioFromText', {
+                method: "POST",
+                body: JSON.stringify({ "value": word }),
+                headers: { "Content-Type": "application/json" }
+            });
+            const data = await res.json();
+            const audioBytes = Uint8Array.from(atob(data.wavBase64), c => c.charCodeAt(0));
+            const audio = new Audio(URL.createObjectURL(new Blob([audioBytes], { type: 'audio/wav' })));
+            audio.onended = () => { unblockUI(); document.getElementById("main_title").innerHTML = "Word was played"; };
+            await audio.play();
+        } else {
+            playWithMozillaApi(currentText[0].split(' ')[word_idx]);
+            document.getElementById("main_title").innerHTML = "Word was played";
+        }
+    } catch (e) {
+        console.error("TTS word error:", e);
+        document.getElementById("main_title").innerHTML = "TTS error";
+        unblockUI();
+    }
 }
 
 // TODO: Check if fallback is correct

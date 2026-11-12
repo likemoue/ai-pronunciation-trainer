@@ -4,7 +4,8 @@ import json
 import RuleBasedModels
 import epitran
 import random
-import pickle
+import threading
+import language_registry
 
 
 class TextDataset():
@@ -21,26 +22,29 @@ class TextDataset():
         return self.number_of_samples
 
 
-sample_folder = "./databases/"
-lambda_database = {}
-lambda_ipa_converter = {}
-available_languages = ['de', 'en']
+_database_cache = {}
+_ipa_converter_cache = {}
+_init_lock = threading.Lock()
 
-for language in available_languages:
-    df = pd.read_csv(sample_folder+'data_'+language+'.csv',delimiter=';')
-    lambda_database[language] = TextDataset(df)
-    lambda_ipa_converter[language] = RuleBasedModels.get_phonem_converter(language)
 
-lambda_translate_new_sample = False
+def _ensure_initialized(language):
+    """Load the sentence database and IPA converter for one language on first use."""
+    with _init_lock:
+        if language in _database_cache:
+            return
+        config = language_registry.get(language)
+        df = pd.read_csv(config.csv_path, delimiter=';')
+        _ipa_converter_cache[language] = RuleBasedModels.get_phonem_converter(language)
+        _database_cache[language] = TextDataset(df)
 
 
 def lambda_handler(event, context):
-
     body = json.loads(event['body'])
 
     category = int(body['category'])
 
     language = body['language']
+    _ensure_initialized(language)
 
     sample_in_category = False
 
@@ -48,8 +52,8 @@ def lambda_handler(event, context):
         valid_sequence = False
         while not valid_sequence:
             try:
-                sample_idx = random.randint(0, len(lambda_database[language]))
-                current_transcript = lambda_database[language][
+                sample_idx = random.randint(0, len(_database_cache[language]))
+                current_transcript = _database_cache[language][
                     sample_idx]
                 valid_sequence = True
             except:
@@ -63,7 +67,7 @@ def lambda_handler(event, context):
 
     translated_trascript = ""
 
-    current_ipa = lambda_ipa_converter[language].convertToPhonem(
+    current_ipa = _ipa_converter_cache[language].convertToPhonem(
         current_transcript[0])
 
     result = {'real_transcript': current_transcript,

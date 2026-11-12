@@ -1,23 +1,29 @@
 
-import torch
 import json
-import os
+import threading
 import WordMatching as wm
-import utilsFileIO
 import pronunciationTrainer
 import base64
 import time
-import audioread
-import numpy as np
-from torchaudio.transforms import Resample
-import io
-import tempfile
+import audioPreprocessing
 
-trainer_SST_lambda = {}
-trainer_SST_lambda['de'] = pronunciationTrainer.getTrainer("de")
-trainer_SST_lambda['en'] = pronunciationTrainer.getTrainer("en")
+_trainer_cache = {}
+_trainer_cache_lock = threading.Lock()
+# The trainer and the ASR wrapper keep per-call state (transcript, word
+# locations) on the instance, so concurrent requests must not interleave.
+_inference_lock = threading.Lock()
 
-transform = Resample(orig_freq=48000, new_freq=16000)
+
+def _get_trainer(language):
+    with _trainer_cache_lock:
+        if language not in _trainer_cache:
+            _trainer_cache[language] = pronunciationTrainer.getTrainer(language)
+        return _trainer_cache[language]
+
+
+def warm_up(language):
+    """Load the trainer (ASR model + phoneme converter) ahead of the first request."""
+    _get_trainer(language)
 
 
 def lambda_handler(event, context):
@@ -25,8 +31,11 @@ def lambda_handler(event, context):
     data = json.loads(event['body'])
 
     real_text = data['title']
-    file_bytes = base64.b64decode(
-        data['base64Audio'][22:].encode('utf-8'))
+    base64_audio = data['base64Audio']
+    # Strip the data-URL header ("data:audio/ogg;base64,") whatever its length.
+    if ',' in base64_audio[:100]:
+        base64_audio = base64_audio.split(',', 1)[1]
+    file_bytes = base64.b64decode(base64_audio.encode('utf-8'))
     language = data['language']
 
     if len(real_text) == 0:
@@ -41,25 +50,11 @@ def lambda_handler(event, context):
             'body': ''
         }
 
-    tmp = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
-    tmp_name = tmp.name
+    signal = audioPreprocessing.decode_audio(file_bytes, target_rate=16000)
 
-    try:
-        tmp.write(file_bytes)
-        tmp.flush()
-
-        tmp.close()
-
-        signal, fs = audioread_load(tmp_name)
-
-    finally:
-
-        os.remove(tmp_name)
-
-    signal = transform(torch.Tensor(signal)).unsqueeze(0)
-
-    result = trainer_SST_lambda[language].processAudioForGivenText(
-        signal, real_text)
+    trainer = _get_trainer(language)
+    with _inference_lock:
+        result = trainer.processAudioForGivenText(signal, real_text)
 
     start = time.time()
     real_transcripts_ipa = ' '.join(
@@ -102,95 +97,3 @@ def lambda_handler(event, context):
            'is_letter_correct_all_words': is_letter_correct_all_words}
 
     return json.dumps(res)
-
-
-
-
-def audioread_load(path, offset=0.0, duration=None, dtype=np.float32):
-    """Load an audio buffer using audioread.
-
-    This loads one block at a time, and then concatenates the results.
-    """
-
-    y = []
-    with audioread.audio_open(path) as input_file:
-        sr_native = input_file.samplerate
-        n_channels = input_file.channels
-
-        s_start = int(np.round(sr_native * offset)) * n_channels
-
-        if duration is None:
-            s_end = np.inf
-        else:
-            s_end = s_start + \
-                (int(np.round(sr_native * duration)) * n_channels)
-
-        n = 0
-
-        for frame in input_file:
-            frame = buf_to_float(frame, dtype=dtype)
-            n_prev = n
-            n = n + len(frame)
-
-            if n < s_start:
-                # offset is after the current frame
-                # keep reading
-                continue
-
-            if s_end < n_prev:
-                # we're off the end.  stop reading
-                break
-
-            if s_end < n:
-                # the end is in this frame.  crop.
-                frame = frame[: s_end - n_prev]
-
-            if n_prev <= s_start <= n:
-                # beginning is in this frame
-                frame = frame[(s_start - n_prev):]
-
-            # tack on the current frame
-            y.append(frame)
-
-    if y:
-        y = np.concatenate(y)
-        if n_channels > 1:
-            y = y.reshape((-1, n_channels)).T
-    else:
-        y = np.empty(0, dtype=dtype)
-
-    return y, sr_native
-
-# From Librosa
-
-
-def buf_to_float(x, n_bytes=2, dtype=np.float32):
-    """Convert an integer buffer to floating point values.
-    This is primarily useful when loading integer-valued wav data
-    into numpy arrays.
-
-    Parameters
-    ----------
-    x : np.ndarray [dtype=int]
-        The integer-valued data buffer
-
-    n_bytes : int [1, 2, 4]
-        The number of bytes per sample in ``x``
-
-    dtype : numeric type
-        The target output type (default: 32-bit float)
-
-    Returns
-    -------
-    x_float : np.ndarray [dtype=float]
-        The input data buffer cast to floating point
-    """
-
-    # Invert the scale of the data
-    scale = 1.0 / float(1 << ((8 * n_bytes) - 1))
-
-    # Construct the format string
-    fmt = "<i{:d}".format(n_bytes)
-
-    # Rescale and format the data buffer
-    return scale * np.frombuffer(x, fmt).astype(dtype)
