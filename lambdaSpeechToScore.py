@@ -28,8 +28,24 @@ def _get_trainer(language):
 
 
 def warm_up(language):
-    """Load the trainer (ASR model + phoneme converter) ahead of the first request."""
+    """Load the trainer (ASR model + phoneme converter) ahead of the first request,
+    then run one full scoring pass on synthetic audio so first-call costs
+    (Whisper's first forward pass, JIT compilation in the DTW alignment, the IPA
+    dictionary) are paid at start-up instead of by the first user."""
     _get_trainer(language)
+    try:
+        import io
+        import numpy as np
+        import soundfile as sf
+        noise = (np.random.default_rng(0).standard_normal(16000) * 0.05).astype(np.float32)
+        wav = io.BytesIO()
+        sf.write(wav, noise, 16000, format='WAV')
+        audio = 'data:audio/wav;base64,' + base64.b64encode(wav.getvalue()).decode('utf-8')
+        lambda_handler({'body': json.dumps({'title': 'Hello world, how are you?',
+                                            'base64Audio': audio,
+                                            'language': language})}, None)
+    except Exception as e:
+        print(f'Warm-up scoring pass skipped: {e!r}')
 
 
 def lambda_handler(event, context):
