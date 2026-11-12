@@ -6,8 +6,9 @@ from AIModels import NeuralASR
 def getASRModel(language: str,use_whisper:bool=True) -> IASRModel:
 
     if use_whisper:
+        import language_registry
         from whisper_wrapper import WhisperASRModel
-        return WhisperASRModel()
+        return WhisperASRModel(language=language_registry.get(language).asr_language)
     
     if language == 'de':
 

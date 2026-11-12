@@ -1,4 +1,5 @@
 
+import os
 import pandas as pd
 import json
 import RuleBasedModels
@@ -75,6 +76,42 @@ def lambda_handler(event, context):
               'transcript_translation': translated_trascript}
 
     return json.dumps(result)
+
+
+MAX_CUSTOM_TEXT_CHARS = int(os.environ.get('MAX_CUSTOM_TEXT_CHARS', '300'))
+
+_TYPOGRAPHY = str.maketrans({
+    '‘': "'", '’': "'", '‛': "'", '′': "'",
+    '“': '"', '”': '"', '‟': '"', '″': '"',
+    '–': ' - ', '—': ' - ', '−': ' - ', '…': '...',
+})
+
+
+def normalize_custom_text(text: str) -> str:
+    """Collapse whitespace, straighten typographic quotes/dashes and drop
+    tokens that contain no letters or digits (they cannot be pronounced and
+    would break the word-by-word alignment)."""
+    text = (text or '').translate(_TYPOGRAPHY)
+    tokens = [token for token in text.split() if any(ch.isalnum() for ch in token)]
+    return ' '.join(tokens)
+
+
+def custom_sample(text: str, language: str) -> dict:
+    """Build a practice sample from user-provided text. Raises ValueError with a
+    user-facing message when the text cannot be used."""
+    text = normalize_custom_text(text)
+    if not text:
+        raise ValueError('Please type at least one word.')
+    if len(text) > MAX_CUSTOM_TEXT_CHARS:
+        raise ValueError(f'Please keep the text under {MAX_CUSTOM_TEXT_CHARS} characters.')
+    if not any('a' <= ch.lower() <= 'z' for ch in text):
+        raise ValueError('Please type English text (Latin letters).')
+
+    _ensure_initialized(language)
+    ipa = _ipa_converter_cache[language].convertToPhonem(text)
+    return {'real_transcript': [text],
+            'ipa_transcript': ipa,
+            'transcript_translation': ''}
 
 
 def getSentenceCategory(sentence) -> int:

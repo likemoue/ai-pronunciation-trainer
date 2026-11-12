@@ -4,178 +4,248 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Practise English pronunciation with instant AI feedback on every word.">
+    <meta name="theme-color" content="#4f46e5">
+    <title>AI Pronunciation Trainer</title>
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"
-        integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
-
-    </script>
-    <link rel="stylesheet" href="../static/css/style-new.css">
-    <script src="../static/javascript/callbacks.js"></script>
-
-
-    <title>AI pronunciation trainer</title>
-
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.min.js" type="text/javascript"></script>
-
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-
-
-
+    <link rel="icon"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%234f46e5'/%3E%3Cpath fill='white' d='M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5.5a6.5 6.5 0 0 0 5.75 6.45V20h1.5v-2.55A6.5 6.5 0 0 0 18.5 11H17Z'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version }}">
+    <script defer src="{{ url_for('static', filename='javascript/app.js') }}?v={{ asset_version }}"></script>
 </head>
 
-<body style="height: 100%; width: 100%; background-color: white; max-width: 90%;">
+<body>
+    <!-- SVG icon sprite -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="i-mic" viewBox="0 0 24 24">
+            <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5.3-3a.75.75 0 0 1 1.5 0 6.8 6.8 0 0 1-6.05 6.76V20.5h2.5a.75.75 0 0 1 0 1.5h-6.5a.75.75 0 0 1 0-1.5h2.5v-2.74A6.8 6.8 0 0 1 5.2 11a.75.75 0 0 1 1.5 0 5.3 5.3 0 0 0 10.6 0Z" />
+        </symbol>
+        <symbol id="i-play" viewBox="0 0 24 24">
+            <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11.04-6.86a1 1 0 0 0 0-1.72L9.5 4.28A1 1 0 0 0 8 5.14Z" />
+        </symbol>
+        <symbol id="i-volume" viewBox="0 0 24 24">
+            <path d="M3 10v4a1 1 0 0 0 1 1h3l4.3 3.6A1 1 0 0 0 13 17.8V6.2a1 1 0 0 0-1.7-.8L7 9H4a1 1 0 0 0-1 1Zm13.5 2A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4ZM14 3.2v2.06a7 7 0 0 1 0 13.48v2.06a9 9 0 0 0 0-17.6Z" />
+        </symbol>
+        <symbol id="i-headphones" viewBox="0 0 24 24">
+            <path d="M12 3a9 9 0 0 0-9 9v6a3 3 0 0 0 3 3h1a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H5v-1a7 7 0 0 1 14 0v1h-2a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h1a3 3 0 0 0 3-3v-6a9 9 0 0 0-9-9Z" />
+        </symbol>
+        <symbol id="i-next" viewBox="0 0 24 24">
+            <path d="M13.3 5.3a1 1 0 0 1 1.4 0l6 6a1 1 0 0 1 0 1.4l-6 6a1 1 0 1 1-1.4-1.4l4.29-4.3H4a1 1 0 1 1 0-2h13.59l-4.3-4.3a1 1 0 0 1 0-1.4Z" />
+        </symbol>
+        <symbol id="i-stop" viewBox="0 0 24 24">
+            <rect x="6" y="6" width="12" height="12" rx="2.5" />
+        </symbol>
+        <symbol id="i-close" viewBox="0 0 24 24">
+            <path d="M6.7 5.3a1 1 0 0 0-1.4 1.4L10.6 12l-5.3 5.3a1 1 0 1 0 1.4 1.4l5.3-5.3 5.3 5.3a1 1 0 0 0 1.4-1.4L13.4 12l5.3-5.3a1 1 0 0 0-1.4-1.4L12 10.6 6.7 5.3Z" />
+        </symbol>
+        <symbol id="i-edit" viewBox="0 0 24 24">
+            <path d="M15.6 3.6a2.4 2.4 0 0 1 3.4 0l1.4 1.4a2.4 2.4 0 0 1 0 3.4L9.6 19.2a2 2 0 0 1-.95.53l-4.4 1.1a.8.8 0 0 1-.97-.97l1.1-4.4c.09-.36.27-.69.53-.95L15.6 3.6Z" />
+        </symbol>
+        <symbol id="i-shuffle" viewBox="0 0 24 24">
+            <path d="M17.3 3.3a1 1 0 0 1 1.4 0l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.4-1.4L18.6 8H17a5 5 0 0 0-4 2l-.4.53-1.25-1.66.05-.07A7 7 0 0 1 17 6h1.6l-1.3-1.3a1 1 0 0 1 0-1.4ZM3 6h2a7 7 0 0 1 5.6 2.8l3.99 5.32A5 5 0 0 0 18.6 16h0l-1.3-1.3a1 1 0 1 1 1.4-1.4l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.4-1.4l1.3-1.3H17a7 7 0 0 1-5.6-2.8L7.4 10A5 5 0 0 0 5 8H3a1 1 0 1 1 0-2Zm0 10h2a5 5 0 0 0 4-2l.4-.53 1.25 1.66-.05.07A7 7 0 0 1 5 18H3a1 1 0 1 1 0-2Z" />
+        </symbol>
+        <symbol id="i-snail" viewBox="0 0 24 24">
+            <path d="M13 6a7 7 0 0 0-7 7c0 .7.1 1.37.3 2H4a1 1 0 0 0-1 1 3 3 0 0 0 3 3h11a4 4 0 0 0 4-4V9.2l1.45-2.9a1 1 0 1 0-1.8-.9L19.8 7h-.6l-.85-1.6a1 1 0 1 0-1.77.94l.68 1.29A6.97 6.97 0 0 0 13 6Zm0 2a5 5 0 0 1 5 5 3 3 0 0 1-3 3h-.5A3.5 3.5 0 0 1 11 12.5a2 2 0 0 1 2-2 1 1 0 0 1 1 1 1 1 0 1 0 2 0 3 3 0 0 0-3-3 4 4 0 0 0-4 4c0 1.32.4 2.55 1.08 3.57A5 5 0 0 1 13 8Z" />
+        </symbol>
+    </svg>
 
-    <div>
-
-        <div style="display:flex; flex-direction: row;">
-
-
-            <div style="display:inline-block; margin-left: 1.5em;">
-                <i class="material-icons icon-text-home" style="text-align: right;" onclick="history.go(0)">home</i>
+    <div class="app">
+        <header class="topbar">
+            <a class="brand" href="/" aria-label="AI Pronunciation Trainer home">
+                <span class="brand-mark"><svg class="icon"><use href="#i-mic" /></svg></span>
+                <span class="brand-text">
+                    <span class="brand-title">AI Pronunciation Trainer</span>
+                    <span class="brand-sub">English · instant feedback on every word</span>
+                </span>
+            </a>
+            <div class="session-stats" aria-label="Session progress">
+                <div class="stat"><span class="stat-value" id="statPoints">0</span><span class="stat-label">points</span></div>
+                <div class="stat"><span class="stat-value" id="statSentences">0</span><span class="stat-label">sentences</span></div>
+                <div class="stat"><span class="stat-value" id="statAverage">–</span><span class="stat-label">average</span></div>
             </div>
+        </header>
 
-            <h1 id='main_title'> AI Pronunciation Trainer
-            </h1>
-        </div>
+        <main class="layout">
+            <section class="panel source-panel" aria-label="Choose what to practise">
+                <div class="tabs" role="tablist" aria-label="Practice mode">
+                    <button class="tab is-active" role="tab" id="tabPractice" aria-selected="true"
+                        aria-controls="panePractice" type="button">
+                        <svg class="icon"><use href="#i-shuffle" /></svg> Practice sentences
+                    </button>
+                    <button class="tab" role="tab" id="tabCustom" aria-selected="false" aria-controls="paneCustom"
+                        type="button" tabindex="-1">
+                        <svg class="icon"><use href="#i-edit" /></svg> Your own text
+                    </button>
+                </div>
 
-
-        <div class="expanded">
-            <div class="horizontal-flexbox" style="display:flex; flex-direction: row;">
-
-
-                <p class="accuracy-text" style="font-size:1em; text-align: left; padding-top: 3px; padding-left: 5px;">
-                    Language: </p>
-                <!--dropbtn accuracy-text-->
-                <div class="dropdown">
-                    <button id="languageBox" class="dropbtn accuracy-text"
-                        style="font-size:1em; text-align: left; padding-top: 3px; padding-left: 0px;">German</button>
-                    <div class="dropdown-content">
-                        <a href="javascript:changeLanguage('de',true)" class="accuracy-text"
-                            style="padding-top: 3px; ">German</a>
-                        <a href="javascript:changeLanguage('en',true)" class="accuracy-text ;"
-                            style="padding-top: 3px; ">English</a>
+                <div class="tab-pane" id="panePractice" role="tabpanel" aria-labelledby="tabPractice">
+                    <div class="pane-row">
+                        <div class="chips" role="radiogroup" aria-label="Sentence length">
+                            <button class="chip" role="radio" aria-checked="false" data-category="0" type="button">Random</button>
+                            <button class="chip is-active" role="radio" aria-checked="true" data-category="1" type="button">Easy</button>
+                            <button class="chip" role="radio" aria-checked="false" data-category="2" type="button">Medium</button>
+                            <button class="chip" role="radio" aria-checked="false" data-category="3" type="button">Hard</button>
+                        </div>
+                        <button class="btn btn-primary" id="btnNext" type="button">
+                            New sentence <svg class="icon"><use href="#i-next" /></svg>
+                        </button>
                     </div>
                 </div>
 
-                <p id="section_accuracy" class="accuracy-text"
-                    style="text-align: left; color: black; font-size: larger;">
-                    | Score: 0
-                </p>
+                <div class="tab-pane" id="paneCustom" role="tabpanel" aria-labelledby="tabCustom" hidden>
+                    <label class="field-label" for="customText">Type or paste the English text you want to practise</label>
+                    <textarea id="customText" class="textarea" rows="3" maxlength="300"
+                        placeholder="e.g. Could you tell me the way to the train station, please?"></textarea>
+                    <div class="pane-row">
+                        <span class="hint" id="customCounter">0 / 300</span>
+                        <button class="btn btn-primary" id="btnUseCustom" type="button" disabled>
+                            Practise this text <svg class="icon"><use href="#i-next" /></svg>
+                        </button>
+                    </div>
+                    <p class="field-error" id="customError" role="alert" hidden></p>
+                </div>
+            </section>
 
-            </div>
-        </div>
+            <section class="panel practice-panel" aria-label="Pronunciation practice">
+                <p class="status" id="statusLine" aria-live="polite">Loading a sentence…</p>
 
-        <div style="margin-bottom: 200px;">
+                <div class="sentence-block">
+                    <p class="eyebrow">Read this aloud</p>
+                    <p class="sentence" id="sentence" lang="en">&nbsp;</p>
+                    <div class="ipa-rows">
+                        <p class="ipa-row"><span class="ipa-label">Reference</span><span class="ipa" id="ipaReference"></span></p>
+                        <p class="ipa-row" id="ipaSpokenRow" hidden><span class="ipa-label">You said</span><span class="ipa" id="ipaSpoken"></span></p>
+                    </div>
+                </div>
 
-        </div>
+                <div class="word-detail" id="wordDetail" hidden aria-live="polite">
+                    <div class="word-detail-head">
+                        <span class="word-detail-word" id="wdWord"></span>
+                        <span class="badge" id="wdBadge"></span>
+                    </div>
+                    <div class="word-detail-grid">
+                        <button class="wd-cell" id="wdPlayRef" type="button">
+                            <span class="wd-label">Correct</span>
+                            <span class="wd-ipa" id="wdRefIpa"></span>
+                            <span class="wd-action"><svg class="icon"><use href="#i-volume" /></svg> Listen</span>
+                        </button>
+                        <button class="wd-cell" id="wdPlayYours" type="button">
+                            <span class="wd-label">Yours</span>
+                            <span class="wd-ipa" id="wdYourIpa"></span>
+                            <span class="wd-action"><svg class="icon"><use href="#i-headphones" /></svg> Replay</span>
+                        </button>
+                    </div>
+                </div>
 
+                <div class="controls">
+                    <div class="control-side">
+                        <button class="btn-round" id="btnListen" type="button" disabled aria-label="Listen to the sentence">
+                            <svg class="icon"><use href="#i-volume" /></svg>
+                        </button>
+                        <span class="control-label">Listen</span>
+                        <label class="toggle" title="Play more slowly">
+                            <input type="checkbox" id="slowToggle">
+                            <span class="toggle-ui"><svg class="icon"><use href="#i-snail" /></svg> Slow</span>
+                        </label>
+                    </div>
 
-        <div class="container">
+                    <div class="control-main">
+                        <button class="btn-mic" id="btnRecord" type="button" disabled aria-label="Start recording">
+                            <span class="btn-mic-ring"></span>
+                            <svg class="icon"><use href="#i-mic" /></svg>
+                        </button>
+                        <span class="control-label">Tap to speak <kbd>Space</kbd></span>
+                    </div>
 
-            <div class="horizontal-flexbox" style="position: absolute; top: 2%; ">
+                    <div class="control-side">
+                        <button class="btn-round" id="btnPlayback" type="button" disabled
+                            aria-label="Play your recording">
+                            <svg class="icon"><use href="#i-headphones" /></svg>
+                        </button>
+                        <span class="control-label">Your voice</span>
+                    </div>
+                </div>
 
-                <a id="playSampleAudio" href="javascript:playAudio()" class="round-button disabled" style="color:white; text-align:center;
-                    position: absolute; top: 2%; "><i class="material-icons icon-text">play_arrow</i>
-                </a>
+                <div class="result" id="resultBox" hidden>
+                    <div class="score-ring" id="scoreRing" style="--value: 0">
+                        <svg viewBox="0 0 120 120" aria-hidden="true">
+                            <circle class="ring-track" cx="60" cy="60" r="52" />
+                            <circle class="ring-value" cx="60" cy="60" r="52" />
+                        </svg>
+                        <div class="score-ring-text"><span id="scoreValue">0</span><small>%</small></div>
+                    </div>
+                    <div class="result-text">
+                        <p class="result-title" id="resultTitle"></p>
+                        <p class="result-sub" id="resultSub"></p>
+                        <ul class="legend">
+                            <li><span class="dot dot-good"></span>Correct</li>
+                            <li><span class="dot dot-ok"></span>Almost</li>
+                            <li><span class="dot dot-bad"></span>Needs work</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
 
-                <a id="playRecordedAudio" href="javascript:playRecording()" class="round-button disabled"
-                    style="color:white; text-align:center; position: absolute; top: 15%; "><i
-                        class="material-icons icon-text">record_voice_over</i>
-                </a>
-                <p id="pronunciation_accuracy" class="expanded accuracy-text"
-                    style="text-align: center; color: black; position: absolute;  top: 27%; ">
-                    -
-                </p>
+            <section class="panel tips-panel" aria-label="How it works">
+                <h2 class="tips-title">How it works</h2>
+                <ol class="tips">
+                    <li><strong>Listen</strong> to the sentence first – turn on <em>Slow</em> if you need to.</li>
+                    <li>Tap the <strong>microphone</strong>, read the sentence aloud, then tap <strong>Stop</strong>.</li>
+                    <li>Letters in <span class="t-good">green</span> were pronounced well, <span class="t-bad">red</span> ones need work. Tap any word to compare your sound with the correct one.</li>
+                </ol>
+                <p class="tips-note">Works best in Chrome or Edge with a headset microphone in a quiet room.</p>
+            </section>
+        </main>
 
-            </div>
-
-            <div id="text-area" class="main-text-div">
-
-                <p id="original_script" class=" bigger-text text-primary main-text" contenteditable>Click on the bar on the
-                    right
-                    to
-                    generate a
-                    new sentence (please use chrome web browser).
-                </p>
-                <p id="ipa_script" class="text-muted bigger-text ipa-text"> Before speaking, click on the mic button
-                    below to start recording and then click again when you're done.
-                </p>
-                <p id="recorded_ipa_script" class="text-primary ipa-text">On the left bottom you can choose the
-                    difficult. On the upper left you can choose the language.
-                </p>
-                <p id="translated_script" class="text-muted medium-text ipa-text"> The corresponding IPA reading of each
-                    sentence will also be displayed. If you never heard from IPA, you can check out this
-                    <a href="https://www.youtube.com/watch?v=mzrLZi6fipA&list=RDCMUCQAUWk_yGz7bk1181DrijNw&start_radio=1&rv=mzrLZi6fipA&t=22&ab_channel=FluentForever"
-                        target=”_blank”>playlist</a>. Try to get at least 690 points a day. Don't be shy! You can do it
-                    :)
-                </p>
-
-            </div>
-
-            <div id="nextButtonDiv" style="position: absolute; left: 90%; top:0%; height: 100%;" class="flex-container">
-                <button id="buttonNext" class="expanded button-next" onclick="javascript:getNextSample()">
-                    <span></span></a>
-            </div>
-        </div>
-
-
-
-
-        <div class="container-small flex expand"
-            style="align-items: center; text-align: center; vertical-align:middle; ">
-            <p id="single_word_ipa_pair" class="expand ipa-text-small"
-                style="text-align: center; vertical-align: middle;">Reference | Spoken
-            </p>
-        </div>
-
-
-        <div id="btn-record" class="expanded mic-button-div">
-            <a id="recordAudio" href="javascript:updateRecordingState()" class="round-button-mic disabled"
-                style="color:white; text-align:center; "><i id="recordIcon" class="material-icons icon-text-mic">mic</i>
-            </a>
-        </div>
-
-
-        <div id="radio-difficulty" class="radio" style="position: fixed; top: 95%; left: 2%;">
-            <input label="Random" type="radio" id="lengthCat1" name='length' onclick="javascript:getNextSample()">
-            <input label="Easy" type="radio" id="lengthCat2" name='length' checked onclick="javascript:getNextSample()">
-            <input label="Medium" type="radio" id="lengthCat3" name='length' onclick="javascript:getNextSample()">
-            <input label="Hard" type="radio" id="lengthCat4" name='length' onclick="javascript:getNextSample()">
-        </div>
-
+        <footer class="footer">
+            Based on <a href="https://github.com/Thiagohgl/ai-pronunciation-trainer" target="_blank" rel="noopener">AI Pronunciation Trainer</a>
+            by Thiago Lobato · <a href="https://github.com/likemoue/ai-pronunciation-trainer" target="_blank" rel="noopener">Source code</a> (AGPL-3.0)
+        </footer>
     </div>
 
+    <!-- Recording popup -->
+    <div class="modal" id="recordModal" hidden>
+        <div class="modal-backdrop" data-close></div>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="recTitle" aria-describedby="recSentence">
+            <button class="modal-x" type="button" data-close aria-label="Cancel recording">
+                <svg class="icon"><use href="#i-close" /></svg>
+            </button>
 
-    <p class="credits-icon-div">By Thiago
-        Lobato.</p>
+            <div class="rec-head">
+                <span class="rec-dot" id="recDot"></span>
+                <h2 class="rec-title" id="recTitle">Getting the microphone ready…</h2>
+                <span class="rec-timer" id="recTimer">0:00</span>
+            </div>
 
-    <div class="link-icon-div">
-        <a href="https://github.com/Thiagohgl/ai-pronunciation-trainer" target=”_blank”
-            style="text-decoration:none; vertical-align: middle; ">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="svg-icon">
-                <path
-                    d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-            </svg>
-        </a>
+            <p class="eyebrow">Read aloud</p>
+            <p class="rec-sentence" id="recSentence" lang="en"></p>
 
-        <a href="https://www.linkedin.com/in/thiagohgl/" target=”_blank”
-            style="text-decoration:none; vertical-align: middle; padding-top: 2.3em; ">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="svg-icon">
-                <path
-                    d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-            </svg>
+            <div class="wave-wrap" id="waveWrap">
+                <canvas class="wave" id="waveCanvas" aria-label="Live microphone waveform" role="img"></canvas>
+                <div class="wave-overlay" id="waveOverlay" hidden>
+                    <span class="spinner" aria-hidden="true"></span>
+                    <span id="waveOverlayText">Analysing your pronunciation…</span>
+                </div>
+            </div>
+            <p class="rec-hint" id="recHint">Speak clearly at a normal pace, then tap <strong>Stop</strong> when you finish<span class="desk-only"> (or press <kbd>Space</kbd>)</span>.</p>
 
-        </a>
+            <div class="rec-actions">
+                <button class="btn btn-ghost" id="recCancel" type="button" data-close>Cancel</button>
+                <button class="btn btn-stop" id="recStop" type="button" disabled>
+                    <svg class="icon"><use href="#i-stop" /></svg> Stop &amp; check
+                </button>
+                <button class="btn btn-primary" id="recRetry" type="button" hidden>
+                    <svg class="icon"><use href="#i-mic" /></svg> Try again
+                </button>
+            </div>
+        </div>
     </div>
 
-
-
-
-
-
-
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>
-
-
 
 </html>
