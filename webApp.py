@@ -7,6 +7,7 @@ import json
 import lambdaTTS
 import lambdaSpeechToScore
 import lambdaGetSample
+import piperTTS
 
 app = Flask(__name__)
 cors = CORS(app)
@@ -22,8 +23,16 @@ def main():
 
 @app.route(rootPath+'/getAudioFromText', methods=['POST'])
 def getAudioFromText():
-    event = {'body': json.dumps(request.get_json(force=True))}
-    return lambdaTTS.lambda_handler(event, [])
+    body = request.get_json(force=True)
+    text = body.get('value', '')
+    language = body.get('language', 'en')
+    if piperTTS.is_linux():
+        wav_b64 = piperTTS.generate_wav_base64(text, language=language)
+        return {"wavBase64": wav_b64}
+    else:
+        event = {'body': json.dumps(body)}
+        result = lambdaTTS.lambda_handler(event, [])
+        return json.loads(result['body'])
 
 
 @app.route(rootPath+'/getSample', methods=['POST'])
