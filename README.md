@@ -14,6 +14,15 @@ This fork serves an English-only version of the trainer with a redesigned interf
 * Per-word feedback: tap any word to compare the correct IPA with yours and replay both sounds. A slow-playback toggle helps with long sentences.
 * Server-side voice with [Piper](https://github.com/rhasspy/piper) (American English, downloaded on first use to `models/piper/`), falling back to the browser voice when Piper is not installed.
 
+### Docker
+
+```
+docker build -t ai-pronunciation-trainer .
+docker run -d --name ai-pronunciation-trainer --restart unless-stopped -p 3000:3000 ai-pronunciation-trainer
+```
+
+The image downloads the Whisper checkpoint and the Piper voice at build time and runs offline afterwards (`HF_HUB_OFFLINE=1`).
+
 ### Configuration (environment variables)
 
 | Variable | Default | Purpose |
