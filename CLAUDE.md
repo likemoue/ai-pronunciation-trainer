@@ -21,7 +21,7 @@ trimmed to English.
   A text over 900 phonemes is refused, and pieces over 300 phonemes are synthesised in smaller parts.
 - `validation.py`: shared input limits, enforced before any model runs.
   - Text: up to 300 characters or 60 words, and at least 90% A-Z letters. The TTS route also accepts single short
-    words such as "André" or "2:30". Control characters and lone UTF-16 surrogates are refused.
+    words such as "André" or "2:30". Control characters other than whitespace, and lone UTF-16 surrogates, are refused.
   - Audio: up to 35 s, in a request of up to 4 MB.
 - `databases/data_en.csv`: the sentence bank, from Tatoeba (CC BY 2.0 FR, credited in the footer).
   It is screened for school use, and `tests/test_content.py` fails on blocked topics and on duplicates.
@@ -36,7 +36,6 @@ trimmed to English.
 # Tests. The fast suite fakes Whisper and Piper (FakeASR / FakeVoice in tests/conftest.py).
 FFMPEG_BINARY=<path to ffmpeg> PYTHONUTF8=1 python -m pytest -q
 python -m pytest -q -m slow     # real Whisper and Piper
-python -m pytest -q -m de       # German pipeline (needs epitran; disabled in this edition)
 
 OPEN_BROWSER=0 python webApp.py   # local server on :3000
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciation-trainer .
@@ -58,7 +57,9 @@ Production is one container on the VM in `deploy/RUNBOOK.md`. To deploy:
    and only one deploy runs at a time.
 5. Records successful deploys in `~/.local/state/ai-pronunciation-trainer/deploys.log` and keeps the images of the last 3 deploys.
 
-Rollback means running `deploy/deploy.sh <sha>`. Cloudflare blocks Python's urllib user agent, so check the public site in a browser.
+Rollback means running `deploy/deploy.sh <sha>` for a version from phase 0a on. Older versions (51c9af9, kept as
+`ai-pronunciation-trainer:english-ui`) have no smoke test or HEALTHCHECK; deploy.sh refuses them, and the RUNBOOK
+swaps to them by hand. Cloudflare blocks Python's urllib user agent, so check the public site in a browser.
 
 ## Conventions
 
@@ -66,7 +67,8 @@ Rollback means running `deploy/deploy.sh <sha>`. Cloudflare blocks Python's urll
 - Each roadmap phase is its own branch and PR, with tests. Merge PRs with a merge commit, then deploy with `deploy.sh`.
 - Never store recordings or typed text on the server. Student audio is never sent to third-party speech APIs.
 - Configure logging before importing model code: `epitran` calls `logging.basicConfig(level=CRITICAL)` on import.
-  The app logs from INFO; libraries log errors only, because Piper warns once per missing phoneme.
+  The app logs from INFO. Libraries that log through the root logger log errors only, because Piper warns once per
+  missing phoneme; transformers keeps its own handler.
 - On the Windows dev machine git converts line endings. `deploy/deploy.sh` must stay LF and executable (mode 100755).
 
 ## Roadmap
