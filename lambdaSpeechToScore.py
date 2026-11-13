@@ -1,5 +1,6 @@
 
 import json
+import os
 import threading
 import WordMatching as wm
 import pronunciationTrainer
@@ -7,11 +8,20 @@ import base64
 import time
 import audioPreprocessing
 
+
 class NoSpeechError(Exception):
     """The recording contained no recognisable speech."""
 
 
 SILENCE_PEAK_THRESHOLD = 0.003
+
+# Short sentences used to warm up and self-check the scoring pipeline. They
+# contain the one-letter words "I" and "a", which take their own code path in
+# the word alignment.
+WARMUP_SENTENCES = {
+    'en': 'Hello, I have a cat and a dog at home.',
+    'de': 'Hallo, ich habe eine Katze und einen Hund.',
+}
 
 _trainer_cache = {}
 _trainer_cache_lock = threading.Lock()
@@ -27,52 +37,50 @@ def _get_trainer(language):
         return _trainer_cache[language]
 
 
-def warm_up(language):
-    """Load the trainer (ASR model + phoneme converter) ahead of the first request,
-    then run one full scoring pass on synthetic audio so first-call costs
-    (Whisper's first forward pass, JIT compilation in the DTW alignment, the IPA
-    dictionary) are paid at start-up instead of by the first user."""
-    _get_trainer(language)
+def warm_up(language, strict=None) -> bool:
+    """Load the trainer, then score one short spoken sentence so first-call
+    costs (Whisper's first forward pass, JIT compilation in the word alignment,
+    the IPA dictionary) are paid at start-up instead of by the first user.
+
+    The sentence is synthesised with Piper. Real speech keeps Whisper on its
+    normal path; noise would make it decode the maximum number of tokens.
+
+    Returns True when the pass produced a sensible score. With strict=True (or
+    WARMUP_STRICT=1, used by the Docker build) any failure raises instead, so a
+    broken scoring pipeline fails the build rather than shipping.
+    """
+    if strict is None:
+        strict = os.environ.get('WARMUP_STRICT') == '1'
     try:
-        import io
-        import numpy as np
-        import soundfile as sf
-        noise = (np.random.default_rng(0).standard_normal(16000) * 0.05).astype(np.float32)
-        wav = io.BytesIO()
-        sf.write(wav, noise, 16000, format='WAV')
-        audio = 'data:audio/wav;base64,' + base64.b64encode(wav.getvalue()).decode('utf-8')
-        lambda_handler({'body': json.dumps({'title': 'Hello world, how are you?',
-                                            'base64Audio': audio,
-                                            'language': language})}, None)
+        _get_trainer(language)
+        import piperTTS
+        sentence = WARMUP_SENTENCES.get(language)
+        if sentence is None or not piperTTS.is_available() or language not in piperTTS.VOICE_CONFIGS:
+            raise RuntimeError(f'No warm-up voice for language "{language}"')
+        audio = base64.b64decode(piperTTS.generate_wav_base64(sentence, language))
+        start = time.time()
+        result = score(sentence, audio, language)
+        accuracy = int(result['pronunciation_accuracy'])
+        if accuracy < 50:
+            raise RuntimeError(f'Warm-up sentence scored only {accuracy}% '
+                               f'(heard: {result["real_transcript"]!r})')
+        print(f'Warm-up scoring pass OK for "{language}": {accuracy}% in {time.time() - start:.1f} s')
+        return True
     except Exception as e:
-        print(f'Warm-up scoring pass skipped: {e!r}')
+        if strict:
+            raise
+        print(f'WARM-UP FAILED for "{language}": {e!r}')
+        return False
 
 
-def lambda_handler(event, context):
+def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
+    """Score one recording of real_text. Raises NoSpeechError when nothing was
+    said, and audioPreprocessing.AudioDecodeError / AudioTooLongError for
+    unusable uploads."""
+    if not real_text.strip():
+        raise ValueError('There is no sentence to compare with.')
 
-    data = json.loads(event['body'])
-
-    real_text = data['title']
-    base64_audio = data['base64Audio']
-    # Strip the data-URL header ("data:audio/ogg;base64,") whatever its length.
-    if ',' in base64_audio[:100]:
-        base64_audio = base64_audio.split(',', 1)[1]
-    file_bytes = base64.b64decode(base64_audio.encode('utf-8'))
-    language = data['language']
-
-    if len(real_text) == 0:
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Access-Control-Allow-Headers': '*',
-                'Access-Control-Allow-Credentials': "true",
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
-            },
-            'body': ''
-        }
-
-    signal = audioPreprocessing.decode_audio(file_bytes, target_rate=16000)
+    signal = audioPreprocessing.decode_audio(audio_bytes, target_rate=16000)
     # A muted or disconnected microphone produces (near) digital silence. Do not
     # send it to Whisper, which would hallucinate text for it.
     if signal.numel() == 0 or float(signal.abs().max()) < SILENCE_PEAK_THRESHOLD:
@@ -119,14 +127,21 @@ def lambda_handler(event, context):
         [str(category) for category in result['pronunciation_categories']])
     print('Time to post-process results: ', str(time.time()-start))
 
-    res = {'real_transcript': result['recording_transcript'],
-           'ipa_transcript': result['recording_ipa'],
-           'pronunciation_accuracy': str(int(result['pronunciation_accuracy'])),
-           'real_transcripts': real_transcripts, 'matched_transcripts': matched_transcripts,
-           'real_transcripts_ipa': real_transcripts_ipa, 'matched_transcripts_ipa': matched_transcripts_ipa,
-           'pair_accuracy_category': pair_accuracy_category,
-           'start_time': result['start_time'],
-           'end_time': result['end_time'],
-           'is_letter_correct_all_words': is_letter_correct_all_words}
+    return {'real_transcript': result['recording_transcript'],
+            'ipa_transcript': result['recording_ipa'],
+            'pronunciation_accuracy': str(int(result['pronunciation_accuracy'])),
+            'real_transcripts': real_transcripts, 'matched_transcripts': matched_transcripts,
+            'real_transcripts_ipa': real_transcripts_ipa, 'matched_transcripts_ipa': matched_transcripts_ipa,
+            'pair_accuracy_category': pair_accuracy_category,
+            'start_time': result['start_time'],
+            'end_time': result['end_time'],
+            'is_letter_correct_all_words': is_letter_correct_all_words}
 
-    return json.dumps(res)
+
+def lambda_handler(event, context):
+    """AWS-Lambda-style entry point kept for scripts and tests."""
+    data = json.loads(event['body'])
+    base64_audio = data['base64Audio']
+    if base64_audio.startswith('data:'):
+        base64_audio = base64_audio.partition(',')[2]
+    return json.dumps(score(data['title'], base64.b64decode(base64_audio), data['language']))

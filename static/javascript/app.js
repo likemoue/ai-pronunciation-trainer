@@ -13,7 +13,9 @@
     const SILENCE_RMS = 0.003;
     const MIN_RECORDING_MS = 600;
     const CUSTOM_MAX_CHARS = 300;
-    const SCORE_TIMEOUT_MS = 180000;
+    const CUSTOM_MAX_WORDS = 60;
+    // Cloudflare gives up after 125 s (error 524), so stop waiting before that.
+    const SCORE_TIMEOUT_MS = 100000;
     const CATEGORY_MULTIPLIER = { 0: 1.3, 1: 1, 2: 1.3, 3: 1.6, custom: 1 };
     const CATEGORY_TEXT = ['Correct', 'Almost', 'Needs work'];
 
@@ -122,6 +124,7 @@
         if (!res.ok) {
             const err = new Error((data && data.error) || `Server error (${res.status})`);
             err.status = res.status;
+            err.code = (data && data.code) || '';
             throw err;
         }
         return data;
@@ -238,6 +241,10 @@
         }
         if (text.length > CUSTOM_MAX_CHARS) {
             showCustomError(`Please keep it under ${CUSTOM_MAX_CHARS} characters.`);
+            return;
+        }
+        if (text.split(' ').length > CUSTOM_MAX_WORDS) {
+            showCustomError(`Please keep it under ${CUSTOM_MAX_WORDS} words.`);
             return;
         }
         if (state.loading) return;
@@ -409,8 +416,10 @@
                 return;
             } catch (err) {
                 if (button) button.classList.remove('is-playing');
-                if (err.status === 503 || err.status === 404) serverTts = false;
-                console.warn('Server TTS unavailable, using the browser voice.', err);
+                // Only a permanent "no server voice" switches to the browser voice for
+                // good; a temporary failure falls back for this text only.
+                if (err.code === 'tts_unavailable' || err.status === 404) serverTts = false;
+                console.warn('Server TTS failed, using the browser voice.', err);
             }
         }
         speakWithBrowser(clean, slow, button);
@@ -758,6 +767,9 @@
             let message = 'Could not check your recording. Please try again.';
             if (err.name === 'AbortError') message = 'The server took too long to answer. Please try again.';
             else if (err.status === 422) message = "We couldn't recognise any speech. Speak a little louder and try again.";
+            else if (err.status === 413) message = 'That recording is too long. Please keep it under 30 seconds.';
+            else if (err.status === 429 || err.status === 503) message = 'The server is busy right now. Please try again in a moment.';
+            else if (err.status === 502 || err.status === 504 || err.status === 524) message = 'The server took too long to answer. Please try again.';
             else if (err.status === 400 && err.message) message = err.message;
             setModalPhase('error', message);
         } finally {

@@ -3,24 +3,34 @@ import os
 import pandas as pd
 import json
 import RuleBasedModels
-import epitran
 import random
 import threading
 import language_registry
+import validation
 
 
-class TextDataset():
-    def __init__(self, table):
-        self.table_dataframe = table
-        self.number_of_samples = len(table)
+class SentenceBank:
+    """Practice sentences of one language, pre-sorted by difficulty category."""
 
-    def __getitem__(self, idx):
+    def __init__(self, sentences):
+        # Normalise once at load time with the same rules as custom text, so the
+        # sentence the browser shows is exactly the one the scorer receives back.
+        self.sentences = [validation.normalize_text(str(s)) for s in sentences]
+        self.sentences = [s for s in self.sentences if s]
+        self.by_category = {0: list(range(len(self.sentences)))}
+        for category in (1, 2, 3):
+            self.by_category[category] = []
+        for idx, sentence in enumerate(self.sentences):
+            self.by_category[getSentenceCategory(sentence)].append(idx)
 
-        line = [self.table_dataframe['sentence'].iloc[idx]]
-        return line
+    def pick(self, category: int) -> str:
+        indices = self.by_category.get(category)
+        if not indices:
+            raise ValueError(f'No sentences in category {category}.')
+        return self.sentences[random.choice(indices)]
 
     def __len__(self):
-        return self.number_of_samples
+        return len(self.sentences)
 
 
 _database_cache = {}
@@ -36,77 +46,34 @@ def _ensure_initialized(language):
         config = language_registry.get(language)
         df = pd.read_csv(config.csv_path, delimiter=';')
         _ipa_converter_cache[language] = RuleBasedModels.get_phonem_converter(language)
-        _database_cache[language] = TextDataset(df)
+        _database_cache[language] = SentenceBank(df['sentence'].tolist())
+
+
+def sample(category: int, language: str) -> dict:
+    """Pick a random practice sentence. category: 0 = any, 1 = easy, 2 = medium, 3 = hard."""
+    category = validation.category(category)
+    _ensure_initialized(language)
+    sentence = _database_cache[language].pick(category)
+    return {'real_transcript': [sentence],
+            'ipa_transcript': _ipa_converter_cache[language].convertToPhonem(sentence),
+            'transcript_translation': ''}
 
 
 def lambda_handler(event, context):
     body = json.loads(event['body'])
-
-    category = int(body['category'])
-
-    language = body['language']
-    _ensure_initialized(language)
-
-    sample_in_category = False
-
-    while(not sample_in_category):
-        valid_sequence = False
-        while not valid_sequence:
-            try:
-                sample_idx = random.randint(0, len(_database_cache[language]))
-                current_transcript = _database_cache[language][
-                    sample_idx]
-                valid_sequence = True
-            except:
-                pass
-
-        sentence_category = getSentenceCategory(
-            current_transcript[0])
-
-        sample_in_category = (sentence_category ==
-                              category) or category == 0
-
-    translated_trascript = ""
-
-    current_ipa = _ipa_converter_cache[language].convertToPhonem(
-        current_transcript[0])
-
-    result = {'real_transcript': current_transcript,
-              'ipa_transcript': current_ipa,
-              'transcript_translation': translated_trascript}
-
-    return json.dumps(result)
+    return json.dumps(sample(body.get('category'), body['language']))
 
 
-MAX_CUSTOM_TEXT_CHARS = int(os.environ.get('MAX_CUSTOM_TEXT_CHARS', '300'))
+MAX_CUSTOM_TEXT_CHARS = validation.MAX_TEXT_CHARS
 
-_TYPOGRAPHY = str.maketrans({
-    '‘': "'", '’': "'", '‛': "'", '′': "'",
-    '“': '"', '”': '"', '‟': '"', '″': '"',
-    '–': ' - ', '—': ' - ', '−': ' - ', '…': '...',
-})
-
-
-def normalize_custom_text(text: str) -> str:
-    """Collapse whitespace, straighten typographic quotes/dashes and drop
-    tokens that contain no letters or digits (they cannot be pronounced and
-    would break the word-by-word alignment)."""
-    text = (text or '').translate(_TYPOGRAPHY)
-    tokens = [token for token in text.split() if any(ch.isalnum() for ch in token)]
-    return ' '.join(tokens)
+# Kept for callers that import it from here.
+normalize_custom_text = validation.normalize_text
 
 
 def custom_sample(text: str, language: str) -> dict:
     """Build a practice sample from user-provided text. Raises ValueError with a
     user-facing message when the text cannot be used."""
-    text = normalize_custom_text(text)
-    if not text:
-        raise ValueError('Please type at least one word.')
-    if len(text) > MAX_CUSTOM_TEXT_CHARS:
-        raise ValueError(f'Please keep the text under {MAX_CUSTOM_TEXT_CHARS} characters.')
-    if not any('a' <= ch.lower() <= 'z' for ch in text):
-        raise ValueError('Please type English text (Latin letters).')
-
+    text = validation.practice_text(text)
     _ensure_initialized(language)
     ipa = _ipa_converter_cache[language].convertToPhonem(text)
     return {'real_transcript': [text],
@@ -120,3 +87,4 @@ def getSentenceCategory(sentence) -> int:
     for category in range(len(categories_word_limits)-1):
         if number_of_words > categories_word_limits[category] and number_of_words <= categories_word_limits[category+1]:
             return category+1
+    return 1
