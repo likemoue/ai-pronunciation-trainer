@@ -14,14 +14,14 @@ trimmed to English.
   - `POST /getAudioFromText`: Piper TTS, returned as base64 WAV.
   - `POST /GetAccuracyFromRecordedAudio`: scores a recording.
 - Scoring pipeline:
-  1. `audioPreprocessing.decode_audio`: one ffmpeg process, bounded by size, allocations, codecs and time.
+  1. `audioPreprocessing.decode_audio`: one ffmpeg process, bounded by size, allocations, codecs, streams and time.
   2. Whisper base (`whisper_wrapper.py`, transformers).
   3. `pronunciationTrainer.py`: word alignment with DTW in `WordMatching.py`; reference IPA from `eng_to_ipa` in `RuleBasedModels.py`.
 - `piperTTS.py`: the reference voice (Piper, `en_US-ljspeech`, public domain). Voice files are pinned by sha256.
-  A text over 900 phonemes is refused.
+  A text over 900 phonemes is refused, and pieces over 300 phonemes are synthesised in smaller parts.
 - `validation.py`: shared input limits, enforced before any model runs.
   - Text: up to 300 characters or 60 words, and at least 90% A-Z letters. The TTS route also accepts single short
-    words such as "André" or "2:30".
+    words such as "André" or "2:30". Control characters and lone UTF-16 surrogates are refused.
   - Audio: up to 35 s, in a request of up to 4 MB.
 - `databases/data_en.csv`: the sentence bank, from Tatoeba (CC BY 2.0 FR, credited in the footer).
   It is screened for school use, and `tests/test_content.py` fails on blocked topics and on duplicates.
@@ -54,7 +54,8 @@ Production is one container on the VM in `deploy/RUNBOOK.md`. To deploy:
 1. Builds the image.
 2. Starts it as staging on `127.0.0.1:3001` and runs `deploy/smoke_test.py`, which scores a TTS sentence end to end.
 3. Swaps production on port 3000.
-4. Puts the old container back on any failure or interruption.
+4. Puts the old container back on any failure or interruption. A run killed half-way is detected by the next run,
+   and only one deploy runs at a time.
 5. Records successful deploys in `~/.local/state/ai-pronunciation-trainer/deploys.log` and keeps the images of the last 3 deploys.
 
 Rollback means running `deploy/deploy.sh <sha>`. Cloudflare blocks Python's urllib user agent, so check the public site in a browser.
@@ -65,6 +66,7 @@ Rollback means running `deploy/deploy.sh <sha>`. Cloudflare blocks Python's urll
 - Each roadmap phase is its own branch and PR, with tests. Merge PRs with a merge commit, then deploy with `deploy.sh`.
 - Never store recordings or typed text on the server. Student audio is never sent to third-party speech APIs.
 - Configure logging before importing model code: `epitran` calls `logging.basicConfig(level=CRITICAL)` on import.
+  The app logs from INFO; libraries log errors only, because Piper warns once per missing phoneme.
 - On the Windows dev machine git converts line endings. `deploy/deploy.sh` must stay LF and executable (mode 100755).
 
 ## Roadmap
