@@ -767,8 +767,13 @@ kbd {
 	animation: fadeUp .25s ease-out;
 }
 
+.icon-sprite {
+	position: absolute;
+}
+
 .score-ring {
 	--color: var(--good);
+	--value: 0;
 	position: relative;
 	width: 108px;
 	height: 108px;

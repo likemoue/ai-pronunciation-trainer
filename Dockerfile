@@ -1,8 +1,10 @@
 # AI Pronunciation Trainer – English edition (Flask + Whisper + Piper), CPU only.
 #
-#   docker build -t ai-pronunciation-trainer .
-#   docker run -d --name ai-pronunciation-trainer --restart unless-stopped -p 3000:3000 ai-pronunciation-trainer
+#   docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciation-trainer .
+#   docker run -d --name ai-pronunciation-trainer --restart unless-stopped -p 3000:3000 \
+#       --memory 9g --tmpfs /tmp:rw,nosuid,size=256m ai-pronunciation-trainer
 #
+# deploy/deploy.sh builds, smoke-tests and swaps the production container.
 # requirements.txt pins nothing, so torch and transformers are pinned here.
 FROM python:3.12-slim
 
@@ -25,18 +27,28 @@ RUN pip install --upgrade pip \
 COPY requirements.txt ./
 RUN pip install -r requirements.txt "transformers>=4.50,<5" gunicorn
 
+# The app runs as an unprivileged user; code and models stay owned by root.
+RUN useradd --system --uid 10001 --create-home --home-dir /home/app app
+
 COPY . .
 
-# Models load lazily at runtime, so download them explicitly at build time:
-# the Whisper checkpoint (Hugging Face cache) and the Piper English voice.
-RUN python -c "import lambdaSpeechToScore, piperTTS; lambdaSpeechToScore.warm_up('en'); piperTTS.generate_wav_base64('Hello.', 'en')"
+# Download the Whisper checkpoint and the Piper voice, then score one spoken
+# sentence. WARMUP_STRICT makes the build fail if scoring does not work.
+RUN WARMUP_STRICT=1 python -c "import piperTTS, lambdaSpeechToScore; piperTTS.warm_up('en'); lambdaSpeechToScore.warm_up('en')"
 
 # Everything is baked into the image; never reach out to the Hub at runtime.
+ARG GIT_SHA=unknown
 ENV HF_HUB_OFFLINE=1 \
     OPEN_BROWSER=0 \
     ENABLED_LANGUAGES=en \
-    PRELOAD_LANGUAGES=en
+    PRELOAD_LANGUAGES=en \
+    WEB_CONCURRENCY=2 \
+    READY_DIR=/tmp/aipt-ready \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    GIT_SHA=${GIT_SHA}
 
+USER app
 EXPOSE 3000
-# Sync workers handle one request at a time; each worker warms up its own model.
-CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "2", "--timeout", "180", "webApp:app"]
+# Healthy once every worker has scored its warm-up sentence (about 30-60 s).
+HEALTHCHECK --interval=10s --timeout=5s --start-period=240s --retries=3 CMD ["python", "/app/healthcheck.py"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "webApp:app"]
