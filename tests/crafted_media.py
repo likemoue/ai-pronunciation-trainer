@@ -6,6 +6,7 @@ suggests when nothing bounds it:
 * Matroska/WebM whose block timestamps are 1 microsecond apart (or all zero),
   so ffmpeg's `-t` limit, which counts timestamps, never fires;
 * Matroska PCM that declares an enormous sample rate (huge resampler filter);
+* WebM with many Opus tracks of 255 channels (one decoder per channel);
 * MP4 whose sample table declares tens of millions of samples (huge index).
 """
 import struct
@@ -40,15 +41,19 @@ def _string(element_id: int, text: str) -> bytes:
     return _element(element_id, text.encode('ascii'))
 
 
-def _audio_track(codec: str, rate: float, bit_depth=None, private=None) -> bytes:
-    audio = _float(0xB5, float(rate)) + _uint(0x9F, 1)
+def _track_entry(number: int, codec: str, rate: float, channels: int = 1, bit_depth=None, private=None) -> bytes:
+    audio = _float(0xB5, float(rate)) + _uint(0x9F, channels)
     if bit_depth:
         audio += _uint(0x6264, bit_depth)
-    entry = _uint(0xD7, 1) + _uint(0x73C5, 1) + _uint(0x83, 2) + _string(0x86, codec)
+    entry = _uint(0xD7, number) + _uint(0x73C5, number) + _uint(0x83, 2) + _string(0x86, codec)
     if private is not None:
         entry += _element(0x63A2, private)
     entry += _element(0xE1, audio)
-    return _element(0x1654AE6B, _element(0xAE, entry))
+    return _element(0xAE, entry)
+
+
+def _audio_track(codec: str, rate: float, bit_depth=None, private=None) -> bytes:
+    return _element(0x1654AE6B, _track_entry(1, codec, rate, bit_depth=bit_depth, private=private))
 
 
 def _matroska(doctype: str, track: bytes, blocks, timestamp_scale_ns: int, ts_step: int) -> bytes:
@@ -67,8 +72,12 @@ def _matroska(doctype: str, track: bytes, blocks, timestamp_scale_ns: int, ts_st
     return b''.join(out)
 
 
-def _opus_head() -> bytes:
-    return b'OpusHead' + bytes([1, 1]) + struct.pack('<HIhB', 312, 48000, 0, 0)
+def _opus_head(channels: int = 1) -> bytes:
+    if channels == 1:
+        return b'OpusHead' + bytes([1, 1]) + struct.pack('<HIhB', 312, 48000, 0, 0)
+    # Mapping family 255: one mono Opus stream per channel.
+    return (b'OpusHead' + bytes([1, channels]) + struct.pack('<HIhB', 312, 48000, 0, 255)
+            + bytes([channels, 0]) + bytes(range(channels)))
 
 
 def opus_webm(packets: int, microsecond_timestamps: bool = True) -> bytes:
@@ -80,6 +89,18 @@ def opus_webm(packets: int, microsecond_timestamps: bool = True) -> bytes:
     if microsecond_timestamps:
         return _matroska('webm', track, blocks, timestamp_scale_ns=1000, ts_step=1)
     return _matroska('webm', track, blocks, timestamp_scale_ns=1_000_000, ts_step=0)
+
+
+def opus_webm_with_extra_tracks(extra_tracks: int, packets: int = 10) -> bytes:
+    """WebM with a mono Opus track of packets x 120 ms (honest timestamps), plus
+    extra_tracks Opus tracks without audio that each declare 255 channels.
+    ffmpeg opens a decoder for every stream while it probes the file, so each
+    such track costs about 50 MB, although no single allocation is large."""
+    entries = [_track_entry(1, 'A_OPUS', 48000, private=_opus_head())]
+    entries += [_track_entry(2 + i, 'A_OPUS', 48000, channels=255, private=_opus_head(255))
+                for i in range(extra_tracks)]
+    return _matroska('webm', _element(0x1654AE6B, b''.join(entries)), [OPUS_120MS_PACKET] * packets,
+                     timestamp_scale_ns=1_000_000, ts_step=120)
 
 
 def pcm_mkv(samples: int, rate: float, timestamp_scale_ns: int = 1000, ts_step: int = 1) -> bytes:

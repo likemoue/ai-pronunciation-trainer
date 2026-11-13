@@ -129,7 +129,8 @@ def test_request_id_reuses_cloudflare_ray_id(client):
     assert response.headers['X-Request-ID'] == 'a59c8cf62e459010-SIN'
 
 
-@pytest.mark.parametrize('ray', ['abc"def\\', 'x' * 65, 'a b', '<script>', ''])
+@pytest.mark.parametrize('ray', ['abc"def\\', 'x' * 65, 'a b', '<script>', '', 'forged-by-client', '-',
+                                 'a' * 64, 'a59c8cf62e459010', 'A59C8CF62E459010-SIN'])
 def test_request_id_ignores_values_that_are_not_ray_ids(client, ray):
     # Port 3000 is reachable without Cloudflare, so CF-Ray can be anything.
     response = client.get('/', headers={'CF-Ray': ray})
@@ -203,6 +204,51 @@ def test_custom_sample_normalises_text(client):
     response = client.post('/getCustomSample', json={'text': '  It’s  a  “test” —  ok… ', 'language': 'en'})
     assert response.status_code == 200
     assert response.get_json()['real_transcript'] == ['It\'s a "test" ok...']
+
+
+def test_custom_sample_accepts_line_breaks_and_tabs(client):
+    response = client.post('/getCustomSample', json={'text': 'Hello,\r\n\tworld!', 'language': 'en'})
+    assert response.status_code == 200
+    assert response.get_json()['real_transcript'] == ['Hello, world!']
+
+
+# JSON allows lone UTF-16 surrogates and NUL. The phonemiser, sqlite and hashlib
+# fail on them, which used to give a 500 and a traceback in the log.
+_UNREADABLE_JSON_TEXTS = ['hello wor\\ud800ld', 'hello wor\\u0000ld', 'wor\\u0000ld', 'wor\\udfffld',
+                          'hello\\u001bworld again']
+
+
+@pytest.mark.parametrize('text', _UNREADABLE_JSON_TEXTS)
+@pytest.mark.parametrize('route,field', [('/getCustomSample', 'text'), ('/getAudioFromText', 'value')])
+def test_text_with_unreadable_characters_is_refused(client, fake_voice, route, field, text):
+    body = '{"%s": "%s", "language": "en"}' % (field, text)
+    response = client.post(route, data=body, content_type='application/json')
+    assert_json_error(response, 400, 'text_bad_characters')
+    assert fake_voice.synthesized == []
+
+
+@pytest.mark.parametrize('text', _UNREADABLE_JSON_TEXTS)
+def test_scoring_refuses_unreadable_titles_before_decoding(client, fake_asr, text):
+    body = '{"title": "%s", "base64Audio": "%s", "language": "en"}' % (text, data_url(b'not audio'))
+    response = client.post('/GetAccuracyFromRecordedAudio', data=body, content_type='application/json')
+    assert_json_error(response, 400, 'text_bad_characters')
+
+
+class _UnreadableBody(io.BytesIO):
+    """A body whose bytes cannot be read, like gunicorn's reader for a
+    malformed chunked upload (it raises OSError subclasses)."""
+
+    def _fail(self, *args, **kwargs):
+        raise OSError('Invalid chunk size')
+
+    read = read1 = readinto = readline = _fail
+
+
+def test_unreadable_body_is_a_client_error_without_a_traceback(client, caplog):
+    response = client.post('/getSample', input_stream=_UnreadableBody(b'{"category": 1}'),
+                           content_type='application/json')
+    assert_json_error(response, 400)
+    assert 'Unhandled error' not in caplog.text
 
 
 # ------------------------------------------------------------------ audio limits

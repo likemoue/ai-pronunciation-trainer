@@ -30,6 +30,8 @@ _CODECS = {
     'mkv_flac': ['-c:a', 'flac', '-f', 'matroska'],
     # Chrome's audio/webm;codecs=pcm records 32-bit float PCM in Matroska.
     'mkv_pcm_f32': ['-c:a', 'pcm_f32le', '-f', 'matroska'],
+    # No browser records Vorbis.
+    'ogg_vorbis': ['-c:a', 'libvorbis', '-f', 'ogg'],
 }
 
 

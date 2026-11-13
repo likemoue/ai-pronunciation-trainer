@@ -25,6 +25,10 @@ _MAX_PIECE_CHARS = 120
 # take about 4,500 phonemes (over 4 minutes of speech). Practice sentences need
 # at most about 260 phonemes, and number-heavy 300-character texts about 570.
 _MAX_PHONEMES = int(os.environ.get('PIPER_MAX_PHONEMES', '900'))
+# One inference holds about 16 MB per second of audio it produces, and 120
+# characters of emoji or symbols are ~900 phonemes (~56 s, ~0.9 GB), so pieces
+# with more phonemes than this are cut further. Practice sentences never are.
+_MAX_PIECE_PHONEMES = int(os.environ.get('PIPER_MAX_PIECE_PHONEMES', '300'))
 _lock = threading.Lock()
 # espeak-ng, which Piper uses to phonemise text, is not thread-safe, and the
 # warm-up thread can synthesise while a request does.
@@ -172,6 +176,12 @@ def split_for_synthesis(text, max_chars=_MAX_PIECE_CHARS):
     return pieces
 
 
+def _split_dense_piece(piece, phonemes):
+    """Cut a piece with many phonemes per character into pieces of about
+    _MAX_PIECE_PHONEMES phonemes each."""
+    return split_for_synthesis(piece, max(8, len(piece) * _MAX_PIECE_PHONEMES // phonemes))
+
+
 def generate_wav_base64(text, language='en'):
     global _cache_bytes
     key = f'{language}:{hashlib.md5(text.encode()).hexdigest()}'
@@ -184,9 +194,11 @@ def generate_wav_base64(text, language='en'):
     pieces = split_for_synthesis(text)
     wav_buffer = io.BytesIO()
     with _synth_lock:
-        phonemes = sum(len(sentence) for piece in pieces for sentence in model.phonemize(piece))
-        if phonemes > _MAX_PHONEMES:
-            raise TextTooLongError(f'{phonemes} phonemes (limit {_MAX_PHONEMES})')
+        counts = [sum(len(sentence) for sentence in model.phonemize(piece)) for piece in pieces]
+        if sum(counts) > _MAX_PHONEMES:
+            raise TextTooLongError(f'{sum(counts)} phonemes (limit {_MAX_PHONEMES})')
+        pieces = [part for piece, count in zip(pieces, counts)
+                  for part in (_split_dense_piece(piece, count) if count > _MAX_PIECE_PHONEMES else [piece])]
         with wave.open(wav_buffer, 'wb') as wav_file:
             format_set = False
             for piece in pieces:

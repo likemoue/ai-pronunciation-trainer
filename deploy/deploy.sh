@@ -10,13 +10,16 @@
 # 3. Replaces the production container (port 3000), waits until healthy and
 #    smoke-tests it. From the moment the old container is stopped until the
 #    new one has passed, any failure or interruption (Ctrl-C, a dropped SSH
-#    session) puts the old container back.
+#    session, a closed output pipe) puts the old container back.
 # 4. Records the deploy in DEPLOY_LOG and keeps the images of the last
 #    KEEP_IMAGES deploys for rollback. Image tags that are not in DEPLOY_LOG
 #    (for example ones created by hand) are never removed.
 #
+# Only one deploy runs at a time. A run that was killed half-way (SIGKILL, a
+# reboot) is detected by the next run, which puts the old container back.
+#
 # Run it so that it survives a dropped SSH session; see deploy/RUNBOOK.md.
-# Needs docker and python3; no sudo.
+# Needs docker, python3, flock and setsid (util-linux); no sudo.
 set -Eeuo pipefail
 
 APP=${APP:-ai-pronunciation-trainer}
@@ -26,17 +29,31 @@ PROD_PORT=${PROD_PORT:-3000}
 STAGING_PORT=${STAGING_PORT:-3001}
 KEEP_IMAGES=${KEEP_IMAGES:-3}
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-360}
-# One line per successful deploy: "<UTC time> <short sha>", newest last.
+# One line per successful deploy: "<UTC time> <short sha> <container id>", newest last.
 DEPLOY_LOG=${DEPLOY_LOG:-"$HOME/.local/state/$APP/deploys.log"}
+STATE_DIR=$(dirname "$DEPLOY_LOG")
+# Holds the id of the production container from just before it is stopped
+# until the new container is recorded in DEPLOY_LOG.
+SWAP_MARK="$STATE_DIR/swap-in-progress"
 # Resource limits and log rotation, used for staging and production alike.
 RUN_FLAGS=(--memory 9g --memory-swap 9g --pids-limit 512
            --log-opt max-size=10m --log-opt max-file=3
            --tmpfs /tmp:rw,nosuid,size=256m)
 
+# One deploy at a time: a second run would take the first one's swap for an
+# interrupted deploy and undo it.
+mkdir -p "$STATE_DIR"
+exec 9>>"$STATE_DIR/deploy.lock"
+if ! flock -n 9; then
+    echo "Another deploy is running (lock: $STATE_DIR/deploy.lock)." >&2
+    exit 1
+fi
+
 log() { printf '\n==> %s\n' "$*"; }
 # `docker inspect NAME` would also match an image called NAME:latest.
 container_exists() { docker container inspect "$1" >/dev/null 2>&1; }
 container_running() { [[ "$(docker container inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" == "true" ]]; }
+container_id() { docker container inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
 image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
 running_image_id() { docker container inspect -f '{{.Image}}' "$APP" 2>/dev/null || true; }
 deployed_before() { [[ -f "$DEPLOY_LOG" ]] && awk -v sha="$1" '$2 == sha { found = 1 } END { exit !found }' "$DEPLOY_LOG"; }
@@ -59,30 +76,69 @@ wait_healthy() {
     return 1
 }
 
-# A run that was killed between stopping and replacing production (SIGKILL,
-# reboot) leaves the old container behind as $APP-previous. Unless the swap
-# had already been verified, put it back before doing anything else.
+# Start the stopped production container. Once a start has failed because the
+# port was taken, Docker may never publish that container's port again (later
+# starts "succeed" without it), so check the port and recreate the container
+# from its image if needed.
+start_production() {
+    local image try
+    image=$(docker container inspect -f '{{.Image}}' "$APP" 2>/dev/null) || return 1
+    docker start "$APP" >/dev/null 2>&1
+    [[ -n "$(docker port "$APP" 3000 2>/dev/null)" ]] && return 0
+    for try in 1 2 3 4 5 6; do
+        docker rm -f "$APP" >/dev/null 2>&1
+        if docker run -d --name "$APP" --restart unless-stopped -p "$PROD_PORT:3000" \
+                "${RUN_FLAGS[@]}" "$image" >/dev/null; then
+            echo "Recreated $APP from its image." >&2
+            return 0
+        fi
+        echo "Could not recreate $APP (attempt $try of 6); retrying in 10 s." >&2
+        sleep 10
+    done
+    return 1
+}
+
+# A run that was killed while it replaced production (SIGKILL, reboot) leaves
+# the old container stopped, or renamed to $APP-previous. Unless the new
+# container had been recorded in DEPLOY_LOG, put the old one back before doing
+# anything else.
 recover_interrupted_deploy() {
-    container_exists "$APP-previous" || return 0
-    local current last
-    current=$(docker container inspect -f '{{.Config.Image}}' "$APP" 2>/dev/null || true)
-    last=$( [[ -f "$DEPLOY_LOG" ]] && tail -n 1 "$DEPLOY_LOG" | awk '{print $2}' || true)
-    if [[ -n "$last" && "$current" == "$APP:$last" ]] && container_running "$APP"; then
-        echo "Removing $APP-previous, left over from the deploy of $last."
-        docker rm -f "$APP-previous" >/dev/null
+    local stopping current verified
+    if ! container_exists "$APP-previous"; then
+        stopping=$( [[ -f "$SWAP_MARK" ]] && cat "$SWAP_MARK" || true)
+        if [[ -n "$stopping" && "$(container_id "$APP")" == "$stopping" ]]; then
+            echo "An earlier deploy was interrupted while it stopped $APP; starting it again." >&2
+            # A stop that is still in progress would undo the start; wait for it.
+            docker stop -t 40 "$APP" >/dev/null || true
+            start_production || { echo "!! Could not start $APP. Production is DOWN; see deploy/RUNBOOK.md." >&2; exit 2; }
+            rm -f "$SWAP_MARK"
+            echo "The previous container is running again. Check it (deploy/RUNBOOK.md), then deploy again." >&2
+            exit 1
+        fi
+        rm -f "$SWAP_MARK"
         return 0
     fi
-    echo "An earlier deploy was interrupted: $APP-previous exists and $APP ($current) was not verified." >&2
+    # Compare container ids: a re-deploy of the same sha has the same image name.
+    current=$(container_id "$APP")
+    verified=$( [[ -f "$DEPLOY_LOG" ]] && tail -n 1 "$DEPLOY_LOG" | awk '{print $3}' || true)
+    if [[ -n "$current" && "$current" == "$verified" ]] && container_running "$APP"; then
+        echo "Removing $APP-previous, left over from a verified deploy."
+        docker rm -f "$APP-previous" >/dev/null
+        rm -f "$SWAP_MARK"
+        return 0
+    fi
+    echo "An earlier deploy was interrupted: $APP-previous exists and $APP was not verified." >&2
     docker rm -f "$APP" >/dev/null 2>&1 || true
     docker rename "$APP-previous" "$APP"
-    docker start "$APP" >/dev/null
+    start_production || { echo "!! Could not start $APP. Production is DOWN; see deploy/RUNBOOK.md." >&2; exit 2; }
+    rm -f "$SWAP_MARK"
     echo "The previous container is running again. Check it (deploy/RUNBOOK.md), then deploy again." >&2
     exit 1
 }
 
 remove_failed_image() {
-    # An image that failed staging is never used again, unless production runs
-    # it or an earlier deploy used it (then it is a rollback candidate).
+    # An image that failed is never used again, unless production runs it or
+    # an earlier deploy used it (then it is a rollback candidate).
     local failed_id
     failed_id=$(image_id "$IMAGE")
     [[ -n "$failed_id" && "$failed_id" != "$(running_image_id)" ]] || return 0
@@ -144,9 +200,14 @@ container_exists "$APP" && HAD_PREVIOUS=1
 log "Replacing production: $PREVIOUS_IMAGE -> $IMAGE"
 
 restore_previous() {
-    trap '' INT TERM HUP  # finish the restore even if interrupted again
+    # Finish the restore even if interrupted again or if the output pipe is gone.
+    trap '' INT TERM HUP PIPE
     trap - ERR
     set +e
+    # The docker CLI handles SIGINT and SIGTERM itself even while this shell
+    # ignores them, and gives up while the daemon carries on: keep it away
+    # from the terminal's signals.
+    docker() { setsid -w docker "$@"; }
     echo "The new container failed or the deploy was interrupted; restoring the previous one." >&2
     if (( HAD_PREVIOUS )); then
         if container_exists "$APP-previous"; then
@@ -157,20 +218,28 @@ restore_previous() {
                 echo "!! Could not rename $APP-previous back. Production is DOWN; see deploy/RUNBOOK.md." >&2
                 exit 2
             fi
+        else
+            # Interrupted during `docker stop`: the daemon still finishes that
+            # stop, and a start sent before it is done does nothing. Wait for it.
+            docker stop -t 40 "$APP" >/dev/null 2>&1
         fi
-        if ! docker start "$APP" >/dev/null; then
+        if ! start_production; then
             echo "!! Could not start the previous container. Production is DOWN; see deploy/RUNBOOK.md." >&2
             exit 2
         fi
+        rm -f "$SWAP_MARK"
         echo "Previous container ($PREVIOUS_IMAGE) is running again." >&2
     else
         docker logs --tail 100 "$APP" 2>&1 | tail -n 100 >&2
         docker rm -f "$APP" >/dev/null 2>&1
+        rm -f "$SWAP_MARK"
         echo "There was no previous container to restore." >&2
     fi
+    remove_failed_image
     exit 1
 }
-trap restore_previous ERR INT TERM HUP
+container_id "$APP" > "$SWAP_MARK"
+trap restore_previous ERR INT TERM HUP PIPE
 
 if (( HAD_PREVIOUS )); then
     docker stop -t 40 "$APP" >/dev/null
@@ -180,10 +249,10 @@ docker run -d --name "$APP" --restart unless-stopped -p "$PROD_PORT:3000" "${RUN
 if ! wait_healthy "$APP" || ! python3 deploy/smoke_test.py "http://127.0.0.1:$PROD_PORT"; then
     restore_previous
 fi
-trap - ERR INT TERM HUP
+trap - ERR INT TERM HUP PIPE
 
-mkdir -p "$(dirname "$DEPLOY_LOG")"
-printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SHA" >> "$DEPLOY_LOG"
+printf '%s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SHA" "$(container_id "$APP")" >> "$DEPLOY_LOG"
+rm -f "$SWAP_MARK"
 docker rm -f "$APP-previous" >/dev/null 2>&1 || true
 docker tag "$IMAGE" "$APP:latest"
 log "Deployed $IMAGE"

@@ -5,6 +5,8 @@ hard limits on what it may read, allocate and produce:
 
 * only a few container formats and codecs are accepted (whatever MediaRecorder
   produces, plus WAV), and ffmpeg may not open other files or URLs;
+* only one stream is read: ffmpeg opens a decoder for every stream while it
+  probes a file, so extra streams would multiply its memory;
 * no single allocation inside ffmpeg may exceed _MAX_ALLOC_BYTES, so values a
   file declares (sample tables, sample rates) cannot make it reserve gigabytes;
 * the decoded audio is capped by size, not only by timestamps: `-t` trusts the
@@ -32,12 +34,16 @@ class AudioTooLongError(ValueError):
 
 
 MAX_AUDIO_SECONDS = float(os.environ.get('MAX_AUDIO_SECONDS', '35'))
-DECODE_TIMEOUT_SECONDS = float(os.environ.get('AUDIO_DECODE_TIMEOUT', '20'))
+# A 35 s recording decodes in about 0.3 s. Some valid but hostile files (Matroska
+# with bzip2-compressed blocks) keep ffmpeg busy without output until this fires.
+DECODE_TIMEOUT_SECONDS = float(os.environ.get('AUDIO_DECODE_TIMEOUT', '5'))
 # Demuxers for webm/Matroska (Chrome, Firefox), Ogg (Firefox), MP4 (Safari) and WAV.
 _FORMAT_WHITELIST = 'matroska,webm,ogg,mov,mp4,m4a,wav'
-# Decoders for what browsers record: Opus (Chrome, Firefox, Edge), AAC (Safari),
-# Vorbis (older Firefox) and PCM (WAV, and Chrome's audio/webm;codecs=pcm).
-_CODEC_WHITELIST = 'opus,vorbis,aac,pcm_s16le,pcm_f32le'
+# Decoders for what browsers record: Opus (Chrome, Firefox, Edge), AAC (Safari)
+# and PCM (WAV, and Chrome's audio/webm;codecs=pcm). Not Vorbis: no browser
+# records it, and a 9 KB Vorbis header makes the decoder allocate about 600 MB
+# in pieces that are each under _MAX_ALLOC_BYTES.
+_CODEC_WHITELIST = 'opus,aac,pcm_s16le,pcm_f32le'
 # Largest single allocation ffmpeg may make (demuxer indexes, resampler filters,
 # frames). A 30 s recording needs a few MB.
 _MAX_ALLOC_BYTES = 64 * 1024 * 1024
@@ -93,19 +99,26 @@ def _run_ffmpeg(command, stdin_bytes, max_output_bytes):
         helpers.append(threading.Thread(target=feed_stdin, daemon=True))
     killer = threading.Timer(DECODE_TIMEOUT_SECONDS, kill_on_timeout)
     killer.daemon = True
-    killer.start()
-    for helper in helpers:
-        helper.start()
+    started = []
+    stdout = b''
+    # Everything after Popen is inside try, so ffmpeg is killed and reaped even
+    # if starting a thread is interrupted.
     try:
+        killer.start()
+        for helper in helpers:
+            helper.start()
+            started.append(helper)
         stdout = proc.stdout.read(max_output_bytes + 4)
         if len(stdout) <= max_output_bytes:
             proc.wait()
     finally:
-        killer.cancel()
+        killer.cancel()  # also fine if it never started
         proc.kill()  # no-op if ffmpeg has already exited
         proc.wait()
         _close_quietly(proc.stdout)
-        for helper in helpers:
+        if stdin_bytes is not None and len(started) < len(helpers):
+            _close_quietly(proc.stdin)  # the feeder never started, so nothing closed it
+        for helper in started:
             helper.join(timeout=1)
         if not helpers[0].is_alive():
             _close_quietly(proc.stderr)
@@ -141,6 +154,9 @@ def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
         command = [
             _ffmpeg_binary(), '-nostdin', '-hide_banner', '-loglevel', 'error',
             '-max_alloc', str(_MAX_ALLOC_BYTES),
+            # A recording has one audio stream. A 41 KB WebM with 128 Opus
+            # tracks of 255 channels each took 6.6 GB without this.
+            '-max_streams', '1',
             '-protocol_whitelist', protocols,
             '-format_whitelist', _FORMAT_WHITELIST,
             '-codec_whitelist', _CODEC_WHITELIST,

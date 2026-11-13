@@ -3,8 +3,10 @@ import logging
 # Configure logging before importing the model code: epitran calls
 # logging.basicConfig(level=CRITICAL) on import, which would otherwise hide
 # every warning and error the app logs. (basicConfig does nothing once the
-# root logger has a handler.)
-logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+# root logger has a handler.) Libraries log errors only: Piper warns once for
+# every phoneme its voice lacks, so a crafted text would write hundreds of
+# lines per request. The app's own logger is set to INFO below.
+logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 
 from flask import Flask, render_template, request, g, abort  # noqa: E402
 from werkzeug.exceptions import HTTPException  # noqa: E402
@@ -72,14 +74,16 @@ def _error(message, status, code='error'):
     return {"error": message, "code": code}, status
 
 
-_RAY_ID = re.compile(r'[0-9A-Za-z-]{1,64}')
+# A Ray ID is 16 hex digits and the code of the Cloudflare data centre.
+_RAY_ID = re.compile(r'[0-9a-f]{16}-[A-Z]{3,4}')
 
 
 @app.before_request
 def _assign_request_id():
     # Cloudflare's Ray ID is what users see on error pages, so reuse it. The
     # header is only trusted when it looks like one: port 3000 is reachable
-    # from the LAN without Cloudflare in front.
+    # from the LAN without Cloudflare in front, so the value is not proof that
+    # the request came through Cloudflare.
     ray_id = request.headers.get('CF-Ray', '')
     g.request_id = ray_id if _RAY_ID.fullmatch(ray_id) else uuid.uuid4().hex[:16]
 
@@ -122,6 +126,8 @@ def _json_body() -> dict:
         body = request.get_json(silent=True)
     except RecursionError:  # deeply nested JSON; silent=True only covers ValueError
         body = None
+    except OSError:  # the body could not be read, e.g. malformed chunked encoding
+        raise validation.ValidationError('The request body could not be read.')
     if not isinstance(body, dict):
         raise validation.ValidationError('The request body must be a JSON object.')
     return body

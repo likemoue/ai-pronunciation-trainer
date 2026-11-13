@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -7,7 +8,8 @@ import pytest
 import audioPreprocessing
 import resource_probe
 from conftest import make_audio, requires_ffmpeg
-from crafted_media import mp4_declaring_samples, opus_webm, pcm_mkv, pcm_mkv_one_block
+from crafted_media import (mp4_declaring_samples, opus_webm, opus_webm_with_extra_tracks, pcm_mkv,
+                           pcm_mkv_one_block)
 
 pytestmark = requires_ffmpeg
 
@@ -55,6 +57,16 @@ def test_garbage_raises_decode_error(payload):
 def test_codecs_browsers_do_not_record_are_rejected():
     with pytest.raises(audioPreprocessing.AudioDecodeError):
         audioPreprocessing.decode_audio(make_audio('mkv_flac', seconds=1.0))
+
+
+def test_vorbis_is_rejected():
+    # A small Vorbis header can make the decoder allocate hundreds of MB.
+    try:
+        vorbis = make_audio('ogg_vorbis', seconds=1.0)
+    except subprocess.CalledProcessError:
+        pytest.skip('this ffmpeg has no libvorbis encoder')
+    with pytest.raises(audioPreprocessing.AudioDecodeError):
+        audioPreprocessing.decode_audio(vorbis)
 
 
 def test_float_pcm_in_matroska_is_accepted():
@@ -122,6 +134,20 @@ def test_declared_sample_table_cannot_reserve_gigabytes():
     peak.assert_below(300 * 1024 * 1024)
 
 
+def test_extra_streams_cannot_multiply_the_decoder_memory():
+    # 16 extra Opus tracks of 255 channels: about 0.9 GB if every stream is
+    # probed, although no single allocation is near -max_alloc.
+    bomb = opus_webm_with_extra_tracks(16)
+    assert len(bomb) < 20_000
+    start = time.perf_counter()
+    with resource_probe.child_peak_rss() as peak:
+        signal = audioPreprocessing.decode_audio(bomb)
+    assert time.perf_counter() - start < 3
+    peak.assert_below(300 * 1024 * 1024)
+    # The recording's own track is still read.
+    assert signal.shape[1] > 0.8 * 16000
+
+
 @pytest.mark.parametrize('rate', [100_000_001, 250_000_001])
 def test_declared_sample_rate_cannot_build_a_huge_resampler(rate):
     start = time.perf_counter()
@@ -130,6 +156,80 @@ def test_declared_sample_rate_cannot_build_a_huge_resampler(rate):
             audioPreprocessing.decode_audio(pcm_mkv_one_block(rate))
     assert time.perf_counter() - start < 3
     peak.assert_below(300 * 1024 * 1024)
+
+
+def _fake_ffmpeg(monkeypatch, script):
+    """Replace ffmpeg with a Python script; return the list of processes started."""
+    real_popen = subprocess.Popen
+    procs = []
+
+    def fake_popen(command, **kwargs):
+        proc = real_popen([sys.executable, '-c', script], **kwargs)
+        procs.append(proc)
+        return proc
+
+    monkeypatch.setattr(subprocess, 'Popen', fake_popen)
+    return procs
+
+
+def _decode_with_watchdog(limit_seconds):
+    """Run decode_audio in a thread, so a decoder that never returns fails the
+    test instead of hanging the suite."""
+    result = {}
+
+    def run():
+        try:
+            result['value'] = audioPreprocessing.decode_audio(b'any upload')
+        except Exception as e:  # noqa: BLE001 - the test inspects it
+            result['error'] = e
+
+    thread = threading.Thread(target=run, daemon=True)
+    start = time.perf_counter()
+    thread.start()
+    thread.join(limit_seconds)
+    return thread, result, time.perf_counter() - start
+
+
+def test_decoder_that_hangs_is_killed_after_the_timeout(monkeypatch):
+    procs = _fake_ffmpeg(monkeypatch, 'import time\nwhile True:\n    time.sleep(1)')
+    monkeypatch.setattr(audioPreprocessing, 'DECODE_TIMEOUT_SECONDS', 1.0)
+    thread, result, elapsed = _decode_with_watchdog(10)
+    try:
+        assert not thread.is_alive(), 'decode_audio did not return'
+        error = result.get('error')
+        assert isinstance(error, audioPreprocessing.AudioDecodeError) and 'too long' in str(error), result
+        assert elapsed < 5
+        assert procs[0].poll() is not None
+    finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.kill()
+        thread.join(5)
+
+
+def test_decoder_that_writes_a_lot_to_stderr_does_not_block(monkeypatch):
+    # More than the 64 KB a pipe holds: without a reader, ffmpeg would block on
+    # stderr before it writes its output.
+    script = '\n'.join([
+        'import sys',
+        'for i in range(5000):',
+        '    sys.stderr.write("warning %05d: " % i + "x" * 80 + "\\n")',
+        'sys.stderr.flush()',
+        'sys.stdout.buffer.write(bytes(16000 * 4))',
+    ])
+    procs = _fake_ffmpeg(monkeypatch, script)
+    monkeypatch.setattr(audioPreprocessing, 'DECODE_TIMEOUT_SECONDS', 3.0)
+    thread, result, elapsed = _decode_with_watchdog(15)
+    try:
+        assert not thread.is_alive(), 'decode_audio did not return'
+        assert 'error' not in result, result
+        assert result['value'].shape[1] == 16000
+        assert elapsed < 2.5
+    finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.kill()
+        thread.join(5)
 
 
 def test_recording_at_the_limit_is_accepted_and_just_over_it_is_not(monkeypatch):

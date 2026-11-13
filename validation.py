@@ -7,6 +7,7 @@ size), so a single anonymous request cannot tie up a worker for minutes.
 import base64
 import binascii
 import os
+import re
 import unicodedata
 
 
@@ -57,6 +58,16 @@ def latin_letter_ratio(text: str) -> float:
     return sum(1 for ch in letters if 'a' <= ch.lower() <= 'z') / len(letters)
 
 
+# Control characters (NUL makes espeak-ng fail) and lone UTF-16 surrogates:
+# JSON allows "\ud800", and the phonemiser, sqlite and hashlib cannot encode it.
+_UNREADABLE = re.compile('[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff]')
+
+
+def _require_readable(text: str) -> None:
+    if _UNREADABLE.search(text):
+        raise ValidationError('The text contains characters that cannot be read.', code='text_bad_characters')
+
+
 def practice_text(value, *, empty_message: str = 'Please type at least one word.') -> str:
     """Validate a reference sentence or a text to read aloud and return it normalised."""
     if not isinstance(value, str):
@@ -70,6 +81,7 @@ def practice_text(value, *, empty_message: str = 'Please type at least one word.
     if len(text.split()) > MAX_TEXT_WORDS:
         raise ValidationError(f'Please keep the text under {MAX_TEXT_WORDS} words.',
                               code='text_too_long')
+    _require_readable(text)
     if latin_letter_ratio(text) < MIN_LATIN_LETTER_RATIO:
         raise ValidationError('Please type English text (Latin letters).', code='text_not_english')
     return text
@@ -88,6 +100,7 @@ def speech_text(value, *, empty_message: str = 'No text to read.') -> str:
     if isinstance(value, str):
         word = normalize_text(value)
         if word and ' ' not in word and len(word) <= MAX_SINGLE_WORD_CHARS and _is_latin_word(word):
+            _require_readable(word)
             return word
     return practice_text(value, empty_message=empty_message)
 

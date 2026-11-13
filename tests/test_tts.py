@@ -1,5 +1,7 @@
 import base64
 import io
+import threading
+import time
 import wave
 
 import pytest
@@ -74,3 +76,48 @@ def test_text_without_audio_raises_value_error(fake_voice, monkeypatch):
     monkeypatch.setattr(fake_voice, 'synthesize_wav', lambda *args, **kwargs: None)
     with pytest.raises(ValueError, match='no audio'):
         piperTTS.generate_wav_base64('hello')
+
+
+def test_piece_with_many_phonemes_is_synthesised_in_smaller_parts(fake_voice):
+    # 120 characters of emoji or symbols fit in one piece but read as ~900
+    # phonemes; one inference that long holds about 0.9 GB.
+    text = 'x' * 120
+    fake_voice.phonemes_per_char = 7  # 840 phonemes, under the 900 cap
+    assert piperTTS.generate_wav_base64(text)
+    assert len(fake_voice.synthesized) > 1
+    assert all(len(part) * 7 <= piperTTS._MAX_PIECE_PHONEMES for part in fake_voice.synthesized)
+    assert ''.join(fake_voice.synthesized) == text
+
+
+def test_practice_sentence_is_not_cut_by_the_phoneme_limit(fake_voice):
+    text = 'I would like to buy a ticket to the city centre, please.'
+    fake_voice.phonemes_per_char = 2  # about what espeak-ng produces for English
+    piperTTS.generate_wav_base64(text)
+    assert fake_voice.synthesized == [text]
+
+
+def test_synthesis_runs_one_text_at_a_time(fake_voice, monkeypatch):
+    # espeak-ng is not thread-safe, and the warm-up thread can synthesise while
+    # a request does.
+    state = {'active': 0, 'peak': 0}
+    guard = threading.Lock()
+    synthesize = fake_voice.synthesize_wav
+
+    def slow_synthesize(text, wav_file, set_wav_format=True):
+        with guard:
+            state['active'] += 1
+            state['peak'] = max(state['peak'], state['active'])
+        time.sleep(0.05)
+        synthesize(text, wav_file, set_wav_format)
+        with guard:
+            state['active'] -= 1
+
+    monkeypatch.setattr(fake_voice, 'synthesize_wav', slow_synthesize)
+    threads = [threading.Thread(target=piperTTS.generate_wav_base64, args=(f'sentence number {i}',))
+               for i in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    assert len(fake_voice.synthesized) == 4
+    assert state['peak'] == 1

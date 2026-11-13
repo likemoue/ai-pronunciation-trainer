@@ -15,12 +15,16 @@ import access_log
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def test_app_warnings_survive_the_epitran_import():
+def test_app_warnings_are_logged_and_library_warnings_are_not():
     # epitran calls logging.basicConfig(level=CRITICAL) when it is imported;
     # webApp has to configure logging first, or every warning it logs is lost.
+    # Library warnings stay off: Piper warns once for every phoneme its voice
+    # lacks, so one crafted text wrote hundreds of lines.
     code = '\n'.join([
-        'import webApp',
+        'import logging, webApp',
         'webApp.app.logger.warning("probe-warning")',
+        'logging.getLogger("piper.phoneme_ids").warning("library-warning")',
+        'logging.getLogger("piper.phoneme_ids").error("library-error")',
         'print("LEVEL", webApp.app.logger.getEffectiveLevel())',
     ])
     env = {**os.environ, 'PRELOAD_LANGUAGES': '', 'PYTHONUTF8': '1'}
@@ -28,6 +32,8 @@ def test_app_warnings_survive_the_epitran_import():
                             capture_output=True, text=True, timeout=600)
     assert result.returncode == 0, result.stderr[-3000:]
     assert 'probe-warning' in result.stderr
+    assert 'library-warning' not in result.stderr
+    assert 'library-error' in result.stderr
     level = int(result.stdout.split('LEVEL')[-1].split()[0])
     assert level <= logging.INFO
 
@@ -101,6 +107,23 @@ def test_gunicorn_writes_the_access_log_as_json(tmp_path):
     assert len(lines) == 1
     record = json.loads(lines[0])
     assert record['path'] == '/a"b\\c\nd' and record['rid'] == 'abc' and record['ms'] == 7
+
+
+def test_memory_is_returned_to_the_system_after_post_requests():
+    pytest.importorskip('fcntl')  # gunicorn only runs on POSIX
+    pytest.importorskip('gunicorn.glogging')
+    settings = runpy.run_path(os.path.join(ROOT, 'gunicorn.conf.py'))
+    post_request = settings['post_request']
+    calls = []
+    post_request.__globals__['_malloc_trim'] = calls.append
+
+    class Request:
+        method = 'POST'
+
+    post_request(None, Request(), {}, None)
+    Request.method = 'GET'
+    post_request(None, Request(), {}, None)
+    assert calls == [0]
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='needs a POSIX bash')
