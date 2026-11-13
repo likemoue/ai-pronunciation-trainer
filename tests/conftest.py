@@ -36,13 +36,18 @@ _CODECS = {
 
 
 def make_audio(fmt: str, seconds: float = 1.0, rate: int = 48000, channels: int = 1,
-               silent: bool = False) -> bytes:
-    """Generate a test recording with ffmpeg's built-in signal sources."""
-    source = (f'anullsrc=r={rate}:cl={"stereo" if channels == 2 else "mono"}' if silent
-              else f'sine=frequency=440:sample_rate={rate}')
+               silent: bool = False, tracks: int = 1) -> bytes:
+    """Generate a test recording with ffmpeg's built-in signal sources
+    (tracks > 1: one audio track per tone, as no browser records)."""
+    sources = []
+    for track in range(tracks):
+        sources += ['-f', 'lavfi', '-i',
+                    f'anullsrc=r={rate}:cl={"stereo" if channels == 2 else "mono"}' if silent
+                    else f'sine=frequency={440 + 220 * track}:sample_rate={rate}']
+    maps = [arg for track in range(tracks) for arg in ('-map', str(track))] if tracks > 1 else []
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, f'audio.{fmt.split("_")[0]}')
-        command = [ffmpeg_binary(), '-nostdin', '-loglevel', 'error', '-f', 'lavfi', '-i', source,
+        command = [ffmpeg_binary(), '-nostdin', '-loglevel', 'error', *sources, *maps,
                    '-t', str(seconds), '-ac', str(channels), '-ar', str(rate), *_CODECS[fmt], out]
         subprocess.run(command, check=True)
         with open(out, 'rb') as f:
@@ -84,16 +89,20 @@ def fake_asr(monkeypatch):
 
 class FakeVoice:
     """Stands in for the Piper voice: phonemize() returns phonemes_per_char
-    phonemes per character, and synthesis writes 100 frames of silence per
-    character, instead of running espeak-ng and the ONNX model."""
+    phonemes per character (dense_chars overrides that for some characters,
+    the way espeak-ng reads emoji and digits as words), and synthesis writes
+    100 frames of silence per character, instead of running espeak-ng and the
+    ONNX model."""
 
     phonemes_per_char = 1
 
     def __init__(self):
         self.synthesized = []
+        self.dense_chars = {}
 
     def phonemize(self, text):
-        return [[ch for ch in text if not ch.isspace()] * self.phonemes_per_char]
+        return [[ch for ch in text if not ch.isspace()
+                 for _ in range(self.dense_chars.get(ch, self.phonemes_per_char))]]
 
     def synthesize_wav(self, text, wav_file, set_wav_format=True):
         self.synthesized.append(text)

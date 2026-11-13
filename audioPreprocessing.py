@@ -5,8 +5,9 @@ hard limits on what it may read, allocate and produce:
 
 * only a few container formats and codecs are accepted (whatever MediaRecorder
   produces, plus WAV), and ffmpeg may not open other files or URLs;
-* only one stream is read: ffmpeg opens a decoder for every stream while it
-  probes a file, so extra streams would multiply its memory;
+* a file with more than one stream is refused: ffmpeg opens a decoder for
+  every stream while it probes a file, so extra streams would multiply its
+  memory, and browsers record a single audio stream;
 * no single allocation inside ffmpeg may exceed _MAX_ALLOC_BYTES, so values a
   file declares (sample tables, sample rates) cannot make it reserve gigabytes;
 * the decoded audio is capped by size, not only by timestamps: `-t` trusts the
@@ -20,6 +21,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from typing import NamedTuple
 
 import numpy as np
 import torch
@@ -59,8 +61,18 @@ def _is_mp4(raw_bytes: bytes) -> bool:
     return len(raw_bytes) >= 12 and raw_bytes[4:8] == b'ftyp'
 
 
-def _run_ffmpeg(command, stdin_bytes, max_output_bytes):
-    """Run ffmpeg and return (returncode, stdout, stderr tail, timed_out).
+class _FfmpegResult(NamedTuple):
+    returncode: int
+    stdout: bytes
+    stderr_tail: bytes
+    timed_out: bool
+    # ffmpeg hit -max_streams. Matroska then stops reading the track list part
+    # way and may still exit 0 with a few samples, so the exit code is not enough.
+    too_many_streams: bool
+
+
+def _run_ffmpeg(command, stdin_bytes, max_output_bytes) -> _FfmpegResult:
+    """Run ffmpeg with a time limit and a cap on how much of its output is read.
 
     At most max_output_bytes + 4 bytes of stdout are read; if ffmpeg produces
     more, it is killed and the returned stdout is longer than max_output_bytes.
@@ -74,6 +86,7 @@ def _run_ffmpeg(command, stdin_bytes, max_output_bytes):
         raise RuntimeError(f'ffmpeg could not be started: {e}') from e
 
     timed_out = threading.Event()
+    too_many_streams = threading.Event()
 
     def kill_on_timeout():
         timed_out.set()
@@ -84,6 +97,8 @@ def _run_ffmpeg(command, stdin_bytes, max_output_bytes):
     def drain_stderr():
         # Keep only the last lines: a broken file can make ffmpeg log a lot.
         for line in proc.stderr:
+            if b'max_streams' in line:
+                too_many_streams.set()
             stderr_tail.append(line)
             del stderr_tail[:-_STDERR_LINES]
 
@@ -101,8 +116,8 @@ def _run_ffmpeg(command, stdin_bytes, max_output_bytes):
     killer.daemon = True
     started = []
     stdout = b''
-    # Everything after Popen is inside try, so ffmpeg is killed and reaped even
-    # if starting a thread is interrupted.
+    # Every thread is started inside try, so ffmpeg is killed and reaped even if
+    # starting one fails or is interrupted.
     try:
         killer.start()
         for helper in helpers:
@@ -122,7 +137,8 @@ def _run_ffmpeg(command, stdin_bytes, max_output_bytes):
             helper.join(timeout=1)
         if not helpers[0].is_alive():
             _close_quietly(proc.stderr)
-    return proc.returncode, stdout, b''.join(stderr_tail), timed_out.is_set()
+    return _FfmpegResult(proc.returncode, stdout, b''.join(stderr_tail), timed_out.is_set(),
+                         too_many_streams.is_set())
 
 
 def _close_quietly(stream):
@@ -166,7 +182,7 @@ def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
             '-ac', '1', '-ar', str(target_rate),
             '-f', 'f32le', 'pipe:1',
         ]
-        returncode, pcm, stderr, timed_out = _run_ffmpeg(command, stdin_bytes, max_output_bytes)
+        result = _run_ffmpeg(command, stdin_bytes, max_output_bytes)
     finally:
         if tmp_path:
             try:
@@ -174,13 +190,16 @@ def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
             except OSError:
                 pass
 
+    pcm = result.stdout
+    if result.too_many_streams:
+        raise AudioDecodeError('The recording has more than one stream.')
     if len(pcm) > max_output_bytes:
         raise AudioTooLongError(f'Recordings are limited to {MAX_AUDIO_SECONDS:g} seconds.')
-    if returncode != 0:
-        if timed_out:
+    if result.returncode != 0:
+        if result.timed_out:
             raise AudioDecodeError('Decoding the recording took too long.')
-        detail = stderr.decode('utf-8', 'replace').strip()[-300:]
-        raise AudioDecodeError(f'Could not decode the recording: {detail}')
+        detail = result.stderr_tail.decode('utf-8', 'replace').strip()[-300:]
+        raise AudioDecodeError(f'Could not decode the recording: {detail or f"exit status {result.returncode}"}')
 
     usable = len(pcm) - len(pcm) % 4
     samples = np.frombuffer(pcm[:usable], dtype=np.float32)

@@ -89,6 +89,26 @@ def test_piece_with_many_phonemes_is_synthesised_in_smaller_parts(fake_voice):
     assert ''.join(fake_voice.synthesized) == text
 
 
+def test_dense_run_inside_a_piece_is_cut_further(fake_voice):
+    # Density varies along a text: emoji read as many phonemes, then plain
+    # words. A cut that assumes even density leaves the emoji run in one part.
+    fake_voice.dense_chars = {'#': 40}
+    text = '#' * 20 + ' we go home now and then we eat'  # 823 phonemes
+    assert piperTTS.generate_wav_base64(text)
+    for part in fake_voice.synthesized:
+        count = sum(len(sentence) for sentence in fake_voice.phonemize(part))
+        assert count <= piperTTS._MAX_PIECE_PHONEMES or len(part) <= piperTTS._MIN_PIECE_CHARS, (part, count)
+    assert ''.join(''.join(fake_voice.synthesized).split()) == ''.join(text.split())
+
+
+def test_densest_characters_are_cut_down_to_the_shortest_piece(fake_voice):
+    fake_voice.dense_chars = {'#': 42}  # the densest real characters (Braille patterns)
+    text = 'a' + '#' * 20  # 841 phonemes
+    assert piperTTS.generate_wav_base64(text)
+    assert all(len(part) <= piperTTS._MIN_PIECE_CHARS for part in fake_voice.synthesized)
+    assert ''.join(fake_voice.synthesized) == text
+
+
 def test_practice_sentence_is_not_cut_by_the_phoneme_limit(fake_voice):
     text = 'I would like to buy a ticket to the city centre, please.'
     fake_voice.phonemes_per_char = 2  # about what espeak-ng produces for English

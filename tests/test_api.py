@@ -215,7 +215,7 @@ def test_custom_sample_accepts_line_breaks_and_tabs(client):
 # JSON allows lone UTF-16 surrogates and NUL. The phonemiser, sqlite and hashlib
 # fail on them, which used to give a 500 and a traceback in the log.
 _UNREADABLE_JSON_TEXTS = ['hello wor\\ud800ld', 'hello wor\\u0000ld', 'wor\\u0000ld', 'wor\\udfffld',
-                          'hello\\u001bworld again']
+                          'hello\\u001bworld again', 'I like ap\\u007fples', 'I like ap\\u009bples']
 
 
 @pytest.mark.parametrize('text', _UNREADABLE_JSON_TEXTS)
@@ -234,12 +234,16 @@ def test_scoring_refuses_unreadable_titles_before_decoding(client, fake_asr, tex
     assert_json_error(response, 400, 'text_bad_characters')
 
 
+class _InvalidChunkSize(Exception):
+    """Like gunicorn.http.errors.InvalidChunkSize, which is not an OSError."""
+
+
 class _UnreadableBody(io.BytesIO):
-    """A body whose bytes cannot be read, like gunicorn's reader for a
-    malformed chunked upload (it raises OSError subclasses)."""
+    """A body that cannot be read, like gunicorn's reader for a malformed
+    chunked upload."""
 
     def _fail(self, *args, **kwargs):
-        raise OSError('Invalid chunk size')
+        raise _InvalidChunkSize("Invalid chunk size: b'zz'")
 
     read = read1 = readinto = readline = _fail
 
@@ -247,7 +251,8 @@ class _UnreadableBody(io.BytesIO):
 def test_unreadable_body_is_a_client_error_without_a_traceback(client, caplog):
     response = client.post('/getSample', input_stream=_UnreadableBody(b'{"category": 1}'),
                            content_type='application/json')
-    assert_json_error(response, 400)
+    assert_json_error(response, 400, 'invalid_request')
+    assert response.get_json()['error'] == 'The request body could not be read.'
     assert 'Unhandled error' not in caplog.text
 
 

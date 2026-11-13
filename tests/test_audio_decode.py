@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import threading
@@ -141,11 +142,18 @@ def test_extra_streams_cannot_multiply_the_decoder_memory():
     assert len(bomb) < 20_000
     start = time.perf_counter()
     with resource_probe.child_peak_rss() as peak:
-        signal = audioPreprocessing.decode_audio(bomb)
+        with pytest.raises(audioPreprocessing.AudioDecodeError, match='more than one stream'):
+            audioPreprocessing.decode_audio(bomb)
     assert time.perf_counter() - start < 3
     peak.assert_below(300 * 1024 * 1024)
-    # The recording's own track is still read.
-    assert signal.shape[1] > 0.8 * 16000
+
+
+@pytest.mark.parametrize('fmt', ['webm', 'ogg', 'mp4', 'mkv_pcm_f32'])
+def test_recordings_with_two_audio_tracks_are_refused(fmt):
+    # Browsers record one track. With two, ffmpeg stops at -max_streams: Ogg
+    # and MP4 fail, and Matroska exits 0 with a few garbled samples.
+    with pytest.raises(audioPreprocessing.AudioDecodeError, match='more than one stream'):
+        audioPreprocessing.decode_audio(make_audio(fmt, seconds=2.0, tracks=2))
 
 
 @pytest.mark.parametrize('rate', [100_000_001, 250_000_001])
@@ -205,6 +213,38 @@ def test_decoder_that_hangs_is_killed_after_the_timeout(monkeypatch):
             if proc.poll() is None:
                 proc.kill()
         thread.join(5)
+
+
+def test_default_decode_timeout_is_five_seconds():
+    # A 35 s recording decodes in about 0.3 s; a longer limit lets one upload
+    # hold a worker for longer.
+    if 'AUDIO_DECODE_TIMEOUT' in os.environ:
+        pytest.skip('AUDIO_DECODE_TIMEOUT is set in this environment')
+    assert audioPreprocessing.DECODE_TIMEOUT_SECONDS == 5
+
+
+@pytest.mark.parametrize('helper', ['drain_stderr', 'feed_stdin'])
+def test_ffmpeg_is_stopped_when_a_helper_thread_cannot_start(monkeypatch, helper):
+    procs = _fake_ffmpeg(monkeypatch, 'import time\nwhile True:\n    time.sleep(1)')
+    real_start = threading.Thread.start
+
+    def start(thread):
+        target = getattr(thread, '_target', None)
+        if target is not None and target.__name__ == helper:
+            raise RuntimeError("can't start new thread")
+        return real_start(thread)
+
+    monkeypatch.setattr(threading.Thread, 'start', start)
+    try:
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            audioPreprocessing.decode_audio(b'any upload')
+        proc = procs[0]
+        assert proc.poll() is not None, 'ffmpeg is still running'
+        assert proc.stdin.closed and proc.stdout.closed
+    finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.kill()
 
 
 def test_decoder_that_writes_a_lot_to_stderr_does_not_block(monkeypatch):

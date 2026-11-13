@@ -27,8 +27,12 @@ _MAX_PIECE_CHARS = 120
 _MAX_PHONEMES = int(os.environ.get('PIPER_MAX_PHONEMES', '900'))
 # One inference holds about 16 MB per second of audio it produces, and 120
 # characters of emoji or symbols are ~900 phonemes (~56 s, ~0.9 GB), so pieces
-# with more phonemes than this are cut further. Practice sentences never are.
+# with more phonemes than this are cut further. Practice sentences never are:
+# no piece of a bank sentence comes near it.
 _MAX_PIECE_PHONEMES = int(os.environ.get('PIPER_MAX_PIECE_PHONEMES', '300'))
+# Pieces are not cut shorter than this. The densest characters (Braille
+# patterns) read as 42 phonemes each, so a piece this short has at most ~340.
+_MIN_PIECE_CHARS = 8
 _lock = threading.Lock()
 # espeak-ng, which Piper uses to phonemise text, is not thread-safe, and the
 # warm-up thread can synthesise while a request does.
@@ -176,10 +180,20 @@ def split_for_synthesis(text, max_chars=_MAX_PIECE_CHARS):
     return pieces
 
 
-def _split_dense_piece(piece, phonemes):
-    """Cut a piece with many phonemes per character into pieces of about
-    _MAX_PIECE_PHONEMES phonemes each."""
-    return split_for_synthesis(piece, max(8, len(piece) * _MAX_PIECE_PHONEMES // phonemes))
+def _phoneme_count(model, text):
+    return sum(len(sentence) for sentence in model.phonemize(text))
+
+
+def _split_dense_piece(model, piece, phonemes):
+    """Cut a piece into parts of at most _MAX_PIECE_PHONEMES phonemes, or of
+    _MIN_PIECE_CHARS characters. The first cut assumes even density; text
+    whose density varies (emoji, then words) is measured again and cut
+    further. Every cut makes the parts shorter, so this ends."""
+    if phonemes <= _MAX_PIECE_PHONEMES or len(piece) <= _MIN_PIECE_CHARS:
+        return [piece]
+    max_chars = max(_MIN_PIECE_CHARS, len(piece) * _MAX_PIECE_PHONEMES // phonemes)
+    return [smaller for part in split_for_synthesis(piece, max_chars) if part
+            for smaller in _split_dense_piece(model, part, _phoneme_count(model, part))]
 
 
 def generate_wav_base64(text, language='en'):
@@ -194,11 +208,10 @@ def generate_wav_base64(text, language='en'):
     pieces = split_for_synthesis(text)
     wav_buffer = io.BytesIO()
     with _synth_lock:
-        counts = [sum(len(sentence) for sentence in model.phonemize(piece)) for piece in pieces]
+        counts = [_phoneme_count(model, piece) for piece in pieces]
         if sum(counts) > _MAX_PHONEMES:
             raise TextTooLongError(f'{sum(counts)} phonemes (limit {_MAX_PHONEMES})')
-        pieces = [part for piece, count in zip(pieces, counts)
-                  for part in (_split_dense_piece(piece, count) if count > _MAX_PIECE_PHONEMES else [piece])]
+        pieces = [part for piece, count in zip(pieces, counts) for part in _split_dense_piece(model, piece, count)]
         with wave.open(wav_buffer, 'wb') as wav_file:
             format_set = False
             for piece in pieces:

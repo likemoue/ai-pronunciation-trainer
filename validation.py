@@ -65,7 +65,8 @@ _UNREADABLE = re.compile('[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff]')
 
 def _require_readable(text: str) -> None:
     if _UNREADABLE.search(text):
-        raise ValidationError('The text contains characters that cannot be read.', code='text_bad_characters')
+        raise ValidationError('The text contains hidden characters that cannot be read. '
+                              'Please type it again or paste it as plain text.', code='text_bad_characters')
 
 
 def practice_text(value, *, empty_message: str = 'Please type at least one word.') -> str:

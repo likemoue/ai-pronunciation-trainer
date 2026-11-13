@@ -3,9 +3,10 @@ import logging
 # Configure logging before importing the model code: epitran calls
 # logging.basicConfig(level=CRITICAL) on import, which would otherwise hide
 # every warning and error the app logs. (basicConfig does nothing once the
-# root logger has a handler.) Libraries log errors only: Piper warns once for
-# every phoneme its voice lacks, so a crafted text would write hundreds of
-# lines per request. The app's own logger is set to INFO below.
+# root logger has a handler.) Libraries that log through the root logger log
+# errors only: Piper warns once for every phoneme its voice lacks, so a crafted
+# text would write hundreds of lines per request. (transformers has its own
+# handler and level.) The app's own logger is set to INFO below.
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
 
 from flask import Flask, render_template, request, g, abort  # noqa: E402
@@ -123,11 +124,15 @@ def _json_body() -> dict:
     if not request.is_json:
         abort(415)
     try:
+        request.get_data(cache=True)  # get_json below parses these cached bytes
+    except HTTPException:
+        raise  # 413 for a body over the limit, 400 for a client that went away
+    except Exception:  # noqa: BLE001 - e.g. gunicorn's errors for malformed chunked encoding
+        raise validation.ValidationError('The request body could not be read.')
+    try:
         body = request.get_json(silent=True)
     except RecursionError:  # deeply nested JSON; silent=True only covers ValueError
         body = None
-    except OSError:  # the body could not be read, e.g. malformed chunked encoding
-        raise validation.ValidationError('The request body could not be read.')
     if not isinstance(body, dict):
         raise validation.ValidationError('The request body must be a JSON object.')
     return body

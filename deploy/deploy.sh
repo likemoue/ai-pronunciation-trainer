@@ -42,10 +42,13 @@ RUN_FLAGS=(--memory 9g --memory-swap 9g --pids-limit 512
 
 # One deploy at a time: a second run would take the first one's swap for an
 # interrupted deploy and undo it.
+# Commands the script starts inherit the lock, so after a run is killed, a
+# docker command it left running keeps it until that command ends.
 mkdir -p "$STATE_DIR"
 exec 9>>"$STATE_DIR/deploy.lock"
 if ! flock -n 9; then
-    echo "Another deploy is running (lock: $STATE_DIR/deploy.lock)." >&2
+    echo "Another deploy is running, or a command left by an interrupted one is still finishing" \
+         "(lock: $STATE_DIR/deploy.lock). Try again in a minute." >&2
     exit 1
 fi
 
@@ -65,10 +68,11 @@ wait_healthy() {
             echo "$name is not running." >&2
             return 1
         fi
-        status=$(docker container inspect -f '{{.State.Health.Status}}' "$name")
+        status=$(docker container inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$name")
         case "$status" in
             healthy) echo "$name is healthy after $((HEALTH_TIMEOUT - deadline + SECONDS)) s"; return 0 ;;
             unhealthy) echo "$name is unhealthy." >&2; return 1 ;;
+            none) echo "$name has no health check (its image has no HEALTHCHECK)." >&2; return 1 ;;
         esac
         sleep 3
     done
@@ -98,6 +102,15 @@ start_production() {
     return 1
 }
 
+# True if production was started after the swap marker was written, for
+# example by hand after a deploy was killed while it stopped production.
+started_after_swap_mark() {
+    local started
+    started=$(docker container inspect -f '{{.State.StartedAt}}' "$APP" 2>/dev/null) || return 1
+    started=$(date -d "$started" +%s 2>/dev/null) || return 1
+    (( started > $(stat -c %Y "$SWAP_MARK") ))
+}
+
 # A run that was killed while it replaced production (SIGKILL, reboot) leaves
 # the old container stopped, or renamed to $APP-previous. Unless the new
 # container had been recorded in DEPLOY_LOG, put the old one back before doing
@@ -107,6 +120,11 @@ recover_interrupted_deploy() {
     if ! container_exists "$APP-previous"; then
         stopping=$( [[ -f "$SWAP_MARK" ]] && cat "$SWAP_MARK" || true)
         if [[ -n "$stopping" && "$(container_id "$APP")" == "$stopping" ]]; then
+            if container_running "$APP" && started_after_swap_mark; then
+                echo "An earlier deploy was interrupted while it stopped $APP, which has been started again since."
+                rm -f "$SWAP_MARK"
+                return 0
+            fi
             echo "An earlier deploy was interrupted while it stopped $APP; starting it again." >&2
             # A stop that is still in progress would undo the start; wait for it.
             docker stop -t 40 "$APP" >/dev/null || true
@@ -170,6 +188,14 @@ fi
 
 log "Fetching and checking out $REF"
 git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+# The ref must have the smoke test and an image health check, which versions
+# from before this script do not (those are rolled back by hand; see the RUNBOOK).
+dockerfile=$'\n'$(git show "$REF:Dockerfile" 2>/dev/null) || dockerfile=
+if ! git cat-file -e "$REF:deploy/smoke_test.py" 2>/dev/null || [[ "$dockerfile" != *$'\n'HEALTHCHECK* ]]; then
+    echo "$REF has no deploy/smoke_test.py or no HEALTHCHECK, so deploy.sh cannot deploy it." \
+         "To go back to a version from before deploy.sh, swap by hand (deploy/RUNBOOK.md)." >&2
+    exit 1
+fi
 if [[ "$REF" == "origin/main" ]]; then
     git checkout -B main origin/main
 else
