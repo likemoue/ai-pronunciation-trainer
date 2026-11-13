@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import threading
 import time
@@ -7,6 +8,53 @@ import wave
 import pytest
 
 import piperTTS
+
+
+def test_every_english_voice_is_pinned_by_sha256():
+    for name, spec in piperTTS.VOICES.items():
+        if name.startswith('en_'):
+            assert set(spec['sha256']) == set(piperTTS._VOICE_FILES), name
+            assert all(len(digest) == 64 for digest in spec['sha256'].values()), name
+
+
+def test_default_english_voice_is_the_public_domain_ljspeech_voice():
+    assert piperTTS._configured_voices({})['en'].startswith('en_US-ljspeech-')
+
+
+def test_voice_can_be_chosen_by_environment_but_must_be_known():
+    assert piperTTS._configured_voices({'PIPER_VOICE_EN': 'en_US-lessac-medium'})['en'] == 'en_US-lessac-medium'
+    with pytest.raises(ValueError):
+        piperTTS._configured_voices({'PIPER_VOICE_EN': 'en_US-someone-else'})
+
+
+def test_voice_files_are_checked_against_their_pinned_hash(monkeypatch, tmp_path):
+    good = b'voice bytes'
+    digest = hashlib.sha256(good).hexdigest()
+    monkeypatch.setattr(piperTTS, 'MODEL_DIR', str(tmp_path))
+    monkeypatch.setitem(piperTTS.VOICES, 'en_US-test', {'path': 'x', 'sha256': {'.onnx': digest, '.onnx.json': digest}})
+    monkeypatch.setitem(piperTTS.VOICE_CONFIGS, 'en', 'en_US-test')
+    served = {'data': good}
+
+    def fake_urlretrieve(url, dest):
+        with open(dest, 'wb') as f:
+            f.write(served['data'])
+
+    monkeypatch.setattr(piperTTS.urllib.request, 'urlretrieve', fake_urlretrieve)
+    piperTTS._download_model('en')
+    assert (tmp_path / 'en_US-test.onnx').read_bytes() == good
+
+    # A download that does not match is refused and nothing is left behind.
+    for path in tmp_path.iterdir():
+        path.unlink()
+    served['data'] = b'tampered'
+    with pytest.raises(RuntimeError):
+        piperTTS._download_model('en')
+    assert list(tmp_path.iterdir()) == []
+
+    # So is a file already on disk that does not match.
+    (tmp_path / 'en_US-test.onnx').write_bytes(b'tampered')
+    with pytest.raises(RuntimeError):
+        piperTTS._download_model('en')
 
 
 def test_split_keeps_words_whole_and_pieces_short():

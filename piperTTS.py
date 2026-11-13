@@ -44,33 +44,53 @@ class TextTooLongError(ValueError):
 
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'piper')
+_VOICE_URL = 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/{path}/{file}?download=true'
+_VOICE_FILES = ('.onnx', '.onnx.json')
 
-VOICE_CONFIGS = {
-    'de': {
-        'filename': 'de_DE-thorsten-low.onnx',
-        'model_url': (
-            'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/'
-            'de/de_DE/thorsten/low/de_DE-thorsten-low.onnx?download=true'
-        ),
-        'config_url': (
-            'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/'
-            'de/de_DE/thorsten/low/de_DE-thorsten-low.onnx.json?download=true'
-        ),
+# Voices the app can download, with the sha256 of each file in rhasspy/piper-voices v1.0.0.
+VOICES = {
+    # LJ Speech: one American speaker, recordings in the public domain.
+    'en_US-ljspeech-medium': {
+        'path': 'en/en_US/ljspeech/medium',
+        'sha256': {'.onnx': '6f52a751e2349abe7a76735eb09dc1875298c77ea2342ffd2fef79ff81b87f22',
+                   '.onnx.json': '141d612cc0a95ed7efc1ca936b845c2364967f2e9217c5dbfcf69fc4d6c65860'},
     },
-    # American voice: the reference IPA comes from eng_to_ipa (CMU dictionary),
-    # which is American English, so the model voice should match it.
-    'en': {
-        'filename': 'en_US-lessac-medium.onnx',
-        'model_url': (
-            'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/'
-            'en/en_US/lessac/medium/en_US-lessac-medium.onnx?download=true'
-        ),
-        'config_url': (
-            'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/'
-            'en/en_US/lessac/medium/en_US-lessac-medium.onnx.json?download=true'
-        ),
+    # Same speaker, slightly clearer, about five times slower to synthesise.
+    'en_US-ljspeech-high': {
+        'path': 'en/en_US/ljspeech/high',
+        'sha256': {'.onnx': '5d4f08ba6a2a48c44592eed3ce56bf85e9de3dd4e20df90541ae68a8310c029a',
+                   '.onnx.json': '7e1f4634af596d83cca997fb7a931ba80b70f8a316a2655ee69c55365e0ace14'},
     },
+    # The previous English voice; its training data is licensed for research only.
+    'en_US-lessac-medium': {
+        'path': 'en/en_US/lessac/medium',
+        'sha256': {'.onnx': '5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f',
+                   '.onnx.json': 'efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0'},
+    },
+    # German is disabled in the English edition; its files are not pinned.
+    'de_DE-thorsten-low': {'path': 'de/de_DE/thorsten/low', 'sha256': None},
 }
+
+_DEFAULT_VOICES = {
+    # American English, to match the reference IPA from the CMU dictionary (eng_to_ipa).
+    'en': 'en_US-ljspeech-medium',
+    'de': 'de_DE-thorsten-low',
+}
+
+
+def _configured_voices(environ) -> dict:
+    """Voice per language: PIPER_VOICE_EN / PIPER_VOICE_DE, else the default.
+    The Docker image only contains the voice it was built with."""
+    voices = {}
+    for language, default in _DEFAULT_VOICES.items():
+        voice = environ.get(f'PIPER_VOICE_{language.upper()}') or default
+        if voice not in VOICES:
+            raise ValueError(f'Unknown Piper voice "{voice}" for "{language}"; known: {", ".join(VOICES)}')
+        voices[language] = voice
+    return voices
+
+
+VOICE_CONFIGS = _configured_voices(os.environ)
 
 
 def is_available() -> bool:
@@ -82,20 +102,35 @@ def is_available() -> bool:
         return False
 
 
-def _download_model(language):
-    config = VOICE_CONFIGS[language]
-    os.makedirs(MODEL_DIR, exist_ok=True)
+def _sha256(path) -> str:
+    digest = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(1 << 20), b''):
+            digest.update(block)
+    return digest.hexdigest()
 
-    filename = config['filename']
-    for url, fname in [(config['model_url'], filename), (config['config_url'], f'{filename}.json')]:
+
+def _download_model(language):
+    """Make sure the voice files are in MODEL_DIR and match their pinned sha256."""
+    voice = VOICE_CONFIGS[language]
+    spec = VOICES[voice]
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    for suffix in _VOICE_FILES:
+        fname = voice + suffix
         dest = os.path.join(MODEL_DIR, fname)
+        expected = (spec['sha256'] or {}).get(suffix)
         if os.path.exists(dest):
+            if expected and _sha256(dest) != expected:
+                raise RuntimeError(f'{dest} does not match its pinned sha256; delete it to download it again.')
             continue
-        print(f'Downloading Piper model ({language}): {fname} ...')
+        print(f'Downloading Piper voice ({language}): {fname} ...')
         # Download to a temporary name first so an interrupted download
         # never leaves a truncated model that looks complete on the next run.
         partial = dest + '.part'
-        urllib.request.urlretrieve(url, partial)
+        urllib.request.urlretrieve(_VOICE_URL.format(path=spec['path'], file=fname), partial)
+        if expected and _sha256(partial) != expected:
+            os.remove(partial)
+            raise RuntimeError(f'The downloaded {fname} does not match its pinned sha256.')
         os.replace(partial, dest)
         print(f'Downloaded {fname} ({os.path.getsize(dest)} bytes)')
 
@@ -120,8 +155,7 @@ def _load_model(language):
             _download_model(language)
             import onnxruntime
             from piper import PiperVoice
-            filename = VOICE_CONFIGS[language]['filename']
-            model_path = os.path.join(MODEL_DIR, filename)
+            model_path = os.path.join(MODEL_DIR, VOICE_CONFIGS[language] + '.onnx')
             voice = PiperVoice.load(model_path)
             # PiperVoice.load builds its session with default options; replace it
             # with one that uses a small, non-spinning thread pool.
