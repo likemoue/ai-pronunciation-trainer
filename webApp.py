@@ -124,10 +124,17 @@ def _json_body() -> dict:
     if not request.is_json:
         abort(415)
     try:
-        request.get_data(cache=True)  # get_json below parses these cached bytes
+        data = request.get_data(cache=True)  # get_json below parses these cached bytes
     except HTTPException:
-        raise  # 413 for a body over the limit, 400 for a client that went away
+        raise  # 413 for a Content-Length over the limit, 400 for a client that went away
     except Exception:  # noqa: BLE001 - e.g. gunicorn's errors for malformed chunked encoding
+        raise validation.ValidationError('The request body could not be read.')
+    # A chunked body has no Content-Length, so reading stops at the limit
+    # instead of refusing it; and a body shorter than its Content-Length was
+    # cut off by the client. Neither may be parsed as if it were complete.
+    if request.content_length is None and len(data) >= app.config['MAX_CONTENT_LENGTH']:
+        abort(413)
+    if request.content_length is not None and len(data) < request.content_length:
         raise validation.ValidationError('The request body could not be read.')
     try:
         body = request.get_json(silent=True)

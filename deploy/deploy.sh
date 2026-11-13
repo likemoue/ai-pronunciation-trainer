@@ -120,7 +120,8 @@ recover_interrupted_deploy() {
     if ! container_exists "$APP-previous"; then
         stopping=$( [[ -f "$SWAP_MARK" ]] && cat "$SWAP_MARK" || true)
         if [[ -n "$stopping" && "$(container_id "$APP")" == "$stopping" ]]; then
-            if container_running "$APP" && started_after_swap_mark; then
+            if container_running "$APP" && [[ -n "$(docker port "$APP" 3000 2>/dev/null)" ]] \
+                    && started_after_swap_mark; then
                 echo "An earlier deploy was interrupted while it stopped $APP, which has been started again since."
                 rm -f "$SWAP_MARK"
                 return 0
@@ -188,11 +189,15 @@ fi
 
 log "Fetching and checking out $REF"
 git fetch origin '+refs/heads/*:refs/remotes/origin/*'
-# The ref must have the smoke test and an image health check, which versions
-# from before this script do not (those are rolled back by hand; see the RUNBOOK).
-dockerfile=$'\n'$(git show "$REF:Dockerfile" 2>/dev/null) || dockerfile=
-if ! git cat-file -e "$REF:deploy/smoke_test.py" 2>/dev/null || [[ "$dockerfile" != *$'\n'HEALTHCHECK* ]]; then
-    echo "$REF has no deploy/smoke_test.py or no HEALTHCHECK, so deploy.sh cannot deploy it." \
+if ! git rev-parse --verify -q "$REF^{commit}" >/dev/null; then
+    echo "Unknown ref $REF (after the fetch, branches are origin/<name>)." >&2
+    exit 1
+fi
+# Versions from before this script have no smoke test (and their image no
+# health check, which wait_healthy reports at once); they are rolled back by
+# hand, see deploy/RUNBOOK.md.
+if ! git cat-file -e "$REF:deploy/smoke_test.py" 2>/dev/null; then
+    echo "$REF has no deploy/smoke_test.py, so deploy.sh cannot deploy it." \
          "To go back to a version from before deploy.sh, swap by hand (deploy/RUNBOOK.md)." >&2
     exit 1
 fi

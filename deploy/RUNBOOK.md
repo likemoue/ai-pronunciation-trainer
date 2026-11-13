@@ -25,7 +25,9 @@ tail -f ~/deploy-*.log
 over `ssh host deploy/deploy.sh` without a terminal. The script does the following:
 1. If an earlier deploy was killed half-way (SIGKILL, a reboot) and left the old container stopped or renamed
    to `ai-pronunciation-trainer-previous`, it starts that container again and stops. Check it, then deploy again.
-   If you already started the old container by hand, it is left running and the deploy goes on.
+   If you already started the old container by hand under its own name, it is left running and the deploy
+   goes on. If it is still named `ai-pronunciation-trainer-previous`, the script renames it back and stops;
+   deploy again.
 2. Builds the image. The build fails if the strict warm-up cannot score a test sentence.
 3. Starts a staging container on `127.0.0.1:3001`, waits until it is healthy, and runs `deploy/smoke_test.py`.
    If that fails, production is not touched and the new image is removed.
@@ -56,8 +58,8 @@ only takes the staging and swap time:
 deploy/deploy.sh <sha>
 ```
 
-`deploy.sh` refuses commits from before it existed: they have no `deploy/smoke_test.py`, and their image has no
-`HEALTHCHECK`. The last of them is `51c9af9`, the English UI before phase 0, kept as
+`deploy.sh` refuses commits from before it existed: they have no `deploy/smoke_test.py` (and their image has no
+`HEALTHCHECK`). The last of them is `51c9af9`, the English UI before phase 0, kept as
 `ai-pronunciation-trainer:english-ui` (a rebuild never moves that tag). To go back to it, or if the script
 itself cannot run, swap by hand:
 

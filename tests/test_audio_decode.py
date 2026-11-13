@@ -215,6 +215,13 @@ def test_decoder_that_hangs_is_killed_after_the_timeout(monkeypatch):
         thread.join(5)
 
 
+def test_decoder_that_fails_silently_is_reported_with_its_exit_status(monkeypatch):
+    # For example ffmpeg killed by the kernel when memory runs out: no stderr.
+    _fake_ffmpeg(monkeypatch, 'import sys\nsys.exit(3)')
+    with pytest.raises(audioPreprocessing.AudioDecodeError, match='exit status 3'):
+        audioPreprocessing.decode_audio(b'any upload')
+
+
 def test_default_decode_timeout_is_five_seconds():
     # A 35 s recording decodes in about 0.3 s; a longer limit lets one upload
     # hold a worker for longer.

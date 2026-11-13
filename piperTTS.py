@@ -31,7 +31,7 @@ _MAX_PHONEMES = int(os.environ.get('PIPER_MAX_PHONEMES', '900'))
 # no piece of a bank sentence comes near it.
 _MAX_PIECE_PHONEMES = int(os.environ.get('PIPER_MAX_PIECE_PHONEMES', '300'))
 # Pieces are not cut shorter than this. The densest characters (Braille
-# patterns) read as 42 phonemes each, so a piece this short has at most ~340.
+# patterns) read as about 44 phonemes each, so a piece this short has at most ~350.
 _MIN_PIECE_CHARS = 8
 _lock = threading.Lock()
 # espeak-ng, which Piper uses to phonemise text, is not thread-safe, and the

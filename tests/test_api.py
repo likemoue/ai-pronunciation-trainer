@@ -224,6 +224,7 @@ def test_text_with_unreadable_characters_is_refused(client, fake_voice, route, f
     body = '{"%s": "%s", "language": "en"}' % (field, text)
     response = client.post(route, data=body, content_type='application/json')
     assert_json_error(response, 400, 'text_bad_characters')
+    assert 'hidden characters' in response.get_json()['error']  # the student sees nothing to fix
     assert fake_voice.synthesized == []
 
 
@@ -246,6 +247,23 @@ class _UnreadableBody(io.BytesIO):
         raise _InvalidChunkSize("Invalid chunk size: b'zz'")
 
     read = read1 = readinto = readline = _fail
+
+
+def test_chunked_body_over_the_limit_is_refused_not_cut(client):
+    # gunicorn marks the input as terminated, and werkzeug then stops reading a
+    # chunked body at the limit instead of refusing it. An object followed by
+    # padding used to be parsed and answered as if it were the whole body.
+    body = b'{"category": 1}' + b' ' * (5 * 1024 * 1024)
+    response = client.post('/getSample', data=body, content_type='application/json',
+                           headers={'Transfer-Encoding': 'chunked'},
+                           environ_overrides={'wsgi.input_terminated': True})
+    assert_json_error(response, 413)
+
+
+def test_body_shorter_than_its_content_length_is_refused(client):
+    response = client.post('/getSample', data=b'{"category": 1}', content_type='application/json',
+                           environ_overrides={'CONTENT_LENGTH': '65', 'wsgi.input_terminated': True})
+    assert_json_error(response, 400, 'invalid_request')
 
 
 def test_unreadable_body_is_a_client_error_without_a_traceback(client, caplog):
