@@ -13,7 +13,9 @@ import urllib.error
 import urllib.request
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3000').rstrip('/')
-SENTENCE = 'Hello, I have a cat and a dog at home.'
+# The warm-up sentence (lambdaSpeechToScore.WARMUP_SENTENCES['en']), which the
+# reference voice reads reliably.
+SENTENCE = 'I have a cat and a dog at home.'
 failures = []
 
 

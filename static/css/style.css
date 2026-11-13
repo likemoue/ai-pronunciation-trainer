@@ -923,6 +923,10 @@ kbd {
 	color: inherit;
 }
 
+.footer p {
+	margin: 0;
+}
+
 /* ============ Recording modal ============ */
 .modal {
 	position: fixed;
