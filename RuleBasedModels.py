@@ -1,12 +1,10 @@
 import ModelInterfaces
-import torch
-import numpy as np
-import epitran
 import eng_to_ipa
 
 
 def get_phonem_converter(language: str):
     if language == 'de':
+        import epitran  # only needed for German, which the English image does not install
         phonem_converter = EpitranPhonemConverter(
             epitran.Epitran('deu-Latn'))
     elif language == 'en':

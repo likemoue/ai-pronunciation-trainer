@@ -9,6 +9,8 @@ import urllib.request
 import wave
 from collections import OrderedDict
 
+import logging_setup
+
 _models = {}
 _cache = OrderedDict()
 _cache_bytes = 0
@@ -35,8 +37,9 @@ _MAX_PIECE_PHONEMES = int(os.environ.get('PIPER_MAX_PIECE_PHONEMES', '300'))
 _MIN_PIECE_CHARS = 8
 _lock = threading.Lock()
 # espeak-ng, which Piper uses to phonemise text, is not thread-safe, and the
-# warm-up thread can synthesise while a request does.
+# warm-up thread or another gthread thread can synthesise while a request does.
 _synth_lock = threading.Lock()
+logger = logging_setup.get_logger(__name__)
 
 
 class TextTooLongError(ValueError):
@@ -123,7 +126,7 @@ def _download_model(language):
             if expected and _sha256(dest) != expected:
                 raise RuntimeError(f'{dest} does not match its pinned sha256; delete it to download it again.')
             continue
-        print(f'Downloading Piper voice ({language}): {fname} ...')
+        logger.info('Downloading Piper voice (%s): %s', language, fname)
         # Download to a temporary name first so an interrupted download
         # never leaves a truncated model that looks complete on the next run.
         partial = dest + '.part'
@@ -132,7 +135,7 @@ def _download_model(language):
             os.remove(partial)
             raise RuntimeError(f'The downloaded {fname} does not match its pinned sha256.')
         os.replace(partial, dest)
-        print(f'Downloaded {fname} ({os.path.getsize(dest)} bytes)')
+        logger.info('Downloaded %s (%d bytes)', fname, os.path.getsize(dest))
 
 
 def _session_options():
