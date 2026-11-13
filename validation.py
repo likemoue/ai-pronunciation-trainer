@@ -7,6 +7,7 @@ size), so a single anonymous request cannot tie up a worker for minutes.
 import base64
 import binascii
 import os
+import unicodedata
 
 
 class ValidationError(ValueError):
@@ -23,6 +24,10 @@ MAX_TEXT_WORDS = int(os.environ.get('MAX_TEXT_WORDS', '60'))
 # Share of letters that must be plain A-Z. Practice texts are English; this
 # keeps CJK and other scripts away from the phonemiser and the TTS voice.
 MIN_LATIN_LETTER_RATIO = 0.9
+# The player reads single words of a practice sentence aloud. Those can be a
+# number ("2:30") or a name with accents ("André"), which a whole sentence may
+# contain but which fail the letter-ratio check on their own.
+MAX_SINGLE_WORD_CHARS = 20
 CATEGORIES = (0, 1, 2, 3)  # 0 = random, 1 = easy, 2 = medium, 3 = hard
 
 _TYPOGRAPHY = str.maketrans({
@@ -59,12 +64,32 @@ def practice_text(value, *, empty_message: str = 'Please type at least one word.
     text = normalize_text(value)
     if not text:
         raise ValidationError(empty_message)
-    if len(text) > MAX_TEXT_CHARS or len(text.split()) > MAX_TEXT_WORDS:
+    if len(text) > MAX_TEXT_CHARS:
         raise ValidationError(f'Please keep the text under {MAX_TEXT_CHARS} characters.',
+                              code='text_too_long')
+    if len(text.split()) > MAX_TEXT_WORDS:
+        raise ValidationError(f'Please keep the text under {MAX_TEXT_WORDS} words.',
                               code='text_too_long')
     if latin_letter_ratio(text) < MIN_LATIN_LETTER_RATIO:
         raise ValidationError('Please type English text (Latin letters).', code='text_not_english')
     return text
+
+
+def _is_latin_word(word: str) -> bool:
+    """True if every letter is A-Z once accents are removed (digits are fine)."""
+    letters = [ch for ch in unicodedata.normalize('NFKD', word)
+               if ch.isalpha() and not unicodedata.combining(ch)]
+    return all('a' <= ch.lower() <= 'z' for ch in letters)
+
+
+def speech_text(value, *, empty_message: str = 'No text to read.') -> str:
+    """Validate a text for the TTS route: a practice text, or one short word
+    from one (which may be a number or an accented name)."""
+    if isinstance(value, str):
+        word = normalize_text(value)
+        if word and ' ' not in word and len(word) <= MAX_SINGLE_WORD_CHARS and _is_latin_word(word):
+            return word
+    return practice_text(value, empty_message=empty_message)
 
 
 def category(value) -> int:

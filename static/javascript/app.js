@@ -13,6 +13,7 @@
     const SILENCE_RMS = 0.003;
     const MIN_RECORDING_MS = 600;
     const CUSTOM_MAX_CHARS = 300;
+    const CUSTOM_MAX_WORDS = 60;
     // Cloudflare gives up after 125 s (error 524), so stop waiting before that.
     const SCORE_TIMEOUT_MS = 100000;
     const CATEGORY_MULTIPLIER = { 0: 1.3, 1: 1, 2: 1.3, 3: 1.6, custom: 1 };
@@ -240,6 +241,10 @@
         }
         if (text.length > CUSTOM_MAX_CHARS) {
             showCustomError(`Please keep it under ${CUSTOM_MAX_CHARS} characters.`);
+            return;
+        }
+        if (text.split(' ').length > CUSTOM_MAX_WORDS) {
+            showCustomError(`Please keep it under ${CUSTOM_MAX_WORDS} words.`);
             return;
         }
         if (state.loading) return;

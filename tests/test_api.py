@@ -93,6 +93,20 @@ def test_errors_are_json(client):
     assert_json_error(client.get('/getSample'), 405)
 
 
+def test_method_not_allowed_keeps_the_allow_header(client):
+    response = client.get('/getSample')
+    assert response.status_code == 405
+    assert 'POST' in response.headers['Allow']
+    assert response.mimetype == 'application/json'
+
+
+@pytest.mark.parametrize('body', ['[' * 100_000, '{"a":' * 50_000, '{"category": ' + '[' * 20_000])
+@pytest.mark.parametrize('path', API_ROUTES)
+def test_deeply_nested_json_is_a_client_error(client, path, body):
+    response = client.post(path, data=body, content_type='application/json')
+    assert_json_error(response, 400)
+
+
 def test_no_cors_headers(client):
     response = client.post('/getSample', json={'category': 1, 'language': 'en'},
                            headers={'Origin': 'https://evil.example'})
@@ -115,6 +129,15 @@ def test_request_id_reuses_cloudflare_ray_id(client):
     assert response.headers['X-Request-ID'] == 'a59c8cf62e459010-SIN'
 
 
+@pytest.mark.parametrize('ray', ['abc"def\\', 'x' * 65, 'a b', '<script>', ''])
+def test_request_id_ignores_values_that_are_not_ray_ids(client, ray):
+    # Port 3000 is reachable without Cloudflare, so CF-Ray can be anything.
+    response = client.get('/', headers={'CF-Ray': ray})
+    request_id = response.headers['X-Request-ID']
+    assert request_id != ray
+    assert len(request_id) == 16 and all(ch in '0123456789abcdef' for ch in request_id)
+
+
 def test_page_has_no_inline_styles_or_scripts(client):
     html = client.get('/').get_data(as_text=True)
     assert 'style="' not in html
@@ -130,9 +153,19 @@ def test_scoring_rejects_long_title_before_decoding(client, fake_asr):
     assert time.perf_counter() - start < 1
 
 
-@pytest.mark.parametrize('title', ['你好世界', 'Xin chào các bạn học sinh thân mến', '   ', '- ... -'])
-def test_scoring_rejects_unusable_titles(client, fake_asr, title):
-    assert_json_error(score(client, title, b'x'), 400)
+@pytest.mark.parametrize('title,code', [('你好世界', 'text_not_english'),
+                                        ('Xin chào các bạn học sinh thân mến', 'text_not_english'),
+                                        ('   ', 'invalid_request'), ('- ... -', 'invalid_request')])
+def test_scoring_rejects_unusable_titles(client, fake_asr, title, code):
+    # The code shows the title was refused, not the (fake) audio.
+    assert_json_error(score(client, title, b'x'), 400, code)
+
+
+def test_word_limit_has_its_own_message(client):
+    text = 'I see a cat ' * 16  # 64 words, 191 characters
+    response = client.post('/getCustomSample', json={'text': text, 'language': 'en'})
+    assert_json_error(response, 400, 'text_too_long')
+    assert '60 words' in response.get_json()['error']
 
 
 @pytest.mark.parametrize('text', ['你' * 600, 'Привет, как дела у тебя сегодня?', 'a ' * 200, ''])
@@ -141,6 +174,29 @@ def test_tts_rejects_unusable_text_without_synthesis(client, text):
     response = client.post('/getAudioFromText', json={'value': text, 'language': 'en'})
     assert_json_error(response, 400)
     assert time.perf_counter() - start < 1
+
+
+@pytest.mark.parametrize('word', ['André', '10', '2:30', 'naïve', 'São', 'José', 'Hello', '100%'])
+def test_tts_reads_single_words_from_practice_sentences(client, fake_voice, word):
+    # The player reads one word of a sentence at a time; numbers and accented
+    # names used to get a 400 and fall back to the browser voice.
+    response = client.post('/getAudioFromText', json={'value': word, 'language': 'en'})
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json()['wavBase64']
+
+
+@pytest.mark.parametrize('text', ['你好', 'Привет', 'Xin chào các bạn'])
+def test_tts_single_word_exception_does_not_admit_other_scripts(client, fake_voice, text):
+    assert_json_error(client.post('/getAudioFromText', json={'value': text, 'language': 'en'}),
+                      400, 'text_not_english')
+    assert fake_voice.synthesized == []
+
+
+def test_tts_refuses_text_that_would_be_minutes_of_speech(client, fake_voice):
+    fake_voice.phonemes_per_char = 20  # like digits and emoji, which espeak reads as words
+    response = client.post('/getAudioFromText', json={'value': 'a1234 ' * 20, 'language': 'en'})
+    assert_json_error(response, 400, 'text_too_long')
+    assert fake_voice.synthesized == []
 
 
 def test_custom_sample_normalises_text(client):

@@ -17,10 +17,23 @@ _CACHE_MAX_BYTES = int(os.environ.get('PIPER_CACHE_MAX_MB', '64')) * 1024 * 1024
 # ONNX Runtime ignores OMP_NUM_THREADS and by default starts one thread per core,
 # which competes with Whisper in the other worker. A short sentence needs 1-2.
 _PIPER_THREADS = int(os.environ.get('PIPER_THREADS', '2'))
-# Long sentences are synthesised in pieces so one request cannot hold a large
+# Long texts are synthesised in pieces so one request cannot hold a large
 # inference buffer.
 _MAX_PIECE_CHARS = 120
+# espeak-ng reads numbers, symbols and emoji as whole words, so the character
+# limit alone does not bound how long the audio is: 300 characters of emoji
+# take about 4,500 phonemes (over 4 minutes of speech). Practice sentences need
+# at most about 260 phonemes, and number-heavy 300-character texts about 570.
+_MAX_PHONEMES = int(os.environ.get('PIPER_MAX_PHONEMES', '900'))
 _lock = threading.Lock()
+# espeak-ng, which Piper uses to phonemise text, is not thread-safe, and the
+# warm-up thread can synthesise while a request does.
+_synth_lock = threading.Lock()
+
+
+class TextTooLongError(ValueError):
+    """The text would take far longer to say than its length suggests."""
+
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'piper')
 
@@ -124,18 +137,38 @@ def _has_wav_format(wav_file) -> bool:
 
 
 def split_for_synthesis(text, max_chars=_MAX_PIECE_CHARS):
-    """Split text into pieces of at most max_chars, preferring sentence and
-    clause boundaries and never splitting inside a word."""
-    pieces = []
-    for sentence in re.split(r'(?<=[.!?;:])\s+', text.strip()):
+    """Split text into pieces of at most max_chars for synthesis.
+
+    A text that fits is synthesised in one piece, so its prosody is exactly
+    what the voice produces for the whole sentence. Longer texts are split at
+    sentence boundaries and the sentences are packed into pieces; a sentence
+    that is still too long is cut at a comma or a space, never inside a word.
+    """
+    text = text.strip()
+    if len(text) <= max_chars:
+        return [text] if text else []
+    pieces, current = [], ''
+    for sentence in re.split(r'(?<=[.!?;:])\s+', text):
         while len(sentence) > max_chars:
-            cut = max(sentence.rfind(', ', 0, max_chars), sentence.rfind(' ', 0, max_chars))
+            comma = sentence.rfind(', ', 0, max_chars)
+            cut = comma + 1 if comma >= max_chars // 2 else sentence.rfind(' ', 0, max_chars + 1)
             if cut <= 0:
                 cut = max_chars
-            pieces.append(sentence[:cut + 1].strip())
-            sentence = sentence[cut + 1:].strip()
-        if sentence:
-            pieces.append(sentence)
+            if current:
+                pieces.append(current)
+                current = ''
+            pieces.append(sentence[:cut].strip())
+            sentence = sentence[cut:].strip()
+        if not sentence:
+            continue
+        if current and len(current) + 1 + len(sentence) <= max_chars:
+            current = f'{current} {sentence}'
+        else:
+            if current:
+                pieces.append(current)
+            current = sentence
+    if current:
+        pieces.append(current)
     return pieces
 
 
@@ -148,16 +181,25 @@ def generate_wav_base64(text, language='en'):
             return _cache[key]
 
     model = _load_model(language)
+    pieces = split_for_synthesis(text)
     wav_buffer = io.BytesIO()
-    with wave.open(wav_buffer, 'wb') as wav_file:
-        format_set = False
-        for piece in split_for_synthesis(text):
-            # The first piece that produces audio sets the WAV format; later
-            # pieces append their frames to the same file.
-            model.synthesize_wav(piece, wav_file, set_wav_format=not format_set)
-            format_set = format_set or _has_wav_format(wav_file)
-        if not format_set:
-            raise ValueError('The text produced no audio.')
+    with _synth_lock:
+        phonemes = sum(len(sentence) for piece in pieces for sentence in model.phonemize(piece))
+        if phonemes > _MAX_PHONEMES:
+            raise TextTooLongError(f'{phonemes} phonemes (limit {_MAX_PHONEMES})')
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            format_set = False
+            for piece in pieces:
+                # The first piece that produces audio sets the WAV format; later
+                # pieces append their frames to the same file.
+                model.synthesize_wav(piece, wav_file, set_wav_format=not format_set)
+                format_set = format_set or _has_wav_format(wav_file)
+            if not format_set:
+                # Give the file a format so closing it does not hide this error.
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(16000)
+                raise ValueError('The text produced no audio.')
     result = base64.b64encode(wav_buffer.getvalue()).decode('utf-8')
 
     # Bounded LRU: users can submit arbitrary text, so the cache must not grow forever.

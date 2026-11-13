@@ -51,3 +51,26 @@ def test_practice_text_limits():
     with pytest.raises(validation.ValidationError):
         validation.practice_text(12345)
     assert validation.practice_text('Café au lait is a French drink') == 'Café au lait is a French drink'
+
+
+def test_word_and_character_limits_have_their_own_messages():
+    with pytest.raises(validation.ValidationError, match='characters'):
+        validation.practice_text('x' * (validation.MAX_TEXT_CHARS + 1))
+    with pytest.raises(validation.ValidationError, match='words'):
+        validation.practice_text('a ' * (validation.MAX_TEXT_WORDS + 1))
+
+
+@pytest.mark.parametrize('word', ['André', '10', '2:30', 'naïve', 'São', 'İstanbul', 'Hello,'])
+def test_speech_text_accepts_single_latin_words_and_numbers(word):
+    assert validation.speech_text(word) == validation.normalize_text(word)
+
+
+@pytest.mark.parametrize('value', ['你好', 'Привет', 'ß' * 25, 'Xin chào các bạn học sinh', '', None, 42])
+def test_speech_text_rejects_everything_else_practice_text_rejects(value):
+    with pytest.raises(validation.ValidationError):
+        validation.speech_text(value)
+
+
+def test_speech_text_still_accepts_whole_practice_sentences(bank_sentences):
+    for sentence in bank_sentences[:2000]:
+        validation.speech_text(sentence)

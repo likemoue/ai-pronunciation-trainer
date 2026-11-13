@@ -1,18 +1,23 @@
 """Decode browser recordings into 16 kHz mono float audio with ffmpeg.
 
 One ffmpeg call does the container parsing, down-mixing and resampling, with
-hard limits on what it may read and how long it may run:
+hard limits on what it may read, allocate and produce:
 
-* only a few container formats are accepted (whatever MediaRecorder produces,
-  plus WAV) and ffmpeg may not open other files or URLs;
-* at most MAX_AUDIO_SECONDS (+0.5 s to detect longer input) are decoded, so a
-  tiny upload that declares hours of audio cannot exhaust memory;
+* only a few container formats and codecs are accepted (whatever MediaRecorder
+  produces, plus WAV), and ffmpeg may not open other files or URLs;
+* no single allocation inside ffmpeg may exceed _MAX_ALLOC_BYTES, so values a
+  file declares (sample tables, sample rates) cannot make it reserve gigabytes;
+* the decoded audio is capped by size, not only by timestamps: `-t` trusts the
+  timestamps in the upload, which can be crafted so it never fires, so at most
+  MAX_AUDIO_SECONDS (+0.5 s to detect longer input) of samples are read before
+  ffmpeg is stopped;
 * the subprocess is killed after DECODE_TIMEOUT_SECONDS.
 """
 import os
 import shutil
 import subprocess
 import tempfile
+import threading
 
 import numpy as np
 import torch
@@ -30,6 +35,13 @@ MAX_AUDIO_SECONDS = float(os.environ.get('MAX_AUDIO_SECONDS', '35'))
 DECODE_TIMEOUT_SECONDS = float(os.environ.get('AUDIO_DECODE_TIMEOUT', '20'))
 # Demuxers for webm/Matroska (Chrome, Firefox), Ogg (Firefox), MP4 (Safari) and WAV.
 _FORMAT_WHITELIST = 'matroska,webm,ogg,mov,mp4,m4a,wav'
+# Decoders for what browsers record: Opus (Chrome, Firefox, Edge), AAC (Safari),
+# Vorbis (older Firefox) and PCM (WAV, and Chrome's audio/webm;codecs=pcm).
+_CODEC_WHITELIST = 'opus,vorbis,aac,pcm_s16le,pcm_f32le'
+# Largest single allocation ffmpeg may make (demuxer indexes, resampler filters,
+# frames). A 30 s recording needs a few MB.
+_MAX_ALLOC_BYTES = 64 * 1024 * 1024
+_STDERR_LINES = 20
 
 
 def _ffmpeg_binary() -> str:
@@ -41,11 +53,79 @@ def _is_mp4(raw_bytes: bytes) -> bool:
     return len(raw_bytes) >= 12 and raw_bytes[4:8] == b'ftyp'
 
 
+def _run_ffmpeg(command, stdin_bytes, max_output_bytes):
+    """Run ffmpeg and return (returncode, stdout, stderr tail, timed_out).
+
+    At most max_output_bytes + 4 bytes of stdout are read; if ffmpeg produces
+    more, it is killed and the returned stdout is longer than max_output_bytes.
+    """
+    try:
+        proc = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE if stdin_bytes is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError as e:
+        raise RuntimeError(f'ffmpeg could not be started: {e}') from e
+
+    timed_out = threading.Event()
+
+    def kill_on_timeout():
+        timed_out.set()
+        proc.kill()
+
+    stderr_tail = []
+
+    def drain_stderr():
+        # Keep only the last lines: a broken file can make ffmpeg log a lot.
+        for line in proc.stderr:
+            stderr_tail.append(line)
+            del stderr_tail[:-_STDERR_LINES]
+
+    def feed_stdin():
+        try:
+            proc.stdin.write(stdin_bytes)
+        except OSError:  # ffmpeg stopped reading (finished, failed or killed)
+            pass
+        _close_quietly(proc.stdin)
+
+    helpers = [threading.Thread(target=drain_stderr, daemon=True)]
+    if stdin_bytes is not None:
+        helpers.append(threading.Thread(target=feed_stdin, daemon=True))
+    killer = threading.Timer(DECODE_TIMEOUT_SECONDS, kill_on_timeout)
+    killer.daemon = True
+    killer.start()
+    for helper in helpers:
+        helper.start()
+    try:
+        stdout = proc.stdout.read(max_output_bytes + 4)
+        if len(stdout) <= max_output_bytes:
+            proc.wait()
+    finally:
+        killer.cancel()
+        proc.kill()  # no-op if ffmpeg has already exited
+        proc.wait()
+        _close_quietly(proc.stdout)
+        for helper in helpers:
+            helper.join(timeout=1)
+        if not helpers[0].is_alive():
+            _close_quietly(proc.stderr)
+    return proc.returncode, stdout, b''.join(stderr_tail), timed_out.is_set()
+
+
+def _close_quietly(stream):
+    try:
+        stream.close()
+    except (OSError, ValueError):
+        pass
+
+
 def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
     """Return the recording as a float32 tensor of shape [1, samples] at target_rate."""
     if not raw_bytes:
         raise AudioDecodeError('Empty recording.')
 
+    # f32le output: 4 bytes per sample.
+    max_output_bytes = int((MAX_AUDIO_SECONDS + 0.5) * target_rate) * 4
     tmp_path = None
     try:
         if _is_mp4(raw_bytes):
@@ -60,21 +140,17 @@ def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
 
         command = [
             _ffmpeg_binary(), '-nostdin', '-hide_banner', '-loglevel', 'error',
+            '-max_alloc', str(_MAX_ALLOC_BYTES),
             '-protocol_whitelist', protocols,
             '-format_whitelist', _FORMAT_WHITELIST,
+            '-codec_whitelist', _CODEC_WHITELIST,
             '-i', source,
             '-map', '0:a:0', '-vn', '-sn', '-dn',
             '-t', f'{MAX_AUDIO_SECONDS + 0.5:.2f}',
             '-ac', '1', '-ar', str(target_rate),
             '-f', 'f32le', 'pipe:1',
         ]
-        try:
-            completed = subprocess.run(command, input=stdin_bytes, capture_output=True,
-                                       timeout=DECODE_TIMEOUT_SECONDS, check=False)
-        except subprocess.TimeoutExpired:
-            raise AudioDecodeError('Decoding the recording took too long.')
-        except OSError as e:
-            raise RuntimeError(f'ffmpeg could not be started: {e}') from e
+        returncode, pcm, stderr, timed_out = _run_ffmpeg(command, stdin_bytes, max_output_bytes)
     finally:
         if tmp_path:
             try:
@@ -82,11 +158,14 @@ def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
             except OSError:
                 pass
 
-    if completed.returncode != 0:
-        detail = completed.stderr.decode('utf-8', 'replace').strip()[-300:]
+    if len(pcm) > max_output_bytes:
+        raise AudioTooLongError(f'Recordings are limited to {MAX_AUDIO_SECONDS:g} seconds.')
+    if returncode != 0:
+        if timed_out:
+            raise AudioDecodeError('Decoding the recording took too long.')
+        detail = stderr.decode('utf-8', 'replace').strip()[-300:]
         raise AudioDecodeError(f'Could not decode the recording: {detail}')
 
-    pcm = completed.stdout
     usable = len(pcm) - len(pcm) % 4
     samples = np.frombuffer(pcm[:usable], dtype=np.float32)
     if samples.size > int(MAX_AUDIO_SECONDS * target_rate):

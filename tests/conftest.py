@@ -26,6 +26,10 @@ _CODECS = {
     'mp4': ['-c:a', 'aac', '-f', 'mp4'],
     'wav': ['-c:a', 'pcm_s16le', '-f', 'wav'],
     'flac': ['-c:a', 'flac', '-f', 'flac'],
+    # Matroska is a whitelisted container, but browsers never record FLAC in it.
+    'mkv_flac': ['-c:a', 'flac', '-f', 'matroska'],
+    # Chrome's audio/webm;codecs=pcm records 32-bit float PCM in Matroska.
+    'mkv_pcm_f32': ['-c:a', 'pcm_f32le', '-f', 'matroska'],
 }
 
 
@@ -35,7 +39,7 @@ def make_audio(fmt: str, seconds: float = 1.0, rate: int = 48000, channels: int 
     source = (f'anullsrc=r={rate}:cl={"stereo" if channels == 2 else "mono"}' if silent
               else f'sine=frequency=440:sample_rate={rate}')
     with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, f'audio.{fmt}')
+        out = os.path.join(tmp, f'audio.{fmt.split("_")[0]}')
         command = [ffmpeg_binary(), '-nostdin', '-loglevel', 'error', '-f', 'lavfi', '-i', source,
                    '-t', str(seconds), '-ac', str(channels), '-ar', str(rate), *_CODECS[fmt], out]
         subprocess.run(command, check=True)
@@ -74,6 +78,40 @@ def fake_asr(monkeypatch):
     trainer = pronunciationTrainer.PronunciationTrainer(asr, RuleBasedModels.EngPhonemConverter())
     monkeypatch.setitem(lambdaSpeechToScore._trainer_cache, 'en', trainer)
     return asr
+
+
+class FakeVoice:
+    """Stands in for the Piper voice: phonemize() returns phonemes_per_char
+    phonemes per character, and synthesis writes 100 frames of silence per
+    character, instead of running espeak-ng and the ONNX model."""
+
+    phonemes_per_char = 1
+
+    def __init__(self):
+        self.synthesized = []
+
+    def phonemize(self, text):
+        return [[ch for ch in text if not ch.isspace()] * self.phonemes_per_char]
+
+    def synthesize_wav(self, text, wav_file, set_wav_format=True):
+        self.synthesized.append(text)
+        if set_wav_format:
+            wav_file.setframerate(22050)
+            wav_file.setsampwidth(2)
+            wav_file.setnchannels(1)
+        wav_file.writeframes(bytes(2) * len(text) * 100)
+
+
+@pytest.fixture
+def fake_voice(monkeypatch):
+    """Synthesise with FakeVoice instead of loading Piper."""
+    import piperTTS
+    voice = FakeVoice()
+    monkeypatch.setattr(piperTTS, '_load_model', lambda language: voice)
+    monkeypatch.setattr(piperTTS, 'is_available', lambda: True)
+    monkeypatch.setattr(piperTTS, '_cache', piperTTS.OrderedDict())
+    monkeypatch.setattr(piperTTS, '_cache_bytes', 0)
+    return voice
 
 
 @pytest.fixture

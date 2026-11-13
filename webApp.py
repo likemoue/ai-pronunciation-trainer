@@ -1,12 +1,21 @@
-from flask import Flask, render_template, request, g, abort
-from werkzeug.exceptions import HTTPException
-import webbrowser
-import os
-import threading
-import json
-import uuid
+import logging
 
-import lambdaTTS
+# Configure logging before importing the model code: epitran calls
+# logging.basicConfig(level=CRITICAL) on import, which would otherwise hide
+# every warning and error the app logs. (basicConfig does nothing once the
+# root logger has a handler.)
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+
+from flask import Flask, render_template, request, g, abort  # noqa: E402
+from werkzeug.exceptions import HTTPException  # noqa: E402
+import webbrowser  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+import threading  # noqa: E402
+import json  # noqa: E402
+import uuid  # noqa: E402
+
+import lambdaTTS  # noqa: E402
 import lambdaSpeechToScore
 import lambdaGetSample
 import language_registry
@@ -15,6 +24,7 @@ import audioPreprocessing
 import validation
 
 app = Flask(__name__)
+app.logger.setLevel(logging.INFO)
 # Largest request body accepted. A 30 s browser recording is well under 1 MB,
 # even base64-encoded; Flask answers 413 before reading anything bigger.
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_REQUEST_BYTES', str(4 * 1024 * 1024)))
@@ -62,10 +72,16 @@ def _error(message, status, code='error'):
     return {"error": message, "code": code}, status
 
 
+_RAY_ID = re.compile(r'[0-9A-Za-z-]{1,64}')
+
+
 @app.before_request
 def _assign_request_id():
-    # Cloudflare's Ray ID is what users see on error pages, so reuse it.
-    g.request_id = request.headers.get('CF-Ray') or uuid.uuid4().hex[:16]
+    # Cloudflare's Ray ID is what users see on error pages, so reuse it. The
+    # header is only trusted when it looks like one: port 3000 is reachable
+    # from the LAN without Cloudflare in front.
+    ray_id = request.headers.get('CF-Ray', '')
+    g.request_id = ray_id if _RAY_ID.fullmatch(ray_id) else uuid.uuid4().hex[:16]
 
 
 @app.after_request
@@ -85,7 +101,10 @@ def _handle_validation_error(e):
 def _handle_http_error(e):
     messages = {413: 'The request is too large.',
                 415: 'Requests must be sent as JSON.'}
-    return _error(messages.get(e.code, e.description), e.code, e.name.lower().replace(' ', '_'))
+    body, status = _error(messages.get(e.code, e.description), e.code, e.name.lower().replace(' ', '_'))
+    # Keep headers such as Allow on a 405; the body is JSON, not HTML.
+    headers = [(name, value) for name, value in e.get_headers() if name.lower() != 'content-type']
+    return body, status, headers
 
 
 @app.errorhandler(Exception)
@@ -99,7 +118,10 @@ def _json_body() -> dict:
     cross-site HTML form cannot send it without a CORS preflight."""
     if not request.is_json:
         abort(415)
-    body = request.get_json(silent=True)
+    try:
+        body = request.get_json(silent=True)
+    except RecursionError:  # deeply nested JSON; silent=True only covers ValueError
+        body = None
     if not isinstance(body, dict):
         raise validation.ValidationError('The request body must be a JSON object.')
     return body
@@ -121,13 +143,16 @@ def main():
 @app.route(rootPath+'/getAudioFromText', methods=['POST'])
 def getAudioFromText():
     body = _json_body()
-    text = validation.practice_text(body.get('value'), empty_message='No text to read.')
+    text = validation.speech_text(body.get('value'))
     language = _request_language(body)
 
     # Prefer Piper on any OS where it is installed; it is fast and natural-sounding.
     if piperTTS.is_available() and language in piperTTS.VOICE_CONFIGS:
         try:
             wav_b64 = piperTTS.generate_wav_base64(text, language=language)
+        except piperTTS.TextTooLongError as e:
+            app.logger.warning('TTS text refused (request %s): %s', g.request_id, e)
+            return _error('This text is too long to read aloud.', 400, 'text_too_long')
         except Exception:
             app.logger.exception('TTS failed (request %s)', g.request_id)
             # Temporary: the browser falls back to its own voice for this text only.
@@ -188,17 +213,22 @@ def _mark_ready():
         with open(os.path.join(READY_DIR, str(os.getpid())), 'w') as marker:
             marker.write('ready\n')
     except OSError as e:
-        print(f'Could not write the readiness marker: {e}')
+        app.logger.warning('Could not write the readiness marker: %s', e)
 
 
 def _warm_up_models():
-    """Load models in the background so the first user does not wait for them."""
+    """Load models in the background so the first user does not wait for them.
+
+    The worker is marked ready once every preloaded language has scored its
+    warm-up sentence. With nothing to preload (PRELOAD_LANGUAGES=''), it is
+    ready at once and the models load on the first request.
+    """
     languages = [lang.strip() for lang in os.environ.get('PRELOAD_LANGUAGES', 'en').split(',') if lang.strip()]
-    if not languages:
-        return
     all_ok = True
     for lang in languages:
         if not language_registry.is_enabled(lang):
+            app.logger.warning('PRELOAD_LANGUAGES lists "%s", which is not in ENABLED_LANGUAGES; '
+                               'it is not warmed up.', lang)
             continue
         try:
             if piperTTS.is_available() and lang in piperTTS.VOICE_CONFIGS:
