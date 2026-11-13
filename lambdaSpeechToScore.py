@@ -17,9 +17,11 @@ SILENCE_PEAK_THRESHOLD = 0.003
 
 # Short sentences used to warm up and self-check the scoring pipeline. They
 # contain the one-letter words "I" and "a", which take their own code path in
-# the word alignment.
+# the word alignment. Whisper hears the LJ Speech voice's "Hello" as "Below"
+# about half the time, so the English sentence starts with "I" (100% in 30 of
+# 30 syntheses).
 WARMUP_SENTENCES = {
-    'en': 'Hello, I have a cat and a dog at home.',
+    'en': 'I have a cat and a dog at home.',
     'de': 'Hallo, ich habe eine Katze und einen Hund.',
 }
 

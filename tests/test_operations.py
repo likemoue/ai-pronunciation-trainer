@@ -126,6 +126,15 @@ def test_memory_is_returned_to_the_system_after_post_requests():
     assert calls == [0]
 
 
+def test_smoke_test_scores_the_warm_up_sentence():
+    # The reference voice reads this sentence reliably (see WARMUP_SENTENCES);
+    # a sentence it misreads would make deploys fail at random.
+    import lambdaSpeechToScore
+    with open(os.path.join(ROOT, 'deploy', 'smoke_test.py'), encoding='utf-8') as f:
+        source = f.read()
+    assert f"SENTENCE = {lambdaSpeechToScore.WARMUP_SENTENCES['en']!r}" in source
+
+
 @pytest.mark.skipif(os.name == 'nt', reason='needs a POSIX bash')
 def test_deploy_script_parses():
     bash = shutil.which('bash')
