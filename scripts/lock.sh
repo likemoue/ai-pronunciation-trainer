@@ -51,7 +51,12 @@ lock_all() {
 if [[ $mode == --check ]]; then
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT
-    cp requirements.in requirements-dev.in requirements.lock requirements-dev.lock "$work/"
+    cp requirements.in requirements-dev.in "$work/"
+    # The copies keep the pinned versions but not the hashes, so uv fetches
+    # every hash from the indexes again: a changed or added hash shows up.
+    for file in requirements.lock requirements-dev.lock; do
+        grep -v -- '--hash=' "$file" | sed 's/ \\$//' > "$work/$file"
+    done
     (cd "$work" && lock_all)
     status=0
     for file in requirements.lock requirements-dev.lock; do

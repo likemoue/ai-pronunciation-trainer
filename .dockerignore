@@ -4,6 +4,7 @@
 !*.py
 !requirements.lock
 !scripts/download_models.py
+!scripts/pip_install_locked.sh
 !databases/data_en.csv
 !static/
 !templates/

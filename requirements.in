@@ -14,7 +14,6 @@ numpy
 pandas             # reads the sentence bank (lambdaGetSample.py)
 torch              # CPU build from https://download.pytorch.org/whl/cpu (scripts/lock.sh)
 transformers       # Whisper speech recognition (whisper_wrapper.py)
-huggingface-hub    # downloads Whisper when the image is built (scripts/download_models.py)
 piper-tts          # reference voice (piperTTS.py)
 onnxruntime        # runs the Piper voice with our own session options (piperTTS.py)
 eng-to-ipa         # reference IPA from the CMU Pronouncing Dictionary (RuleBasedModels.py)

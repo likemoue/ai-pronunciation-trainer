@@ -3,9 +3,10 @@
 #   docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciation-trainer .
 #
 # deploy/deploy.sh builds, smoke-tests and rolls out the image (deploy/RUNBOOK.md).
-# Layers that rarely change come first: system packages, the models pinned in
-# model_pins.py, the Python packages pinned in requirements.lock. A change to
-# the app code only rebuilds the last layers, which hold a few MB.
+# The models (model_pins.py) and the Python packages (requirements.lock) are
+# built in stages of their own. In the image, the layers that change least come
+# first: models, packages, system packages (refreshed weekly), then the code,
+# so a change to the code only rebuilds the last layers, which hold a few MB.
 
 # python:3.12.16-slim-trixie, pinned by the digest of its multi-platform index.
 ARG PYTHON_IMAGE=python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
@@ -13,23 +14,24 @@ ARG PYTHON_IMAGE=python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65
 # ------------------------------------------------------------------ Python packages
 FROM ${PYTHON_IMAGE} AS deps
 ENV PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-COPY requirements.lock /tmp/requirements.lock
-# Every file is checked against its sha256 in the lock. torch is the CPU build
-# from the PyTorch index; everything else comes from PyPI.
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=https://pypi.org/simple \
+    PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
+COPY requirements.lock scripts/pip_install_locked.sh /tmp/
+# Every file is checked against its sha256 in the lock, the build backend too.
+# torch is the CPU build from the PyTorch index; everything else comes from PyPI.
 RUN python -m venv --without-pip /opt/venv \
-    && pip --python /opt/venv/bin/python install --require-hashes -r /tmp/requirements.lock \
-        --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cpu
+    && bash /tmp/pip_install_locked.sh /opt/venv/bin/python /tmp/requirements.lock
 
 # ------------------------------------------------------------------ models
-FROM deps AS models
+# Standard library only, so a change to requirements.lock does not download them again.
+FROM ${PYTHON_IMAGE} AS models
 COPY model_pins.py /tmp/build/
 COPY scripts/download_models.py /tmp/build/scripts/
 # The English voice to bake in (model_pins.PIPER_VOICES); empty means the default.
 ARG PIPER_VOICE_EN=
-RUN HF_HUB_DISABLE_TELEMETRY=1 PIPER_VOICE_EN="${PIPER_VOICE_EN}" \
-    WHISPER_DIR=/models/whisper-base PIPER_MODEL_DIR=/models/piper \
-    /opt/venv/bin/python /tmp/build/scripts/download_models.py
+RUN PIPER_VOICE_EN="${PIPER_VOICE_EN}" WHISPER_DIR=/models/whisper-base PIPER_MODEL_DIR=/models/piper \
+    python /tmp/build/scripts/download_models.py
 
 # ------------------------------------------------------------------ runtime
 FROM ${PYTHON_IMAGE} AS runtime
@@ -37,26 +39,37 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH
 
-# ffmpeg decodes the recordings (audioPreprocessing.py). The upgrade applies
-# Debian security fixes released after the base image was built.
-RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
 # The app runs as an unprivileged user; code, packages and models stay owned by root.
 RUN useradd --system --uid 10001 --create-home --home-dir /home/app app
 
 COPY --from=models /models /models
 COPY --from=deps /opt/venv /opt/venv
 
+# ffmpeg decodes the recordings (audioPreprocessing.py). The upgrade applies
+# Debian security fixes released after the base image was built. deploy.sh and
+# CI pass the ISO week as SYSTEM_REFRESH, so this layer, and only it and the
+# code after it, is rebuilt once a week.
+ARG SYSTEM_REFRESH=
+RUN echo "System packages as of ${SYSTEM_REFRESH:-this build}." \
+    && apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-# .dockerignore lets in only what the app needs at run time.
-COPY . .
+# Only what the app reads at run time. deploy.sh sends the build context as a
+# `git archive` tar, to which .dockerignore does not apply, so the copies are
+# listed here.
+COPY *.py LICENSE THIRD_PARTY_NOTICES.md ./
+COPY databases/data_en.csv databases/
+COPY static/ static/
+COPY templates/ templates/
 
 ARG PIPER_VOICE_EN=
 ENV HF_HUB_OFFLINE=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
+    HF_HUB_DISABLE_PROGRESS_BARS=1 \
+    ORT_DISABLE_TELEMETRY=1 \
     WHISPER_MODEL=/models/whisper-base \
     PIPER_MODEL_DIR=/models/piper \
     PIPER_VOICE_EN=${PIPER_VOICE_EN} \

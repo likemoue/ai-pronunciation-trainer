@@ -1,9 +1,10 @@
 """Model files the app uses, pinned so that every build gets the same bytes.
 
-The Docker build downloads them once, in a layer of their own
-(scripts/download_models.py); on a development machine they are downloaded
-on first use. Keep this module free of app imports: the Docker layer that
-holds the models is rebuilt only when this file or the download script changes.
+The Docker build downloads them once, in a stage of their own that needs only
+the Python standard library (scripts/download_models.py); on a development
+machine they are downloaded on first use. Keep this module free of imports
+outside the standard library: the Docker layer that holds the models is
+rebuilt only when this file or the download script changes.
 """
 import hashlib
 import os
@@ -12,8 +13,22 @@ import urllib.request
 # Whisper base at a fixed commit of https://huggingface.co/openai/whisper-base.
 WHISPER_REPO = 'openai/whisper-base'
 WHISPER_REVISION = 'e37978b90ca9030d5170a5c07aadb050351a65bb'
-# The same weights in formats transformers does not load here.
-WHISPER_IGNORE_PATTERNS = ['*.bin', '*.h5', '*.msgpack', '*.ot', '.gitattributes', 'README.md']
+WHISPER_URL = 'https://huggingface.co/{repo}/resolve/{revision}/{file}'
+# The files transformers loads, with their sha256 at that commit (the weights
+# only as safetensors; the repository also has them as .bin, .h5 and .msgpack).
+WHISPER_FILES = {
+    'added_tokens.json': '9715fd2243b6f06a5858b5e32950d2853f73dd5bc201aafcf76f5082a2d8acd1',
+    'config.json': 'a153c53883a6799b6f056b4a8d1a515c9926d03994682ba88a7616618d7da0c1',
+    'generation_config.json': '444b3f636d2fff89dd9ecf549e2a085b61f7ff0fa0246d4628bac6a3b8cc9ba4',
+    'merges.txt': '2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6',
+    'model.safetensors': '07cadb9f25677c8d50df603e66a98fbd842cce45047139baeb16e6219a1e807b',
+    'normalizer.json': 'bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd',
+    'preprocessor_config.json': '9b5cd03a36fbb8a627c64d98a5b5b126ead95a77720723944487311f0110b666',
+    'special_tokens_map.json': 'e67ae3a0aaa99abcd9f187138e12db1f65c16a14761c50ef10eef2c174a7a691',
+    'tokenizer.json': '27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566',
+    'tokenizer_config.json': '2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce',
+    'vocab.json': '8f680bba319e01a653d2e8a5dbc17a9157179e0576e6ce74ce0c06356c6e24f9',
+}
 
 PIPER_VOICE_URL = 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/{path}/{file}?download=true'
 PIPER_VOICE_FILES = ('.onnx', '.onnx.json')
@@ -54,6 +69,33 @@ def sha256(path) -> str:
     return digest.hexdigest()
 
 
+def fetch(url, dest, expected=None) -> bool:
+    """Download url to dest unless dest is there; check it against its sha256.
+    Returns True when it downloaded the file."""
+    if os.path.exists(dest):
+        if expected and sha256(dest) != expected:
+            raise RuntimeError(f'{dest} does not match its pinned sha256; delete it to download it again.')
+        return False
+    # Download to a temporary name first so an interrupted download never
+    # leaves a truncated file that looks complete on the next run.
+    partial = dest + '.part'
+    urllib.request.urlretrieve(url, partial)
+    if expected and sha256(partial) != expected:
+        os.remove(partial)
+        raise RuntimeError(f'The downloaded {os.path.basename(dest)} does not match its pinned sha256.')
+    os.replace(partial, dest)
+    return True
+
+
+def download_whisper(directory) -> list:
+    """The pinned Whisper files in `directory`, each checked against its sha256.
+    Returns the names of the files it downloaded."""
+    os.makedirs(directory, exist_ok=True)
+    return [name for name, expected in WHISPER_FILES.items()
+            if fetch(WHISPER_URL.format(repo=WHISPER_REPO, revision=WHISPER_REVISION, file=name),
+                     os.path.join(directory, name), expected)]
+
+
 def download_piper_voice(voice, directory, spec=None) -> list:
     """Make sure the files of a Piper voice are in `directory` and match their
     pinned sha256. Returns the names of the files it downloaded."""
@@ -62,19 +104,7 @@ def download_piper_voice(voice, directory, spec=None) -> list:
     downloaded = []
     for suffix in PIPER_VOICE_FILES:
         name = voice + suffix
-        dest = os.path.join(directory, name)
-        expected = (spec['sha256'] or {}).get(suffix)
-        if os.path.exists(dest):
-            if expected and sha256(dest) != expected:
-                raise RuntimeError(f'{dest} does not match its pinned sha256; delete it to download it again.')
-            continue
-        # Download to a temporary name first so an interrupted download
-        # never leaves a truncated model that looks complete on the next run.
-        partial = dest + '.part'
-        urllib.request.urlretrieve(PIPER_VOICE_URL.format(path=spec['path'], file=name), partial)
-        if expected and sha256(partial) != expected:
-            os.remove(partial)
-            raise RuntimeError(f'The downloaded {name} does not match its pinned sha256.')
-        os.replace(partial, dest)
-        downloaded.append(name)
+        url = PIPER_VOICE_URL.format(path=spec['path'], file=name)
+        if fetch(url, os.path.join(directory, name), (spec['sha256'] or {}).get(suffix)):
+            downloaded.append(name)
     return downloaded

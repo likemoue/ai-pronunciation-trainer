@@ -16,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Top-level modules the app imports -> the requirement in requirements.in that provides them.
 THIRD_PARTY = {
     'flask': 'flask', 'werkzeug': 'flask', 'gunicorn': 'gunicorn', 'numpy': 'numpy', 'pandas': 'pandas',
-    'torch': 'torch', 'transformers': 'transformers', 'huggingface_hub': 'huggingface-hub',
+    'torch': 'torch', 'transformers': 'transformers',
     'piper': 'piper-tts', 'onnxruntime': 'onnxruntime', 'eng_to_ipa': 'eng-to-ipa', 'dtwalign': 'dtwalign',
 }
 # Imported only when German is enabled, which the English image does not install.
@@ -95,21 +95,47 @@ def test_actions_are_pinned_by_commit_sha(workflow):
     assert all(re.fullmatch(r'[\w.-]+/[\w.-]+@[0-9a-f]{40}', action) for action in uses), uses
 
 
-def test_docker_context_lets_in_what_the_app_reads():
-    allowed = {line.strip() for line in read('.dockerignore').splitlines()}
-    assert '*' in allowed
-    for entry in ('!*.py', '!requirements.lock', '!scripts/download_models.py', '!databases/data_en.csv',
-                  '!static/', '!templates/'):
-        assert entry in allowed, entry
-    # Every module the app imports sits at the top level, where `!*.py` lets it in.
+def test_image_gets_only_what_the_app_reads():
+    # deploy.sh sends a `git archive` tar, to which .dockerignore does not apply,
+    # so the Dockerfile lists what it copies into the app.
+    dockerfile = read('Dockerfile')
+    copies = re.findall(r'^COPY (?!--from)(.+)$', dockerfile.split('AS runtime')[1], re.M)
+    assert copies == ['*.py LICENSE THIRD_PARTY_NOTICES.md ./', 'databases/data_en.csv databases/',
+                      'static/ static/', 'templates/ templates/']
+    # Every module the app imports sits at the top level, where `*.py` takes it.
     assert not glob.glob(os.path.join(ROOT, '*', '__init__.py'))
+    # A directory context (CI) still sends only what the stages copy.
+    allowed = {line.strip() for line in read('.dockerignore').splitlines()}
+    for entry in ('*', '!*.py', '!requirements.lock', '!scripts/download_models.py', '!scripts/pip_install_locked.sh',
+                  '!databases/data_en.csv', '!static/', '!templates/', '!LICENSE', '!THIRD_PARTY_NOTICES.md'):
+        assert entry in allowed, entry
 
 
 def test_dockerfile_installs_the_lock_with_hashes_and_both_indexes():
     dockerfile = read('Dockerfile')
-    assert '--require-hashes -r /tmp/requirements.lock' in dockerfile
-    assert '--extra-index-url https://download.pytorch.org/whl/cpu' in dockerfile
+    assert 'bash /tmp/pip_install_locked.sh /opt/venv/bin/python /tmp/requirements.lock' in dockerfile
+    assert 'PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu' in dockerfile
     assert 'WARMUP_STRICT=1' in dockerfile
+    # The models come from a stage that does not depend on the packages.
+    assert re.search(r'^FROM \$\{PYTHON_IMAGE\} AS models$', dockerfile, re.M)
+
+
+def test_the_build_backend_is_installed_from_the_lock_with_its_hashes():
+    script = read('scripts/pip_install_locked.sh')
+    assert '--no-build-isolation' in script and '--require-hashes' in script
+    assert re.search(r'^setuptools==[0-9.]+ \\$', read('requirements.lock'), re.M)
+
+
+def test_whisper_files_are_pinned_by_sha256():
+    assert 'model.safetensors' in model_pins.WHISPER_FILES
+    assert all(re.fullmatch(r'[0-9a-f]{64}', digest) for digest in model_pins.WHISPER_FILES.values())
+
+
+def test_no_telemetry_leaves_the_image():
+    dockerfile = read('Dockerfile')
+    for setting in ('HF_HUB_OFFLINE=1', 'HF_HUB_DISABLE_TELEMETRY=1', 'ORT_DISABLE_TELEMETRY=1'):
+        assert setting in dockerfile, setting
+    assert 'disable_telemetry_events()' in read('piperTTS.py')
 
 
 def test_smoke_test_takes_a_user_agent_for_the_canary():

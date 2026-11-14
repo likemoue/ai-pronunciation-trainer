@@ -111,6 +111,9 @@ def _load_model(language):
             _download_model(language)
             import onnxruntime
             from piper import PiperVoice
+            # ONNX Runtime sends usage events to Microsoft unless told not to
+            # (ORT_DISABLE_TELEMETRY in the Dockerfile does the same).
+            onnxruntime.disable_telemetry_events()
             model_path = os.path.join(MODEL_DIR, VOICE_CONFIGS[language] + '.onnx')
             voice = PiperVoice.load(model_path)
             # PiperVoice.load builds its session with default options; replace it
