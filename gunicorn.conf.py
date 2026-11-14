@@ -16,7 +16,11 @@ workers = int(os.environ.get('WEB_CONCURRENCY', '2'))
 # With threads, `timeout` only restarts a worker whose main loop hangs; a slow
 # request is not interrupted. Every request is bounded on its own: decoding by
 # AUDIO_DECODE_TIMEOUT, recordings by MAX_AUDIO_SECONDS, Whisper by
-# WHISPER_MAX_NEW_TOKENS and speech synthesis by PIPER_MAX_PHONEMES.
+# WHISPER_MAX_NEW_TOKENS and speech synthesis by PIPER_MAX_PHONEMES. gunicorn
+# does not bound a slow upload: a thread reading a stalled body waits. In
+# production, Caddy (deploy/deploy.sh) buffers every body before the app gets
+# it and drops clients that take over 60 s to send one; the colours listen on
+# 127.0.0.1 only, so every request goes through it.
 worker_class = 'gthread'
 threads = int(os.environ.get('GUNICORN_THREADS', '4'))
 timeout = int(os.environ.get('GUNICORN_TIMEOUT', '120'))

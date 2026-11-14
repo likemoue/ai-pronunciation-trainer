@@ -22,7 +22,7 @@ fi
 
 mkdir -p "$out"
 rm -f "$out"/*
-docker build -q -t aipt-deploy-harness "$here/harness" >/dev/null
+docker build -q -t aipt-deploy-harness "$(host_path "$here/harness")" >/dev/null
 docker rm -f aipt-deploy-harness >/dev/null 2>&1 || true
 # --network host: deploy.sh checks 127.0.0.1:<port>, published by the daemon.
 # /tmp/aipt-bg: deploy.sh's state directories, which it bind-mounts into the
