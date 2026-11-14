@@ -1,8 +1,12 @@
 # Stand-in for the real app (harness): GET / -> "ok <GIT_SHA>", /version -> JSON,
 # /slow?ms=N answers after N ms, and POST answers "ok <GIT_SHA>" once it has read
-# the body, with its size in X-Received. On SIGTERM it stops accepting connections
-# and lets requests in flight finish (at most STOP_DELAY s), like gunicorn; a request
-# that comes after it on a connection kept alive gets no answer.
+# the body, with its size in X-Received. On SIGTERM it lets requests in flight finish
+# (at most STOP_DELAY s), like gunicorn, and is stricter than gunicorn about the rest,
+# so it hides no request the real app would drop: it closes its listening socket, so
+# a new connection is refused at once, and a request that comes after SIGTERM on a
+# connection kept alive gets no answer. gunicorn 26 (gthread) still answers requests
+# on kept-alive connections while it finishes, and leaves new connections in its
+# backlog until the worker exits, then resets them.
 import http.server
 import json
 import os
@@ -28,7 +32,7 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def stopped(self):
         """True for a request that comes after SIGTERM on a connection kept alive (by Caddy):
-        like gunicorn, which no longer reads those, it gets no answer and the connection closes."""
+        it gets no answer and the connection closes. gunicorn would still answer it."""
         if stopping:
             self.close_connection = True
         return stopping

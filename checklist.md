@@ -30,10 +30,13 @@ already checks it on every change.
 - [ ] After the second deploy behind the proxy (the first leaves no previous colour): `deploy/deploy.sh --rollback`
       and back again, then `deploy/deploy.sh <older sha>`.
 - [ ] A failed release (staging or through the proxy) leaves the live colour serving and the previous release in
-      place for `--rollback`. Auto: deploy harness.
+      place for `--rollback`, unless Caddy did not take the switch back or deploy.sh cannot tell whether it did
+      (it then leaves both colours running and says so; deploy/RUNBOOK.md). Auto: deploy harness.
 - [ ] Interrupted or killed deploys (Ctrl-C, dropped SSH, SIGKILL) recover. Auto: deploy harness. A reboot during a
-      deploy is not covered: Caddy restarts with the last configuration it was given. After one, run
-      `deploy/deploy.sh --status` before anything else.
+      deploy is handled like SIGKILL, but the harness does not test it. Caddy then starts from the files on disk,
+      and `upstream.caddy` already names the new colour if the reboot came between deploy.sh writing it and its
+      reload; docker starts every colour that was running, the old one during its drain too. After a reboot, run
+      `deploy/deploy.sh --status` before anything else, and stop a colour that is not live (deploy/RUNBOOK.md).
 - [ ] `/healthz`, `/readyz`, `/version` through Cloudflare. Auto: smoke test (`/version` printed), canary.
 - [ ] Logs: `docker logs ai-pronunciation-trainer-<colour>` shows JSON lines with `rid`; one `scored` line per
       recording; no text or audio in any line. Auto: `tests/test_operations.py`, the slow test that a worker start

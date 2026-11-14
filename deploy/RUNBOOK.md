@@ -39,12 +39,13 @@ cancelled or is still going. When it cannot tell, it only warns and deploys: Git
 with an error (for example its limit of 60 questions an hour from one address), `origin` is not a GitHub URL, or
 the commit has no CI run (a commit from before CI, or one inside a merged pull request). So read the first lines
 of its output, or look at CI in the browser before you start. Right after a merge, wait for CI on `main` (about
-15 minutes). `SKIP_CI_CHECK=1` skips the question. If `git fetch` fails, deploy.sh warns and uses the commits it
-fetched before. A commit that is only on another branch is refused (for a test,
-`DEPLOY_ANY_BRANCH=1 deploy/deploy.sh origin/<branch>` allows any pushed branch). deploy.sh never changes the
-checkout: it builds from `git archive` of the commit. The script does the following:
+15 minutes, an estimate: CI has not been timed on GitHub yet). `SKIP_CI_CHECK=1` skips the question. If
+`git fetch` fails, deploy.sh warns and uses the commits it fetched before. A commit that is only on another branch
+is refused (for a test, `DEPLOY_ANY_BRANCH=1 deploy/deploy.sh origin/<branch>` allows any pushed branch).
+deploy.sh never changes the checkout: it builds from `git archive` of the commit. The script does the following:
 1. Builds the image. The build fails if the strict warm-up cannot score a test sentence. It first asks Debian's
    archive for the state of its package indexes (`scripts/system_refresh.sh`; it prints `SYSTEM_REFRESH=...`).
+   If Debian cannot be reached within about a minute, it uses the ISO week instead (`week-2026-W46`).
    When Debian has published an update since the last build, the system packages are upgraded again, which
    adds a minute or two and about 460 MB. Otherwise a change to the code only rebuilds the last layers (about
    35 s); a change to `requirements.lock` or `model_pins.py` rebuilds more. The first build on a host takes about
@@ -53,11 +54,13 @@ checkout: it builds from `git archive` of the commit. The script does the follow
    worker has scored its warm-up sentence) and runs that commit's `deploy/smoke_test.py` against
    `127.0.0.1:3001` or `3002`. If anything fails, production is not touched, the new image is removed and the
    previous release goes back into the idle colour, stopped, so `--rollback` still finds it.
-3. Points Caddy at the new colour and runs the smoke test again through port 3000. Each check gets up to 60 s
-   there, since the new colour may already be busy with recordings; a refused connection or a 502 fails at
-   once. If the test fails, Caddy is pointed back. Caddy checks every new configuration before deploy.sh puts
-   it in place: the pinned image (`CADDY_IMAGE`) checks it, and so does the running proxy's image when that is
-   another one.
+3. Points Caddy at the new colour and runs the smoke test again through port 3000. Since the new colour may
+   already be busy with recordings there, the quick checks (health, readiness and the two rejections) get up to
+   60 s each (`PROD_SMOKE_TIMEOUT`), and the page, sample, speech and scoring checks up to 120 s each. The test
+   stops at the first check that gets no answer in that time, or a 502 or 504 (Caddy answers 502 once the colour
+   has refused connections for 10 s), so a colour that hangs keeps the traffic for up to about 2 minutes. If the
+   test fails, Caddy is pointed back. Caddy checks every new configuration before deploy.sh puts it in place:
+   the pinned image (`CADDY_IMAGE`) checks it, and so does the running proxy's image when that is another one.
 4. Records the deploy and keeps the old colour running for 65 s after the switch. Caddy sends a request to the
    colour that was live when the request arrived, once its whole body is in, and gives a client up to 60 s to
    send the body (`read_body`); the extra 5 s are a margin. Then it stops the old colour, which first finishes
@@ -71,8 +74,9 @@ arriving included; new ones go to the new colour. A request can still fail at th
 closes its idle keep-alive connections when it reloads, so a request that a client sends on one of them at that
 moment can fail: in a controlled test over 60 reloads, 21 of 6,235 requests failed from a client that kept idle
 connections open and did not notice them closing. More rarely, Caddy resets a new connection that arrives during
-the reload, or closes it without an answer: none of 6,206 requests in that test, 3 of about 70,000 in one run of
-the test harness (deploy/test/), which opens a new connection for every request. How often Cloudflare's connector
+the reload, or closes it without an answer: 2 to 7 times per 100 reloads in tests of Caddy alone (none of the
+6,206 requests on new connections in the test above), and 3 of about 70,000 requests in one run of the test
+harness (deploy/test/), which opens a new connection for every request. How often Cloudflare's connector
 meets either was not measured. In the harness's last full run (148 runs of deploy.sh: deploys, rollbacks, and
 failed, interrupted and killed runs), none of 111,882 requests failed apart from the planned outage of the move
 behind the proxy. With the real app, no request failed during a deploy and a rollback.
@@ -80,11 +84,21 @@ behind the proxy. With the real app, no request failed during a deploy and a rol
 If the deploy is interrupted (Ctrl-C, a dropped session, a closed output pipe), it undoes what it started:
 Caddy is pointed back if it had been switched (the new colour then gets the same 65 s for the requests it took,
 finishes them and is removed), and the previous release goes back into its slot. The live release keeps serving
-throughout. If a run is killed (SIGKILL, a reboot), the next run takes what Caddy actually serves as live (from
-Caddy's admin API, not from `upstream.caddy`), records it if it was not recorded, and goes on. A run killed while
-it was starting the new release leaves that release in the idle colour, and the previous release is gone:
-`--rollback` then refuses, since that release is not in the deploy log. Deploy the previous commit by its sha
-instead (`--status` lists the last deploys).
+throughout. The docker commands that start or remove a colour run out of reach of the terminal's signals, so an
+interruption during one of them takes effect once it has returned, and the previous release still goes back. If
+a run is killed (SIGKILL, a reboot), the next run takes what Caddy actually serves as live (from Caddy's admin
+API, not from `upstream.caddy`), records it if it was not recorded, and goes on. A run killed while it was
+starting the new release leaves that release in the idle colour, and the previous release is gone: `--rollback`
+then refuses, since that release is not in the deploy log. Deploy the previous commit by its sha instead
+(`--status` lists the last deploys).
+
+A reboot during a deploy is handled like SIGKILL, but the harness does not test it, and two things differ.
+Caddy starts from the files in the proxy directory: if the reboot came between deploy.sh writing `upstream.caddy`
+and its reload, Caddy serves the new colour, which then has not passed its smoke test through port 3000, and the
+next run records it as deployed. And docker starts every container that was running, so after a reboot during
+the 65 s drain both colours run. After such a reboot, run `deploy/deploy.sh --status` and
+`python3 deploy/smoke_test.py http://127.0.0.1:3000`, and stop the colour that is not live if it runs
+(`docker stop ai-pronunciation-trainer-<colour>`).
 
 When CI fails at Trivy on a Debian package that has a fix, nothing in the repository needs to change: the system
 packages are keyed on Debian's package indexes, so the next build upgrades them once Debian has published the fix
@@ -97,7 +111,7 @@ that have no fix yet.
 A host that still runs the single container `ai-pronunciation-trainer` on port 3000 (every deploy before
 phase 1) is moved behind the proxy by the first run:
 1. The new release is started as blue and checked while the old container keeps serving.
-2. The old container is stopped and the proxy takes over port 3000. gunicorn refuses new connections from the
+2. The old container is stopped and the proxy takes over port 3000. gunicorn stops accepting connections from the
    moment it is told to stop and finishes the requests it has, so port 3000 is unavailable for a few seconds
    (about 4 s in the test with the real app, which first finishes the recordings it is scoring); deploy.sh prints
    how long. Do it outside school hours.
@@ -128,13 +142,21 @@ slow while it warms up (about a minute):
 deploy/deploy.sh --rollback-legacy   # the next deploy moves it behind the proxy again
 ```
 
-To an older release, deploy its commit again. Its image is rebuilt from the build cache: about 35 s while
-Debian has published nothing new since that release was built, otherwise a minute or two more, with the
-system packages upgraded (this needs the network to Debian):
+To an older release from phase 1 on, deploy its commit again. Its image is rebuilt from the build cache: about
+35 s while Debian has published nothing new since that release was built, otherwise a minute or two more, with
+the system packages upgraded (this needs the network to Debian):
 
 ```bash
 deploy/deploy.sh <sha>
 ```
+
+`4290c3e`, the release from before phase 1, is built with its own Dockerfile, which pins only torch and
+torchaudio and downloads Whisper and the voice from Hugging Face in its warm-up step. That step runs again,
+because deploy.sh's `git archive` context does not match the cache of the build that made the image that ran:
+it takes minutes and needs the network to Hugging Face. Whatever the build cache no longer holds (the base
+image, the other packages) comes in today's versions, so the result is not the image that ran and may fail its
+warm-up (production is not touched then). The container that ran before the move behind the proxy, with that
+image, is kept stopped as `ai-pronunciation-trainer-legacy`: `--rollback-legacy` brings it back, with downtime.
 
 The oldest release that is safe to roll back to is `4290c3e` (phase 0b, the first release deployed with
 `deploy.sh`). deploy.sh refuses every commit that does not contain it (`OLDEST_RELEASE`), in a deploy and in
@@ -181,9 +203,37 @@ What deploy.sh prints, and what to do:
   and run `deploy/deploy.sh --replace-proxy`, which starts a proxy in front of the colour that runs. The next
   deploy.sh run finishes the move. The same message from the run after a move that was killed means that run only
   tried the old container: free port 3000 and run `--replace-proxy` the same way.
+* **`Could not start ai-pronunciation-trainer. Production is DOWN`** after `--rollback-legacy`: the single
+  container could not be started on port 3000, so deploy.sh tries to put a new proxy in front of the colour that
+  was live, and says whether that worked. If it did not, free port 3000 (`docker ps --filter publish=3000` shows
+  what holds it) and run `deploy/deploy.sh --replace-proxy`. Production is then as before the rollback: the proxy
+  serves that colour, and the other colour, if there is one, still holds the previous release, stopped. Two
+  things are left over: the single container, now named `ai-pronunciation-trainer` and not running, and the mark
+  of a move behind the proxy (`migration-in-progress` in the state directory). Ignore "the next deploy.sh run
+  finishes the move": until both are cleared, do not deploy or run `--rollback` or `--rollback-legacy`. Such a run
+  takes them for an unfinished move, finishes it and removes the other colour, so `--rollback` has nothing left
+  to go back to. `--status` and `--replace-proxy` are safe. Clear them, then check:
+
+  ```bash
+  docker rename ai-pronunciation-trainer ai-pronunciation-trainer-legacy   # if it exists
+  rm -f ~/.local/state/ai-pronunciation-trainer/migration-in-progress
+  deploy/deploy.sh --status   # the proxy, the live colour, the other colour stopped, -legacy
+  ```
+
+  Find out what held port 3000 before you run `--rollback-legacy` again.
 * **`The proxy still sends traffic to <colour>, so it is left running`**: a deploy failed after the switch, and
   Caddy did not take the switch back. That colour passed its own checks and serves. `deploy/deploy.sh --rollback`
   goes back to the other colour, or deploy again.
+* **`Caddy's running configuration cannot be read, so <colour>, which it may still send traffic to, is left
+  running`**: a deploy failed or was interrupted while it switched Caddy to the new colour, and after trying to
+  point Caddy back, deploy.sh could not read from Caddy's admin API where it sends traffic. So it stopped neither
+  colour, and the previous release did not go back into the new colour's slot.
+  `curl -s http://127.0.0.1:3000/version` names the release that serves, and the images in `--status` show which
+  colour holds it (while Caddy cannot be read, `--status` marks as live the colour that `upstream.caddy` names);
+  `docker logs --tail 50 ai-pronunciation-trainer-proxy` may say why Caddy does not answer. If the new colour
+  serves, go on as in the entry above once `--status` marks it live. If the other colour serves, stop the new one
+  (`docker stop ai-pronunciation-trainer-<colour>`): it holds the release that failed. `--rollback` refuses that
+  release, so until the next deploy, the way back is to deploy an older commit by its sha.
 * **`Could not start ai-pronunciation-trainer-proxy`** (with Production is DOWN) or **`The new proxy does not
   serve`**: deploy.sh prints the last `docker start` error. If port 3000 is taken, `docker ps --filter publish=3000`
   shows by what (for example `ai-pronunciation-trainer-legacy`, if it was started by hand): stop it, then run
@@ -201,15 +251,32 @@ What deploy.sh prints, and what to do:
   holds port 3000.
 * The live colour is stopped: `docker start ai-pronunciation-trainer-<colour>`. Running but unhealthy:
   `docker restart ai-pronunciation-trainer-<colour>`. Or make the other colour live with `deploy/deploy.sh --rollback`.
+* Every request through port 3000 failed at the same moment, and the proxy runs again: docker restarts the proxy
+  when it dies, for example when the kernel kills it for memory. It holds each request body until it has all of
+  it, in up to 1 GB, which held about 110 uploads of 4.9 MB at once in a test; more at once can exceed it.
+  `docker inspect -f '{{.RestartCount}} {{.State.StartedAt}}' ai-pronunciation-trainer-proxy` shows how often
+  docker has restarted it and when it last started (`.State.OOMKilled` is cleared once it runs again).
+  `docker events --since 1h --until 0s --filter container=ai-pronunciation-trainer-proxy --filter event=oom`
+  confirms an OOM kill, but only while the daemon still keeps that event among its latest ones.
 * A run of the single-container deploy.sh from before phase 1 was interrupted and left
   `ai-pronunciation-trainer-previous` or `-staging`, or `swap-in-progress` in the state directory: deploy.sh
-  refuses to run. Do not remove anything before production serves again: `-previous` may be the only copy of the
-  release that was live. Check with `curl -s http://127.0.0.1:3000/healthz` and `docker ps -a`. If nothing answers,
-  start `ai-pronunciation-trainer` if it exists (`docker start ai-pronunciation-trainer`); if it does not, put the
-  old release back with `docker rename ai-pronunciation-trainer-previous ai-pronunciation-trainer` and
-  `docker start ai-pronunciation-trainer`. Once it is healthy, remove the leftovers
-  (`docker rm -f ai-pronunciation-trainer-staging ai-pronunciation-trainer-previous`,
-  `rm -f ~/.local/state/ai-pronunciation-trainer/swap-in-progress`) and deploy again.
+  refuses to run. Do not remove `-previous` before production serves again: it may be the only copy of the
+  release that was live. Recover as that deploy.sh did on its next run:
+  1. Look at `docker ps -a` and at the last line of `~/.local/state/ai-pronunciation-trainer/deploys.log`
+     (`<time> <sha> <container id>`).
+  2. If both `ai-pronunciation-trainer` and `-previous` exist, `ai-pronunciation-trainer` is the release that the
+     run was putting in place. Keep it only if it runs and its id
+     (`docker container inspect -f '{{.Id}}' ai-pronunciation-trainer`) is the one on that last line. Otherwise
+     remove it (`docker rm -f ai-pronunciation-trainer`; its image stays).
+  3. If `-previous` exists and `ai-pronunciation-trainer` does not (or no longer does), put the old release back:
+     `docker rename ai-pronunciation-trainer-previous ai-pronunciation-trainer`, then
+     `docker start ai-pronunciation-trainer`. If there is no `-previous` and `ai-pronunciation-trainer` is stopped,
+     start it.
+  4. Wait until `docker ps` shows it `(healthy)` and
+     `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3000/` prints 200 (releases from before phase 1
+     have no `/healthz`).
+  5. Remove the leftovers (`docker rm -f ai-pronunciation-trainer-staging ai-pronunciation-trainer-previous`,
+     `rm -f ~/.local/state/ai-pronunciation-trainer/swap-in-progress`) and deploy again.
 
 The proxy image is pinned in deploy.sh (`CADDY_IMAGE`). deploy.sh rewrites the proxy configuration on every
 run and reloads Caddy when it changed, but does not replace a running proxy; `--status` says when the proxy runs
@@ -269,6 +336,6 @@ https://aitrainer.ism.io.vn/ with a browser, with curl using a browser user agen
 
 ## Testing deploy.sh
 
-`deploy/test/` holds a fault-injection harness: a 60-line stand-in for the app, a `docker` wrapper that injects
+`deploy/test/` holds a fault-injection harness: a small stand-in for the app, a `docker` wrapper that injects
 failures and signals at every step, and scenarios for fresh hosts, the move behind the proxy, failed releases,
 signals and SIGKILL at each step, concurrent runs and rollbacks, with traffic running. See `deploy/test/README.md`.

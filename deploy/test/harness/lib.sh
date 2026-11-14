@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Harness library for the blue/green deploy.sh, sourced by the scenario scripts
 # inside the aipt-deploy-harness container. deploy.sh runs from a clone of a fake
-# origin (as the RUNBOOK does); the app is a 60-line stand-in (app/).
+# origin (as the RUNBOOK does); the app is a small stand-in (app/).
 # Lanes (LANE=1..3) use their own names, ports and directories so they can run side by side.
 LANE=${LANE:-1}
 case "$LANE" in
@@ -192,10 +192,12 @@ traffic_stop() {
   wait "$TRAFFIC_PID" 2>/dev/null
   say "  traffic: $(cat "$OUT/$SCEN.traffic$1.out")"
 }
-# no_failed_requests <n>: traffic run <n> kept sending requests, and not one of them
-# failed, not even at a `caddy reload`: traffic.py opens a new connection per request,
-# and a reload closes only idle keep-alive connections (deploy/RUNBOOK.md). Lists each
-# failure with its time from the reloads (traffic_check.py).
+# no_failed_requests <n>: traffic run <n> kept sending requests, and none of them failed,
+# except what a `caddy reload` can do even to a new connection (traffic.py opens one per
+# request): reset it, or close it without an answer (deploy/RUNBOOK.md). traffic_check.py
+# excuses such a failure only if it came within 0.5 s, never as an HTTP error, on a request
+# started during a reload that reached Caddy or up to 0.5 s after it, and at most two per
+# reload. It lists the failures, excused or not, with their time from the reloads.
 no_failed_requests() {
   python3 /h/traffic_check.py none "$OUT/$SCEN.traffic$1.json" "$OUT/$SCEN".run*.trace | tee -a "$OUT/$SCEN.txt"
   return "${PIPESTATUS[0]}"

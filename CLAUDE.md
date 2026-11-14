@@ -51,10 +51,11 @@ scripts/lock.sh [--upgrade | --check]   # requirements*.lock from requirements*.
 The Docker build runs a strict warm-up and fails if the image cannot score a spoken sentence. The runtime stage's
 layers are the models, the Python packages, the system packages and then the code, so a code change rebuilds only a
 few MB. The system packages are upgraded again when `SYSTEM_REFRESH` changes: `scripts/system_refresh.sh` derives it
-from Debian's package indexes, so a Debian update reaches the next build (it falls back to the ISO week when Debian
-cannot be reached). The image gets only what the Dockerfile's `COPY` lines name: deploy.sh builds from a `git archive`
-tar, to which `.dockerignore` does not apply. Add a new runtime file to those `COPY` lines and to `.dockerignore`
-(used by directory builds such as CI's); `tests/test_build.py` checks that the two agree.
+from Debian's package indexes, so a Debian update reaches the next build (deploy.sh and CI fall back to the ISO week
+when Debian cannot be reached within about a minute). The image gets only what the Dockerfile's `COPY` lines name:
+deploy.sh builds from a `git archive` tar, to which `.dockerignore` does not apply. Add a new runtime file to those
+`COPY` lines and to `.dockerignore` (used by directory builds such as CI's); `tests/test_build.py` checks that the
+two agree.
 
 ## Dependencies
 
@@ -81,8 +82,9 @@ Production is a Caddy proxy and two app colours on the VM in `deploy/RUNBOOK.md`
    `deploy/smoke_test.py`, which scores a TTS sentence end to end. On failure the previous release goes back
    into that colour, stopped.
 3. Switches Caddy to it with a graceful reload (Caddy validates every configuration first) and smoke-tests it
-   through port 3000, with up to 60 s per check since the new colour may already be busy; switches back on
-   failure. The live colour is what Caddy's admin API says, not the file.
+   through port 3000. The new colour may already be busy, so the quick checks get up to 60 s each
+   (`PROD_SMOKE_TIMEOUT`) and the page, sample, TTS and scoring checks 120 s. It switches back on failure, at the
+   first check without an answer or with a 502/504. The live colour is what Caddy's admin API says, not the file.
 4. Records the deploy in `~/.local/state/ai-pronunciation-trainer/deploys.log` and keeps the old colour running
    for 65 s: Caddy sends it the requests that arrived before the switch once their body is in, and gives a client
    up to 60 s (`READ_BODY_SECONDS`) to send it. Then it stops the old colour (it finishes its requests, up to
@@ -96,11 +98,12 @@ also in CI as `deploy-test.yml`).
 
 Rollback: `deploy/deploy.sh --rollback` (the previous colour, no downtime), `deploy/deploy.sh --rollback-legacy`
 (the single container from before the proxy, with downtime), or `deploy/deploy.sh <sha>` for a version from
-phase 0b (4290c3e) on. deploy.sh refuses every commit that does not contain 4290c3e (`OLDEST_RELEASE`), in a deploy
-and in `--rollback`: the phase 0a commits still have the unscreened sentences or the voice licensed for research
-only, and older ones (51c9af9, kept as `ai-pronunciation-trainer:english-ui`) have no smoke test or HEALTHCHECK
-either. Cloudflare blocks Python's urllib user agent: check the public site in a browser, or run the smoke test
-with `--user-agent`.
+phase 0b (4290c3e) on. 4290c3e's own Dockerfile pins only torch and torchaudio and downloads the models again, so
+its rebuild takes minutes and is not the image that ran; `--rollback-legacy` restores that one. deploy.sh refuses
+every commit that does not contain 4290c3e (`OLDEST_RELEASE`), in a deploy and in `--rollback`: the phase 0a
+commits still have the unscreened sentences or the voice licensed for research only, and older ones (51c9af9, kept
+as `ai-pronunciation-trainer:english-ui`) have no smoke test or HEALTHCHECK either. Cloudflare blocks Python's
+urllib user agent: check the public site in a browser, or run the smoke test with `--user-agent`.
 
 CI (`.github/workflows/ci.yml`) checks every PR and push to main: ruff, shellcheck, actionlint, the lock (hashes
 included), pip-audit, pytest, then the image (smoke test; the tests inside it, run against the image's own `/app`
@@ -110,9 +113,11 @@ runs only outside the image.
 
 Known limits, for phase 2: a gthread worker keeps accepting recordings while it scores one, so two recordings can
 queue on one worker while the other is idle; under a burst of recordings every thread of a worker can be waiting for
-its model, so the page, samples and TTS wait too (up to 34 s, measured with 24 recordings sent at once); and a Caddy
+its model, so the page, samples and TTS wait too (up to 34 s, measured with 24 recordings sent at once); a Caddy
 reload can fail a request at that instant: one sent on an idle keep-alive connection, or, rarely, a new connection
-that Caddy resets.
+that Caddy resets; and nothing on the VM limits requests per client: Caddy holds request bodies in up to 1 GB (it
+held about 110 uploads of 4.9 MB at once), and beyond that the kernel can kill it, which cuts every request
+through port 3000 until docker has restarted it.
 
 ## Conventions
 
