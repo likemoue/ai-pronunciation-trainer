@@ -229,7 +229,8 @@ file_upstream() {
 
 # The upstream in Caddy's running configuration, from its admin API.
 running_upstream() {
-    { docker exec "$PROXY" wget -qO- http://127.0.0.1:2019/config/apps/http/servers 2>/dev/null || true; } \
+    # -T: BusyBox wget would otherwise wait 900 s for an admin API that accepts and never answers.
+    { docker exec "$PROXY" wget -T 3 -qO- http://127.0.0.1:2019/config/apps/http/servers 2>/dev/null || true; } \
         | grep -oE '"dial":"[^"]+:3000"' | head -n 1 | sed -E 's/^"dial":"(.*):3000"$/\1/' || true
 }
 # The same, tried for a few seconds while the proxy runs: empty if it cannot be read.
