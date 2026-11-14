@@ -1,0 +1,7 @@
+# Tools for the tests and CI, on top of requirements.lock (same platform).
+# Regenerate requirements-dev.lock with scripts/lock.sh.
+-c requirements.lock
+
+pytest             # python -m pytest
+ruff               # ruff check . (ruff.toml)
+pip-audit          # known vulnerabilities in requirements.lock (CI)

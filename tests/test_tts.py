@@ -7,6 +7,7 @@ import wave
 
 import pytest
 
+import model_pins
 import piperTTS
 
 
@@ -39,7 +40,7 @@ def test_voice_files_are_checked_against_their_pinned_hash(monkeypatch, tmp_path
         with open(dest, 'wb') as f:
             f.write(served['data'])
 
-    monkeypatch.setattr(piperTTS.urllib.request, 'urlretrieve', fake_urlretrieve)
+    monkeypatch.setattr(model_pins.urllib.request, 'urlretrieve', fake_urlretrieve)
     piperTTS._download_model('en')
     assert (tmp_path / 'en_US-test.onnx').read_bytes() == good
 

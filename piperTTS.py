@@ -5,11 +5,11 @@ import os
 import platform
 import re
 import threading
-import urllib.request
 import wave
 from collections import OrderedDict
 
 import logging_setup
+import model_pins
 
 _models = {}
 _cache = OrderedDict()
@@ -46,37 +46,16 @@ class TextTooLongError(ValueError):
     """The text would take far longer to say than its length suggests."""
 
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'piper')
-_VOICE_URL = 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/{path}/{file}?download=true'
-_VOICE_FILES = ('.onnx', '.onnx.json')
-
-# Voices the app can download, with the sha256 of each file in rhasspy/piper-voices v1.0.0.
-VOICES = {
-    # LJ Speech: one American speaker, recordings in the public domain.
-    'en_US-ljspeech-medium': {
-        'path': 'en/en_US/ljspeech/medium',
-        'sha256': {'.onnx': '6f52a751e2349abe7a76735eb09dc1875298c77ea2342ffd2fef79ff81b87f22',
-                   '.onnx.json': '141d612cc0a95ed7efc1ca936b845c2364967f2e9217c5dbfcf69fc4d6c65860'},
-    },
-    # Same speaker, slightly clearer, about five times slower to synthesise.
-    'en_US-ljspeech-high': {
-        'path': 'en/en_US/ljspeech/high',
-        'sha256': {'.onnx': '5d4f08ba6a2a48c44592eed3ce56bf85e9de3dd4e20df90541ae68a8310c029a',
-                   '.onnx.json': '7e1f4634af596d83cca997fb7a931ba80b70f8a316a2655ee69c55365e0ace14'},
-    },
-    # The previous English voice; its training data is licensed for research only.
-    'en_US-lessac-medium': {
-        'path': 'en/en_US/lessac/medium',
-        'sha256': {'.onnx': '5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f',
-                   '.onnx.json': 'efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0'},
-    },
-    # German is disabled in the English edition; its files are not pinned.
-    'de_DE-thorsten-low': {'path': 'de/de_DE/thorsten/low', 'sha256': None},
-}
+# The Docker image keeps the voices in PIPER_MODEL_DIR (Dockerfile); a
+# development checkout downloads them to models/piper on first use.
+MODEL_DIR = os.environ.get('PIPER_MODEL_DIR') or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'models', 'piper')
+_VOICE_FILES = model_pins.PIPER_VOICE_FILES
+VOICES = model_pins.PIPER_VOICES
 
 _DEFAULT_VOICES = {
     # American English, to match the reference IPA from the CMU dictionary (eng_to_ipa).
-    'en': 'en_US-ljspeech-medium',
+    'en': model_pins.DEFAULT_ENGLISH_VOICE,
     'de': 'de_DE-thorsten-low',
 }
 
@@ -105,37 +84,11 @@ def is_available() -> bool:
         return False
 
 
-def _sha256(path) -> str:
-    digest = hashlib.sha256()
-    with open(path, 'rb') as f:
-        for block in iter(lambda: f.read(1 << 20), b''):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _download_model(language):
     """Make sure the voice files are in MODEL_DIR and match their pinned sha256."""
     voice = VOICE_CONFIGS[language]
-    spec = VOICES[voice]
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    for suffix in _VOICE_FILES:
-        fname = voice + suffix
-        dest = os.path.join(MODEL_DIR, fname)
-        expected = (spec['sha256'] or {}).get(suffix)
-        if os.path.exists(dest):
-            if expected and _sha256(dest) != expected:
-                raise RuntimeError(f'{dest} does not match its pinned sha256; delete it to download it again.')
-            continue
-        logger.info('Downloading Piper voice (%s): %s', language, fname)
-        # Download to a temporary name first so an interrupted download
-        # never leaves a truncated model that looks complete on the next run.
-        partial = dest + '.part'
-        urllib.request.urlretrieve(_VOICE_URL.format(path=spec['path'], file=fname), partial)
-        if expected and _sha256(partial) != expected:
-            os.remove(partial)
-            raise RuntimeError(f'The downloaded {fname} does not match its pinned sha256.')
-        os.replace(partial, dest)
-        logger.info('Downloaded %s (%d bytes)', fname, os.path.getsize(dest))
+    for name in model_pins.download_piper_voice(voice, MODEL_DIR, VOICES[voice]):
+        logger.info('Downloaded Piper voice file %s for %s', name, language)
 
 
 def _session_options():
@@ -248,7 +201,7 @@ def generate_wav_base64(text, language='en'):
         counts = [_phoneme_count(model, piece) for piece in pieces]
         if sum(counts) > _MAX_PHONEMES:
             raise TextTooLongError(f'{sum(counts)} phonemes (limit {_MAX_PHONEMES})')
-        pieces = [part for piece, count in zip(pieces, counts) for part in _split_dense_piece(model, piece, count)]
+        pieces = [part for piece, count in zip(pieces, counts, strict=True) for part in _split_dense_piece(model, piece, count)]
         with wave.open(wav_buffer, 'wb') as wav_file:
             format_set = False
             for piece in pieces:

@@ -1,8 +1,14 @@
-.git
-images
-Dockerfile
-.dockerignore
-models
-__pycache__
-*.pyc
-.claude
+# The build context holds only what the image needs (Dockerfile); everything
+# else (tests, deploy scripts, docs, local models, git data) stays out.
+*
+!*.py
+!requirements.lock
+!scripts/download_models.py
+!databases/data_en.csv
+!static/
+!templates/
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+**/__pycache__
+**/*.pyc
+**/.DS_Store

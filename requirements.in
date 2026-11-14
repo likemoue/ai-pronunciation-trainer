@@ -1,0 +1,21 @@
+# Direct runtime dependencies of the English edition.
+#
+# requirements.lock pins them and everything they pull in, each file by its
+# sha256, for the Docker image and CI (CPython 3.12 on Linux x86_64).
+# Regenerate it with scripts/lock.sh; never edit it by hand. Versions follow
+# the project policy: the newest release that is at least 7 days old, unless
+# a security fix needs a newer one.
+#
+# For local development on any platform: pip install -r requirements.txt
+
+flask              # web app (webApp.py)
+gunicorn           # WSGI server (gunicorn.conf.py)
+numpy
+pandas             # reads the sentence bank (lambdaGetSample.py)
+torch              # CPU build from https://download.pytorch.org/whl/cpu (scripts/lock.sh)
+transformers       # Whisper speech recognition (whisper_wrapper.py)
+huggingface-hub    # downloads Whisper when the image is built (scripts/download_models.py)
+piper-tts          # reference voice (piperTTS.py)
+onnxruntime        # runs the Piper voice with our own session options (piperTTS.py)
+eng-to-ipa         # reference IPA from the CMU Pronouncing Dictionary (RuleBasedModels.py)
+dtwalign           # word alignment (WordMatching.py)
