@@ -92,6 +92,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
+      - name: Disk space for the image, its build cache and Trivy's copy (about 15 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup
+          df -h /
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -140,5 +144,5 @@ jobs:
             --entrypoint python aipt:ci -m pytest -q -p no:cacheprovider -m "not de"
       - name: Trivy (fixable HIGH and CRITICAL vulnerabilities)
         run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image --timeout 20m \
             --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress aipt:ci
