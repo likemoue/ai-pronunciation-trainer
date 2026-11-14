@@ -20,9 +20,11 @@ workers = int(os.environ.get('WEB_CONCURRENCY', '2'))
 worker_class = 'gthread'
 threads = int(os.environ.get('GUNICORN_THREADS', '4'))
 timeout = int(os.environ.get('GUNICORN_TIMEOUT', '120'))
-# Time a stopping worker has to finish the requests it is serving. docker stop
-# waits 40 s (deploy/deploy.sh) before it kills the container.
-graceful_timeout = int(os.environ.get('GUNICORN_GRACEFUL_TIMEOUT', '30'))
+# Time a stopping worker has to finish the requests it has accepted, including
+# recordings queued behind the one being scored. Cloudflare gives up on a
+# request after 125 s, so nothing that could still be answered is cut.
+# deploy/deploy.sh gives a colour 130 s (docker stop -t) before it is killed.
+graceful_timeout = int(os.environ.get('GUNICORN_GRACEFUL_TIMEOUT', '120'))
 keepalive = 5
 # Worker heartbeat files on tmpfs rather than the container's overlay filesystem.
 if os.path.isdir('/dev/shm'):

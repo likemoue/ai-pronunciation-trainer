@@ -298,8 +298,10 @@ def start_warm_up():
 
 
 if __name__ == "__main__":
-    # One process serves everything, so /readyz waits for one warm-up.
+    # One process serves everything, so /readyz waits for one warm-up, and
+    # markers left by an earlier run must not count.
     os.environ.setdefault('WEB_CONCURRENCY', '1')
+    readiness.reset()
     start_warm_up()
     if os.environ.get('OPEN_BROWSER', '1') == '1':
         webbrowser.open_new('http://127.0.0.1:3000/')

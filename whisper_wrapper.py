@@ -10,8 +10,21 @@ import model_pins
 
 # transformers has its own log handler. Like every library, it logs errors
 # only: it warns on every transcription that max_new_tokens overrides the
-# checkpoint's max_length.
+# checkpoint's max_length. Its progress bars ("Loading weights") would put
+# lines that are not JSON in the log.
 transformers_logging.set_verbosity_error()
+transformers_logging.disable_progress_bar()
+
+
+def clean_up_spaces(text: str) -> str:
+    """Remove the space Whisper's tokenizer leaves before punctuation and
+    contractions ("raining ?" -> "raining?"), as transformers 4 did. Whisper's
+    word timestamps attach punctuation to the word before it, so the
+    transcript's words must too, or the two lists fall out of step."""
+    for spaced, joined in ((' .', '.'), (' ?', '?'), (' !', '!'), (' ,', ','), (" ' ", "'"),
+                           (" n't", "n't"), (" 'm", "'m"), (" 's", "'s"), (" 've", "'ve"), (" 're", "'re")):
+        text = text.replace(spaced, joined)
+    return text
 
 
 class WhisperASRModel(IASRModel):
@@ -42,7 +55,7 @@ class WhisperASRModel(IASRModel):
         if isinstance(audio, torch.Tensor):
             audio = audio.detach().cpu().numpy()
         result = self.asr(audio[0], generate_kwargs=self._generate_kwargs)
-        self._transcript = result["text"]
+        self._transcript = clean_up_spaces(result["text"])
 
         word_locations = []
         previous_end = 0.0
