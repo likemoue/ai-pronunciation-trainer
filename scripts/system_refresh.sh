@@ -14,8 +14,9 @@
 #
 # When the archive cannot be read (no network, an unexpected answer), it warns
 # on stderr and prints the ISO week instead (week-2026-W46), so the layer is
-# still refreshed once a week. It always exits 0, within about 50 s: each
-# request gives up after 8 s and is tried once more.
+# still refreshed once a week. It always exits 0, within about a minute: each
+# request gives up after 8 s and is tried once more, and curl waits at most
+# 10 s for that retry, whatever a Retry-After header asks for.
 #
 # CI (.github/workflows/ci.yml) and deploy/deploy.sh pass the key to docker build.
 set -uo pipefail
@@ -39,7 +40,7 @@ sha256() {
 lines=
 for suite in "${SUITES[@]}"; do
     url=https://deb.debian.org/$suite/InRelease
-    release=$(curl -fsSL --proto-redir =https --connect-timeout 5 --max-time 8 --retry 1 "$url") \
+    release=$(curl -fsSL --proto-redir =https --connect-timeout 5 --max-time 8 --retry 1 --retry-max-time 10 "$url") \
         || fall_back "could not fetch $url"
     # The one line "<sha256> <size> main/binary-amd64/Packages" of the SHA256
     # section, from the InRelease of that suite.

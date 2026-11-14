@@ -29,7 +29,7 @@ env:
 jobs:
   canary:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,7 +39,10 @@ jobs:
       - name: Smoke test the public site (one retry after a minute)
         run: |
           for attempt in 1 2; do
-            python3 deploy/smoke_test.py "$SITE" --user-agent "$USER_AGENT" && exit 0
+            # 60 s per check, as deploy.sh allows after a switch: during a burst of
+            # recordings the page and /healthz wait behind them (up to 34 s measured).
+            # A site that does not answer at all still fails at the first check.
+            python3 deploy/smoke_test.py "$SITE" --user-agent "$USER_AGENT" --timeout 60 && exit 0
             echo "::warning::attempt $attempt failed"
             [ "$attempt" = 2 ] || sleep 60
           done

@@ -1,7 +1,8 @@
-# Checks every pull request and every push to main. deploy/deploy.sh deploys
-# only commits of main whose run of this workflow succeeded (it asks the GitHub
-# API). Actions, the BuildKit daemon and tool images are pinned by commit SHA
-# or digest.
+# Checks every pull request and every push to main. deploy/deploy.sh asks the
+# GitHub API for a commit's run of this workflow and refuses the commit when the
+# run failed, was cancelled or has not finished; it only warns, and deploys,
+# when GitHub cannot be asked or the commit has no run (deploy/RUNBOOK.md).
+# Actions, the BuildKit daemon and tool images are pinned by commit SHA or digest.
 name: ci
 
 on:
@@ -118,7 +119,10 @@ jobs:
         env:
           OVERRIDE: ${{ inputs.system_refresh }}
         run: |
-          key=${OVERRIDE:-$(scripts/system_refresh.sh)}
+          # The script gives up on Debian's archive within about a minute; the
+          # timeout bounds it anyway, with the same fallback.
+          key=${OVERRIDE:-$(timeout 90 scripts/system_refresh.sh || true)}
+          key=${key:-week-$(date -u +%G-W%V)}
           if ! [[ $key =~ ^[A-Za-z0-9._:-]+$ ]]; then
             echo "::error::system_refresh may hold only letters, digits and . _ : -"
             exit 1
@@ -156,7 +160,7 @@ jobs:
       - name: All tests inside the image, without network (real ffmpeg, Whisper and Piper)
         # The tests run on the code and files of the image's /app, so a runtime
         # file the Dockerfile does not copy fails them. From the checkout come
-        # only the tests, pytest.ini and deploy/ (two tests read it).
+        # only the tests, pytest.ini and deploy/ (some tests read it).
         # test_build.py checks the repository's build files, which the image
         # does not hold; the test job runs it.
         run: |
