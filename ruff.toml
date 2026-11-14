@@ -1,0 +1,6 @@
+# ruff check . (CI and requirements-dev.lock). The rules find bugs rather than
+# style: syntax errors (E9), pyflakes (F) and bugbear (B).
+target-version = "py312"
+
+[lint]
+select = ["E9", "F", "B"]

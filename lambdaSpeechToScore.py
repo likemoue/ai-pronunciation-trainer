@@ -107,7 +107,7 @@ def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
                 result = trainer.processAudioForGivenText(signal, real_text)
             except Exception:
                 if not trainer.asr_model.getTranscript().strip():
-                    raise NoSpeechError()
+                    raise NoSpeechError() from None
                 raise
         stats.update({f'{name}_ms': value for name, value in result.get('timings_ms', {}).items()})
         if not result['recording_transcript'].strip():
