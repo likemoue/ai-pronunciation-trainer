@@ -14,13 +14,15 @@ export MSYS_NO_PATHCONV=1   # Git Bash: pass paths to docker unchanged
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 out=${OUT_DIR:-"$here/out"}
+# docker -v takes a relative source for the name of a volume: make it a path.
+[[ "$out" == /* || "$out" =~ ^[A-Za-z]:[/\\] ]] || out="$PWD/$out"
 host_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi; }
 die() { echo "run.sh: $*" >&2; exit 2; }
 CTR=aipt-deploy-harness   # the harness container; each lane has its own app name (harness/lib.sh)
 
 # The fewest checks each scenario makes when it runs to its end (some depend on the
 # outcome of a case); fewer means that part of it was skipped.
-declare -A MIN_CHECKS=([b1_lifecycle]=33 [b2_legacy]=23 [b3_failures]=89 [b4_signals]=153
+declare -A MIN_CHECKS=([b1_lifecycle]=33 [b2_legacy]=23 [b3_failures]=89 [b4_signals]=169
                        [b5_kill]=74 [b6_migration]=234 [b7_misc]=31 [b8_gates]=42)
 
 scenarios=()

@@ -12,6 +12,10 @@ declare -A CASES=(
   [int-group-rm-colour]="FAULT_SIG=INT FAULT_SIG_TO=group FAULT_SIG_AT=rm-colour"
   [int-group-run]="FAULT_SIG=INT FAULT_SIG_TO=group FAULT_SIG_AT=stage-run FAULT_SIG_DELAY=0.1"
   [term-bash-run]="FAULT_SIG=TERM FAULT_SIG_TO=bash FAULT_SIG_AT=stage-run FAULT_SIG_DELAY=0.1"
+  # The daemon finishes a create that the docker CLI gave up on (bin/docker, FAULT_CREATE_LAG):
+  # Ctrl-C, and a dropped SSH session, whose shell sends SIGHUP to deploy.sh's process group.
+  [int-group-run-lag]="FAULT_SIG=INT FAULT_SIG_TO=group FAULT_SIG_AT=stage-run FAULT_SIG_DELAY=0.1 FAULT_CREATE_LAG=2"
+  [hup-group-run-lag]="FAULT_SIG=HUP FAULT_SIG_TO=group FAULT_SIG_AT=stage-run FAULT_SIG_DELAY=0.1 FAULT_CREATE_LAG=2"
   [int-group-wait]="FAULT_SIG=INT FAULT_SIG_TO=group FAULT_SIG_AT=wait FAULT_SIG_DELAY=0.5"
   [hangup-wait]="--pty FAULT_SIG_TO=hangup FAULT_SIG_AT=wait FAULT_SIG_DELAY=0.5"
   [term-bash-smoke-staging]="FAULT_SIG=TERM FAULT_SIG_TO=bash FAULT_SIG_AT=smoke-staging FAULT_SIG_DELAY=0.5 SMOKE_SLEEP=2"
@@ -27,7 +31,8 @@ declare -A CASES=(
   [hangup-nohup-wait]="--pty-nohup FAULT_SIG_TO=hangup FAULT_SIG_AT=wait FAULT_SIG_DELAY=0.5"
   [hangup-nohup-after-reload]="--pty-nohup FAULT_SIG_TO=hangup FAULT_SIG_AT=after-reload"
 )
-ORDER=(int-group-build term-bash-build int-group-rm-colour int-group-run term-bash-run int-group-wait hangup-wait term-bash-smoke-staging
+ORDER=(int-group-build term-bash-build int-group-rm-colour int-group-run term-bash-run int-group-run-lag hup-group-run-lag
+       int-group-wait hangup-wait term-bash-smoke-staging
        int-group-reload int-bash-after-reload term-group-after-reload hangup-after-reload int-group-smoke-prod
        term-bash-smoke-prod int-bash-prelog int-group-posttag int-group-retire hangup-nohup-wait hangup-nohup-after-reload)
 (( $# )) && ORDER=("$@")

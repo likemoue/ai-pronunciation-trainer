@@ -18,7 +18,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-test-${{ github.ref }}
+  # As in ci.yml: a run of a push to main is never cancelled by a newer push.
+  group: deploy-test-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

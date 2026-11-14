@@ -5,6 +5,7 @@
 #   FAULT_RELOAD=fail                           `caddy reload` inside the proxy
 #   FAULT_PROXY_START=fail|port                 `docker start` of the proxy
 #   FAULT_INSPECT_FAIL=N    the Nth health-status inspect of a colour fails once
+#   FAULT_CREATE_LAG=secs   the daemon creates the new colour late (see `run` below)
 #   FAULT_SIG_AT=<point>    see bin/fire; points here: build, rm-colour, stage-run, wait,
 #                           reload, after-reload, stop-legacy, start-proxy, after-start-proxy,
 #                           after-rename, stop-colour, post-tag
@@ -44,6 +45,11 @@ case "$1" in
     if [[ "$last" == "$A-blue" || "$last" == "$A-green" ]]; then
       "$REAL" "$@"; rc=$?
       trap '' INT TERM HUP          # the removal has completed; the signal is for deploy.sh
+      if [[ -e "$ST/lagged-create.pending" ]]; then
+        # FAULT_CREATE_LAG (see run): the late create lands now, just after this removal.
+        touch "$ST/lagged-create.go"
+        for _ in $(seq 1 200); do [[ -e "$ST/lagged-create.done" ]] && break; sleep 0.05; done
+      fi
       /h/bin/fire rm-colour
       exit $rc
     fi ;;
@@ -61,6 +67,33 @@ case "$1" in
           exit 125 ;;
       esac
       /h/bin/fire stage-run
+      if [[ -n "${FAULT_CREATE_LAG:-}" ]]; then
+        # Docker's CLI gives up at once on SIGINT, SIGTERM or SIGHUP, while the daemon
+        # still creates the container it was asked for. Here the daemon is late: it
+        # creates the container right after deploy.sh's next `docker rm -f` of this
+        # colour (the worst moment: that removal found nothing), or FAULT_CREATE_LAG
+        # seconds after the call when no removal comes. A deploy.sh that lets the signal
+        # reach this CLI then loses the previous release, every time.
+        rm -f "$ST/lagged-create.go" "$ST/lagged-create.done"
+        touch "$ST/lagged-create.pending"
+        echo "$(/bin/date +%T.%3N) FAULT: the daemon creates the new colour late" >> "$ST/trace.log"
+        setsid bash -c '
+          st=$1 lag=$2; shift 2
+          trap "" INT TERM HUP
+          end=$(( $(/bin/date +%s) + lag ))
+          while [[ ! -e "$st/lagged-create.go" ]] && (( $(/bin/date +%s) < end )); do sleep 0.05; done
+          rm -f "$st/lagged-create.pending"
+          "$@"; rc=$?
+          echo "$(/bin/date +%T.%3N) FAULT: the late create returned $rc" >> "$st/trace.log"
+          touch "$st/lagged-create.done"
+          exit $rc' _ "$ST" "$FAULT_CREATE_LAG" "$REAL" "$@" </dev/null >"$ST/lagged-create.out" 2>&1 &
+        bg=$!
+        trap 'echo "$(/bin/date +%T.%3N) FAULT: the docker CLI gave up on a signal; the daemon goes on" >> "$ST/trace.log"; exit 130' INT TERM HUP
+        wait "$bg"; rc=$?
+        trap - INT TERM HUP
+        cat "$ST/lagged-create.out"
+        exit $rc
+      fi
     fi ;;
   container)
     if [[ "$2" == inspect && "$*" == *State.Health.Status* && ( "$last" == "$A-blue" || "$last" == "$A-green" ) ]]; then
