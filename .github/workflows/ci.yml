@@ -1,6 +1,7 @@
-# Checks every pull request and every push to main. deploy/deploy.sh only deploys
-# commits that are on a branch of origin, so a commit is checked here before it
-# reaches production. Actions and tool images are pinned by commit SHA or digest.
+# Checks every pull request and every push to main. deploy/deploy.sh deploys
+# only commits of main whose run of this workflow succeeded (it asks the GitHub
+# API). Actions, the BuildKit daemon and tool images are pinned by commit SHA
+# or digest.
 name: ci
 
 on:
@@ -14,7 +15,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces the older run; every commit of main
+  # is checked to the end, since deploy.sh asks for its result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # requirements.lock: torch from the PyTorch CPU index, everything else from PyPI.
@@ -43,14 +46,15 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/pip install --require-hashes --no-deps -r requirements-dev.lock
-      - name: requirements*.lock match requirements*.in
+      - name: requirements*.lock match requirements*.in, hashes included
         run: scripts/lock.sh --check
       - name: ruff
         run: .venv/bin/ruff check .
       - name: shell scripts
         run: |
-          bash -n deploy/deploy.sh scripts/lock.sh
-          docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" -S warning -x deploy/deploy.sh scripts/lock.sh
+          scripts=(deploy/deploy.sh scripts/*.sh deploy/test/run.sh deploy/test/harness/*.sh deploy/test/harness/bin/*)
+          for script in "${scripts[@]}"; do bash -n "$script"; done
+          docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$SHELLCHECK_IMAGE" -S warning -x deploy/deploy.sh scripts/*.sh deploy/test/run.sh
       - name: workflows
         run: docker run --rm -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color
       - name: pip-audit
@@ -76,7 +80,7 @@ jobs:
       - name: ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install requirements.lock and requirements-dev.lock
-        run: pip install --require-hashes -r requirements.lock -r requirements-dev.lock
+        run: scripts/pip_install_locked.sh "$(command -v python)" requirements.lock requirements-dev.lock
       - name: pytest
         run: python -m pytest -q -p no:cacheprovider
         env:
@@ -92,6 +96,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.38.2
+          driver-opts: image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+      - name: The week, so the system packages are refreshed as deploy.sh does
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
       - name: Build the image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -100,6 +110,7 @@ jobs:
           tags: aipt:ci
           build-args: |
             GIT_SHA=${{ github.sha }}
+            SYSTEM_REFRESH=${{ steps.week.outputs.week }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Image size
@@ -119,12 +130,14 @@ jobs:
           docker logs app 2>&1 | tail -n 40
           docker rm -f app
           [ "$status" = healthy ]
-      - name: All tests inside the image (real ffmpeg, Whisper and Piper)
+      - name: All tests inside the image, without network (real ffmpeg, Whisper and Piper)
         run: |
-          docker run --rm -v "$PWD:/src:ro" -w /src -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONUTF8=1 \
-            --entrypoint sh aipt:ci -c '
-              pip install --quiet --disable-pip-version-check --target /tmp/dev --require-hashes --no-deps -r requirements-dev.lock &&
-              PYTHONPATH=/tmp/dev python -m pytest -q -p no:cacheprovider -m "not de"'
+          docker volume create aipt-dev >/dev/null
+          docker run --rm -v "$PWD:/src:ro" -v aipt-dev:/tmp/dev -w /src --user 0 --entrypoint sh aipt:ci -c \
+            'pip install --quiet --disable-pip-version-check --target /tmp/dev --require-hashes --no-deps -r requirements-dev.lock'
+          docker run --rm --network none -v "$PWD:/src:ro" -v aipt-dev:/tmp/dev:ro -w /src \
+            -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONUTF8=1 -e PYTHONPATH=/tmp/dev \
+            --entrypoint python aipt:ci -m pytest -q -p no:cacheprovider -m "not de"
       - name: Trivy (fixable HIGH and CRITICAL vulnerabilities)
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
