@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Fault-injecting wrapper around the real docker CLI. Only deploy.sh runs through it;
+# the harness itself calls /usr/local/bin/docker directly.
+#   FAULT_STAGING=unhealthy|crash|port|create   the `docker run` of the new colour
+#   FAULT_RELOAD=fail                           `caddy reload` inside the proxy
+#   FAULT_PROXY_START=fail|port                 `docker start` of the proxy
+#   FAULT_INSPECT_FAIL=N    the Nth health-status inspect of a colour fails once
+#   FAULT_SIG_AT=<point>    see bin/fire; points here: build, stage-run, wait, reload,
+#                           after-reload, stop-legacy, start-proxy, after-start-proxy,
+#                           after-rename, stop-colour, post-tag
+REAL=/usr/local/bin/docker
+ST=${HARNESS_STATE:?}
+A=${APP:?}
+printf '%s %s [pid %s ppid %s] docker %s\n' "$(/bin/date +%T.%3N)" "$(/bin/date +%s.%3N)" "$$" "$PPID" "$*" >> "$ST/trace.log"
+last=${*: -1}
+
+case "$1" in
+  build)
+    /h/bin/fire build ;;
+  run)
+    if [[ " $* " == *" --name $A-blue "* || " $* " == *" --name $A-green "* ]]; then
+      case "${FAULT_STAGING:-}" in
+        unhealthy) shift; set -- run -e FORCE_UNHEALTHY=1 "$@" ;;
+        crash)     shift; set -- run -e FORCE_CRASH=1 "$@" ;;
+        port)
+          port=$(grep -oE '127\.0\.0\.1:[0-9]+:3000' <<<"$*" | cut -d: -f2)
+          "$REAL" run -d --name "$A-blocker" -p "127.0.0.1:$port:80" alpine:3 sleep 3600 >/dev/null
+          echo "$(/bin/date +%T.%3N) FAULT: $A-blocker holds 127.0.0.1:$port" >> "$ST/trace.log" ;;
+        create)
+          echo "docker: Error response from daemon: failed to create container: no space left on device (injected)" >&2
+          exit 125 ;;
+      esac
+      /h/bin/fire stage-run
+    fi ;;
+  container)
+    if [[ "$2" == inspect && "$*" == *State.Health.Status* && ( "$last" == "$A-blue" || "$last" == "$A-green" ) ]]; then
+      n=$(( $(cat "$ST/health-inspects" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$ST/health-inspects"
+      /h/bin/fire wait
+      if [[ -n "${FAULT_INSPECT_FAIL:-}" && "$n" == "$FAULT_INSPECT_FAIL" ]]; then
+        echo "$(/bin/date +%T.%3N) FAULT: health inspect #$n fails" >> "$ST/trace.log"
+        echo "Error response from daemon: i/o timeout (injected transient failure)" >&2
+        exit 1
+      fi
+    fi ;;
+  exec)
+    if [[ "$2" == "$A-proxy" && "$3" == caddy && "$4" == reload ]]; then
+      /h/bin/fire reload
+      if [[ "${FAULT_RELOAD:-}" == fail ]]; then
+        echo "Error: sending configuration to instance: injected failure" >&2
+        exit 1
+      fi
+      "$REAL" "$@"; rc=$?
+      /h/bin/fire after-reload
+      exit $rc
+    fi ;;
+  stop)
+    [[ "$last" == "$A" ]] && /h/bin/fire stop-legacy
+    [[ "$last" == "$A-blue" || "$last" == "$A-green" ]] && /h/bin/fire stop-colour ;;
+  start)
+    if [[ "$last" == "$A-proxy" ]]; then
+      /h/bin/fire start-proxy
+      case "${FAULT_PROXY_START:-}" in
+        fail)
+          echo "Error response from daemon: injected start failure" >&2
+          exit 1 ;;
+        port)
+          if [[ ! -e "$ST/port-blocked" ]]; then
+            touch "$ST/port-blocked"
+            "$REAL" run -d --name "$A-blocker" -p "${PROD_PORT}:80" alpine:3 sleep "${BLOCKER_SECS:-3600}" >/dev/null
+            echo "$(/bin/date +%T.%3N) FAULT: $A-blocker now holds :$PROD_PORT" >> "$ST/trace.log"
+          fi ;;
+      esac
+      "$REAL" "$@"; rc=$?
+      /h/bin/fire after-start-proxy
+      exit $rc
+    fi ;;
+  rename)
+    if [[ "$2" == "$A" && "$3" == "$A-legacy" ]]; then
+      "$REAL" "$@"; rc=$?
+      trap '' INT TERM HUP          # the rename has completed; the signal is for deploy.sh
+      /h/bin/fire after-rename
+      exit $rc
+    fi ;;
+  tag)
+    if [[ "$last" == "$A:latest" ]]; then
+      "$REAL" "$@"; rc=$?
+      trap '' INT TERM HUP
+      /h/bin/fire post-tag
+      exit $rc
+    fi ;;
+esac
+exec "$REAL" "$@"

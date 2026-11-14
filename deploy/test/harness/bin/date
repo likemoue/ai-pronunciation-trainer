@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# deploy.sh calls `date -u +%Y-%m-%dT%H:%M:%SZ` only to timestamp the deploy-log line.
+[[ "$*" == "-u +%Y-%m-%dT%H:%M:%SZ" ]] && /h/bin/fire pre-log
+exec /bin/date "$@"
