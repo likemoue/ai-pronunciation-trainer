@@ -127,7 +127,7 @@ def _json_body() -> dict:
     except HTTPException:
         raise  # 413 for a Content-Length over the limit, 400 for a client that went away
     except Exception:  # noqa: BLE001 - e.g. gunicorn's errors for malformed chunked encoding
-        raise validation.ValidationError('The request body could not be read.')
+        raise validation.ValidationError('The request body could not be read.') from None
     # A chunked body has no Content-Length, so reading stops at the limit
     # instead of refusing it; and a body shorter than its Content-Length was
     # cut off by the client. Neither may be parsed as if it were complete.
@@ -236,7 +236,7 @@ def readyz():
 @app.route(rootPath+'/version')
 def version():
     return {'git_sha': os.environ.get('GIT_SHA', 'unknown'),
-            'build_date': os.environ.get('BUILD_DATE', 'unknown')}
+            'git_date': os.environ.get('GIT_DATE', 'unknown')}
 
 
 def _mark_ready():
