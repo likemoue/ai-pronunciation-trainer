@@ -137,11 +137,27 @@ port_of() { if [[ $1 == "$BLUE" ]]; then echo "$BLUE_PORT"; else echo "$GREEN_PO
 other_colour() { if [[ $1 == "$BLUE" ]]; then echo "$GREEN"; else echo "$BLUE"; fi; }
 http_ok() { curl -fsS -o /dev/null -m "${2:-5}" "$1" 2>/dev/null; }
 
-# The colour Caddy is configured to send traffic to (empty if none).
+# The colour Caddy sends traffic to (empty if none): what its running
+# configuration says while it runs, else the file it starts from. The two
+# differ if a run was killed between writing the file and the reload.
 live_colour() {
-    local target
-    target=$(awk '$1 == "to" { sub(/:3000$/, "", $2); print $2 }' "$PROXY_DIR/upstream.caddy" 2>/dev/null || true)
+    local target=
+    if container_running "$PROXY"; then
+        target=$(running_upstream)
+    fi
+    [[ -n "$target" ]] || target=$(file_upstream)
     [[ $target == "$BLUE" || $target == "$GREEN" ]] && echo "$target" || true
+}
+
+# The upstream named in upstream.caddy.
+file_upstream() {
+    awk '$1 == "to" { sub(/:3000$/, "", $2); print $2 }' "$PROXY_DIR/upstream.caddy" 2>/dev/null || true
+}
+
+# The upstream in Caddy's running configuration, from its admin API.
+running_upstream() {
+    { docker exec "$PROXY" wget -qO- http://127.0.0.1:2019/config/apps/http/servers 2>/dev/null || true; } \
+        | grep -oE '"dial":"[^"]+:3000"' | head -n 1 | sed -E 's/^"dial":"(.*):3000"$/\1/' || true
 }
 
 wait_healthy() {
@@ -199,10 +215,7 @@ reload_proxy() {
 }
 
 # True if Caddy's running configuration sends traffic to <colour>.
-proxy_sends_to() {
-    docker exec "$PROXY" wget -qO- http://127.0.0.1:2019/config/apps/http/servers 2>/dev/null \
-        | grep -q "\"dial\":\"$1:3000\""
-}
+proxy_sends_to() { [[ -n "$1" && "$(running_upstream)" == "$1" ]]; }
 
 # docker releases a stopped container's port a moment after `docker stop` returns.
 start_proxy() {
@@ -323,8 +336,13 @@ on_abort() {  # on_abort <what happened>
         switching)
             if [[ -n "$SWITCHED_FROM" ]] && container_running "$SWITCHED_FROM"; then
                 write_proxy_config "$SWITCHED_FROM" && reload_proxy
-                say "The proxy sends traffic to $SWITCHED_FROM again."
             fi
+            if [[ -n "$STAGED" ]] && proxy_sends_to "$STAGED"; then
+                # Never stop the colour that serves.
+                say "!! The proxy still sends traffic to $STAGED, so it is left running. Check with deploy/deploy.sh --status (deploy/RUNBOOK.md)."
+                exit 2
+            fi
+            [[ -n "$SWITCHED_FROM" ]] && say "The proxy sends traffic to $SWITCHED_FROM."
             if [[ -n "$STAGED" ]]; then
                 # Let the requests it took before the switch back finish.
                 sleep "$DRAIN_SECONDS"
@@ -668,10 +686,14 @@ main() {
     if container_exists "$PROXY"; then
         local live
         live=$(live_colour)
-        # Keep the proxy's configuration in step with this script.
+        # The files must say what Caddy does (a run killed before its reload
+        # leaves them ahead of it), and the Caddyfile must be this script's.
         if [[ -n "$live" ]] && ! cmp -s <(printf '%s\n' "$CADDYFILE") "$PROXY_DIR/Caddyfile"; then
             write_proxy_config "$live"
             container_running "$PROXY" && reload_proxy
+        elif [[ -n "$live" && "$(file_upstream)" != "$live" ]]; then
+            say "$PROXY_DIR/upstream.caddy named $(file_upstream), but Caddy sends traffic to $live; corrected the file."
+            write_proxy_config "$live"
         fi
         # A move behind the proxy that was recorded but interrupted before the
         # single container was renamed.
