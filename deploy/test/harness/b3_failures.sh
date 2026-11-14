@@ -35,8 +35,9 @@ for c in bad-health crash unhealthy staging-port create smoke-staging smoke-prod
   eval "new=\$F$n"
   say ""; say "=================== failure case $c: live=$prev new=$new"
   run_deploy "${args[@]}"
-  $D rm -f "$APP-blocker" >/dev/null 2>&1 || true
+  $D rm -f "${APP:?}-blocker" >/dev/null 2>&1 || true
   state "after"
+  check "$c: it got as far as starting $new" grep -q "Starting $APP:$new as" "$LOG"
   if [[ $c == inspect-blip ]]; then
     check "$c: a transient inspect failure does not fail the deploy" test "$RC" = 0
     check "$c: serves $new" serves "$new"
@@ -54,10 +55,9 @@ for c in bad-health crash unhealthy staging-port create smoke-staging smoke-prod
   check "$c: only expected containers" only_expected_ctrs
 done
 traffic_stop 1
-say "  failed requests during 9 failed deploys and 2 rollbacks: $(traffic_failures 1), of which not at a Caddy reload: $(traffic_failures_apart_from_reloads 1)"
-check "no request failed during 9 failed deploys and 2 rollbacks, apart from Caddy reloads" test "$(traffic_failures_apart_from_reloads 1)" = 0
+check "no request failed during 9 failed deploys and 2 rollbacks" no_failed_requests 1
 commit G good
 run_deploy
 check "next good deploy: exit 0" test "$RC" = 0
 check "next good deploy: serves G" serves "$G"
-say "FAILS=$FAILS"
+end_scenario

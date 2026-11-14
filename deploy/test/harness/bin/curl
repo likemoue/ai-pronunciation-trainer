@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# curl for deploy.sh and the harness. With FAKE_CI=success|failure|cancelled|pending|none|error,
+# requests to the GitHub API get that verdict on CI's runs (deploy.sh check_ci; an earlier
+# failed run is listed too, to check that the latest run counts); everything else is the real curl.
+url=${*: -1}
+if [[ -n "${FAKE_CI:-}" && $url == https://api.github.com/* ]]; then
+  echo "$(/bin/date +%T.%3N) FAKE GitHub API: $FAKE_CI for $url" >> "${HARNESS_STATE:?}/trace.log"
+  case $FAKE_CI in
+    error) echo "curl: (22) The requested URL returned error: 503" >&2; exit 22 ;;
+    none) echo '{"total_count": 0, "workflow_runs": []}' ;;
+    pending) echo '{"workflow_runs": [{"created_at": "2026-11-14T10:00:00Z", "status": "in_progress", "conclusion": null}]}' ;;
+    *) printf '{"workflow_runs": [%s, %s]}\n' \
+         '{"created_at": "2026-11-14T09:00:00Z", "status": "completed", "conclusion": "failure"}' \
+         "{\"created_at\": \"2026-11-14T10:00:00Z\", \"status\": \"completed\", \"conclusion\": \"$FAKE_CI\"}" ;;
+  esac
+  exit 0
+fi
+exec /usr/bin/curl "$@"

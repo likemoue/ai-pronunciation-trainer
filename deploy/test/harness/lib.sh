@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Harness library for the blue/green deploy.sh, sourced by the scenario scripts
-# inside the aipt-bg-harness container. deploy.sh runs from a clone of a fake
+# inside the aipt-deploy-harness container. deploy.sh runs from a clone of a fake
 # origin (as the RUNBOOK does); the app is a 60-line stand-in (app/).
 # Lanes (LANE=1..3) use their own names, ports and directories so they can run side by side.
 LANE=${LANE:-1}
@@ -8,15 +8,24 @@ case "$LANE" in
   1) export APP=aipt-bg1 PROD_PORT=3391 BLUE_PORT=3392 GREEN_PORT=3393 ;;
   2) export APP=aipt-bg2 PROD_PORT=3394 BLUE_PORT=3395 GREEN_PORT=3396 ;;
   3) export APP=aipt-bg3 PROD_PORT=3397 BLUE_PORT=3398 GREEN_PORT=3399 ;;
+  # Never go on without APP: the clean-up filters on it, and an empty one
+  # matches every container and image of the docker host.
+  *) echo "lib.sh: LANE must be 1, 2 or 3, not '$LANE'." >&2; exit 2 ;;
 esac
 # Bind mounts made by deploy.sh are resolved by the docker daemon, so deploy.sh's
 # state directory lives on a path that the harness container and the daemon share
 # (SW; mounted noexec in the Docker Desktop VM). Repos and harness files stay in W.
 export W=/work/lane$LANE SW=/tmp/aipt-bg/lane$LANE
 export HARNESS_STATE=$W/hstate REPO_DIR=$W/repo DEPLOY_LOG=$SW/state/deploys.log
-export HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-25} KEEP_IMAGES=${KEEP_IMAGES:-3} DRAIN_SECONDS=${DRAIN_SECONDS:-2} STOP_TIMEOUT=${STOP_TIMEOUT:-10}
+export HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-25} KEEP_IMAGES=${KEEP_IMAGES:-3} STOP_TIMEOUT=${STOP_TIMEOUT:-10}
+# Caddy's read_body and the drain after it: a colour that loses the traffic is stopped
+# 3 + 1 + 1 s after the reload. The same in every run: a change rewrites the Caddyfile.
+export READ_BODY_SECONDS=3 DRAIN_MARGIN=1
+# The key of the system-package layer, so that deploy.sh does not ask Debian's archive.
+export SYSTEM_REFRESH=harness
 export PATH=/h/bin:$PATH HARNESS_FIRE=/h/bin/fire
 D=/usr/local/bin/docker
+IMAGE_LOCK=/tmp/aipt-harness-images.lock   # builds share it, removals take it alone (bin/docker)
 OUT=/out
 RUN_NO=0
 SCEN=${SCEN:-scratch}
@@ -27,16 +36,25 @@ FAILS=0
 say() { echo "$*" | tee -a "$OUT/$SCEN.txt"; }
 
 reset_all() {
-  $D ps -aq --filter "name=^/$APP" | xargs -r $D rm -f >/dev/null
-  $D images "$APP" --format '{{.Repository}}:{{.Tag}}' | xargs -r $D rmi >/dev/null 2>&1 || true
-  $D network rm "$APP-net" >/dev/null 2>&1 || true
-  rm -rf "$W" "$SW"; mkdir -p "$HARNESS_STATE" "$(dirname "$DEPLOY_LOG")"
+  $D ps -aq --filter "name=^/${APP:?}" | xargs -r $D rm -f >/dev/null
+  $D images "${APP:?}" --format '{{.Repository}}:{{.Tag}}' | xargs -r flock "$IMAGE_LOCK" $D rmi >/dev/null 2>&1 || true
+  $D network rm "${APP:?}-net" >/dev/null 2>&1 || true
+  rm -rf "${W:?}" "${SW:?}"; mkdir -p "$HARNESS_STATE" "$(dirname "$DEPLOY_LOG")"
   git init -q --bare "$W/origin.git"
   git clone -q "$W/origin.git" "$W/work" 2>/dev/null
   cp -r /h/app/. "$W/work/"
   mkdir -p "$W/work/deploy"
   tr -d '\r' < "${DEPLOY_SH:-/deploy/deploy.sh}" > "$W/work/deploy/deploy.sh"; chmod +x "$W/work/deploy/deploy.sh"
-  say "== reset lane $LANE: deploy.sh = ${DEPLOY_SH:-/deploy/deploy.sh} ($(md5sum < "$W/work/deploy/deploy.sh" | cut -c1-8))"
+  # The fake origin's first commit is the oldest release deploy.sh may deploy.
+  ( cd "$W/work" && git add -A && git commit -qm root && git push -q origin HEAD:main )
+  OLDEST_RELEASE=$(git -C "$W/work" rev-parse HEAD); export OLDEST_RELEASE
+  say "== reset lane $LANE: deploy.sh = ${DEPLOY_SH:-/deploy/deploy.sh} ($(md5sum < "$W/work/deploy/deploy.sh" | cut -c1-8)), OLDEST_RELEASE = ${OLDEST_RELEASE:0:7}"
+}
+
+# fake_caddy <tag> <text>: $APP:<tag>, the pinned Caddy, except that it refuses every
+# Caddyfile containing <text> (caddy-fake/Dockerfile)
+fake_caddy() {
+  flock -s "$IMAGE_LOCK" $D build -q --build-arg "REFUSE=$2" -t "${APP:?}:$1" /h/caddy-fake >/dev/null
 }
 
 # commit <label> <good|bad|crash>: new commit on main in the fake origin; sets $<label> to its short sha
@@ -48,14 +66,21 @@ commit() {
   say "commit $1 = $sha ($2)"
 }
 
-# legacy <sha>: run that commit the way the single-container deploy.sh did
+# legacy <sha>: run that commit the way the single-container deploy.sh did. A case that
+# starts without it would test a fresh host instead, so that is a failed check.
 legacy() {
-  git -C "$W/work" archive --format=tar "$1" | $D build -q --build-arg GIT_SHA="$1" -t "$APP:$1" - >/dev/null
-  $D run -d --name "$APP" --restart unless-stopped -p "$PROD_PORT:3000" --memory 1g \
-     --log-opt max-size=10m --tmpfs /tmp:rw,nosuid,size=16m "$APP:$1" >/dev/null
+  local i
+  for i in 1 2 3; do
+    git -C "$W/work" archive --format=tar "$1" | flock -s "$IMAGE_LOCK" $D build -q --build-arg GIT_SHA="$1" -t "$APP:$1" - >/dev/null \
+      && $D run -d --name "$APP" --restart unless-stopped -p "$PROD_PORT:3000" --memory 1g \
+           --log-opt max-size=10m --tmpfs /tmp:rw,nosuid,size=16m "$APP:$1" >/dev/null \
+      && break
+    say "  (could not start $APP, attempt $i of 3)"
+    $D rm -f "${APP:?}" >/dev/null 2>&1; sleep 2
+  done
   printf '%s %s %s\n' "$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$($D container inspect -f '{{.Id}}' "$APP")" >> "$DEPLOY_LOG"
-  local i; for i in $(seq 1 50); do [[ "$(serving)" == "ok $1" ]] && break; sleep 0.2; done
-  say "legacy container $APP runs $1 on :$PROD_PORT"
+  for i in $(seq 1 50); do [[ "$(serving)" == "ok $1" ]] && break; sleep 0.2; done
+  check "legacy container $APP runs $1 on :$PROD_PORT" serves "$1"
 }
 
 # run_deploy [--pty|--pty-nohup|--tee] [KEY=VAL ...] [args]: run deploy.sh; sets RC and LOG
@@ -106,8 +131,8 @@ serving() { curl -s -m 2 "http://127.0.0.1:$PROD_PORT/" | tr -d '\n' || true; }
 # state [label]: containers, images, deploy log, proxy upstream, what PROD_PORT serves
 state() {
   say "  -- state ${1:-}"
-  $D ps -a --filter "name=^/$APP" --format '     ctr {{.Names}}  {{.Image}}  {{.State}}  ({{.Status}})' | sed 's/caddy:2.11.9-alpine@sha256:[0-9a-f]*/caddy/' | sort | tee -a "$OUT/$SCEN.txt"
-  $D images "$APP" --format '     img {{.Repository}}:{{.Tag}}' | sort | tee -a "$OUT/$SCEN.txt"
+  $D ps -a --filter "name=^/${APP:?}" --format '     ctr {{.Names}}  {{.Image}}  {{.State}}  ({{.Status}})' | sed 's/caddy:2.11.9-alpine@sha256:[0-9a-f]*/caddy/' | sort | tee -a "$OUT/$SCEN.txt"
+  $D images "${APP:?}" --format '     img {{.Repository}}:{{.Tag}}' | sort | tee -a "$OUT/$SCEN.txt"
   if [[ -f $DEPLOY_LOG ]]; then awk '{print "     log " $1 " " $2 " " substr($3, 1, 12)}' "$DEPLOY_LOG" | tee -a "$OUT/$SCEN.txt"; else say "     log (none)"; fi
   say "     upstream: $(cat "$SW/state/proxy/upstream.caddy" 2>/dev/null || echo none)"
   local s; s=$(serving)
@@ -121,6 +146,16 @@ check() {  # check <description> <command...>
   if "$@"; then say "  PASS $what"; else say "  FAIL $what"; FAILS=$((FAILS + 1)); fi
 }
 
+# The last line of every scenario. run.sh passes a scenario only if its .txt ends
+# with FAILS=0, so a scenario that stops early never passes.
+end_scenario() {
+  say "FAILS=$FAILS"
+  exit $(( FAILS > 0 ))
+}
+
+# fired <point>: the deploy that just ran was sent its signal at <point> (bin/fire traces it);
+# a case whose deploy failed before that point tested nothing.
+fired() { grep -q "FIRE .* at '$1'" "$OUT/$SCEN.run$RUN_NO.trace"; }
 serves() { local i; for i in $(seq 1 20); do [[ "$(serving)" == "ok $1" ]] && return 0; sleep 0.25; done; return 1; }
 serves_any() { [[ "$(serving)" == "ok "* ]]; }
 running() { [[ "$($D container inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" == true ]]; }
@@ -136,17 +171,19 @@ latest_is() { [[ "$($D image inspect -f '{{.Id}}' "$APP:latest" 2>/dev/null)" ==
 # Exactly the expected containers exist: proxy, colours, kept legacy; nothing else (no blocker, no strays).
 only_expected_ctrs() {
   local extra
-  extra=$($D ps -a --filter "name=^/$APP" --format '{{.Names}}' | grep -vxE "$APP-proxy|$APP-blue|$APP-green|$APP-legacy" || true)
+  extra=$($D ps -a --filter "name=^/${APP:?}" --format '{{.Names}}' | grep -vxE "$APP-proxy|$APP-blue|$APP-green|$APP-legacy" || true)
   [[ -z $extra ]] || { say "     unexpected containers: $extra"; return 1; }
 }
 one_running_colour_or_both() { running "$APP-blue" || running "$APP-green"; }
 live_runs() { local l; l=$(live); [[ -n $l ]] && running "$l"; }
 
-# Traffic: requests every few ms (and slow ones that cross switches) against PROD_PORT.
+# traffic_start <n> [basic]: requests every few ms against PROD_PORT, some of them slow, from
+# traffic.py; without "basic", also long requests and slow uploads, and at every reload in the
+# trace of deploy.sh, an upload and a long request that cross it.
 traffic_start() {
   rm -f "$HARNESS_STATE/traffic.stop"
-  python3 /h/traffic.py "http://127.0.0.1:$PROD_PORT" "$HARNESS_STATE/traffic.stop" "$OUT/$SCEN.traffic$1.json" \
-    > "$OUT/$SCEN.traffic$1.out" 2>&1 &
+  python3 /h/traffic.py "http://127.0.0.1:$PROD_PORT" "$HARNESS_STATE/traffic.stop" "$OUT/$SCEN.traffic$1.json" "${2:-full}" \
+    "$HARNESS_STATE/trace.log" > "$OUT/$SCEN.traffic$1.out" 2>&1 &
   TRAFFIC_PID=$!
   sleep 1
 }
@@ -155,16 +192,19 @@ traffic_stop() {
   wait "$TRAFFIC_PID" 2>/dev/null
   say "  traffic: $(cat "$OUT/$SCEN.traffic$1.out")"
 }
-traffic_failures() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["failed"])' "$OUT/$SCEN.traffic$1.json"; }
-# Failed requests that did not start within 2 s after a `caddy reload` (traced by bin/docker).
-# A reload closes Caddy's idle connections, so a request started at that instant can fail
-# (deploy/RUNBOOK.md); any other failure is a bug.
-traffic_failures_apart_from_reloads() {
-  python3 - "$OUT/$SCEN.traffic$1.json" "$OUT/$SCEN".run*.trace <<'EOF'
-import json, sys
-failures = json.load(open(sys.argv[1]))['failures']
-reloads = [float(line.split()[1]) for trace in sys.argv[2:] for line in open(trace) if ' caddy reload ' in line]
-print(len([f for f in failures if not any(0 <= f['ts'] - r <= 2 for r in reloads)]))
-EOF
+# no_failed_requests <n>: traffic run <n> kept sending requests, and not one of them
+# failed, not even at a `caddy reload`: traffic.py opens a new connection per request,
+# and a reload closes only idle keep-alive connections (deploy/RUNBOOK.md). Lists each
+# failure with its time from the reloads (traffic_check.py).
+no_failed_requests() {
+  python3 /h/traffic_check.py none "$OUT/$SCEN.traffic$1.json" "$OUT/$SCEN".run*.trace | tee -a "$OUT/$SCEN.txt"
+  return "${PIPESTATUS[0]}"
+}
+# move_window <traffic run> <deploy run> <seconds>: the move behind the proxy in that deploy
+# made the port unavailable for at most <seconds>, and requests failed only then.
+move_window() {
+  python3 /h/traffic_check.py move "$OUT/$SCEN.traffic$1.json" "$OUT/$SCEN.run$2.trace" "$OUT/$SCEN.run$2.log" "$APP" "$3" \
+    | tee -a "$OUT/$SCEN.txt"
+  return "${PIPESTATUS[0]}"
 }
 other() { if [[ $1 == "$APP-blue" ]]; then echo "$APP-green"; else echo "$APP-blue"; fi; }

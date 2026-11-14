@@ -1,6 +1,8 @@
 # Stand-in for the real app (harness): GET / -> "ok <GIT_SHA>", /version -> JSON,
-# /slow?ms=N answers after N ms. On SIGTERM it stops accepting connections and
-# lets requests in flight finish (at most STOP_DELAY s), like gunicorn.
+# /slow?ms=N answers after N ms, and POST answers "ok <GIT_SHA>" once it has read
+# the body, with its size in X-Received. On SIGTERM it stops accepting connections
+# and lets requests in flight finish (at most STOP_DELAY s), like gunicorn; a request
+# that comes after it on a connection kept alive gets no answer.
 import http.server
 import json
 import os
@@ -18,13 +20,23 @@ with open('/tmp/started', 'w') as f:
 
 active = 0
 lock = threading.Lock()
+stopping = False  # SIGTERM came
 
 
 class H(http.server.BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
+    def stopped(self):
+        """True for a request that comes after SIGTERM on a connection kept alive (by Caddy):
+        like gunicorn, which no longer reads those, it gets no answer and the connection closes."""
+        if stopping:
+            self.close_connection = True
+        return stopping
+
     def do_GET(self):
         global active
+        if self.stopped():
+            return
         with lock:
             active += 1
         try:
@@ -37,6 +49,24 @@ class H(http.server.BaseHTTPRequestHandler):
                 body = ('ok ' + os.environ.get('GIT_SHA', '?') + '\n').encode()
             self.send_response(200)
             self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        finally:
+            with lock:
+                active -= 1
+
+    def do_POST(self):
+        global active
+        if self.stopped():
+            return
+        with lock:
+            active += 1
+        try:
+            data = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+            body = ('ok ' + os.environ.get('GIT_SHA', '?') + '\n').encode()
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('X-Received', str(len(data)))
             self.end_headers()
             self.wfile.write(body)
         finally:
@@ -65,6 +95,8 @@ def drain_and_exit():
 
 
 def on_term(*_):
+    global stopping
+    stopping = True
     threading.Thread(target=drain_and_exit, daemon=True).start()
 
 

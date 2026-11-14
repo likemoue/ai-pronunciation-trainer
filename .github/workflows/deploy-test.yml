@@ -24,6 +24,8 @@ concurrency:
 jobs:
   harness:
     runs-on: ubuntu-24.04
+    # A full run takes about 20 minutes (three lanes; 17 minutes with Docker Desktop on 16
+    # CPUs). The scenarios mostly wait (drains, health checks), so 4 vCPUs are enough.
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

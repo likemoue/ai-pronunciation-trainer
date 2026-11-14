@@ -5,18 +5,48 @@
 #   FAULT_RELOAD=fail                           `caddy reload` inside the proxy
 #   FAULT_PROXY_START=fail|port                 `docker start` of the proxy
 #   FAULT_INSPECT_FAIL=N    the Nth health-status inspect of a colour fails once
-#   FAULT_SIG_AT=<point>    see bin/fire; points here: build, stage-run, wait, reload,
-#                           after-reload, stop-legacy, start-proxy, after-start-proxy,
+#   FAULT_SIG_AT=<point>    see bin/fire; points here: build, rm-colour, stage-run, wait,
+#                           reload, after-reload, stop-legacy, start-proxy, after-start-proxy,
 #                           after-rename, stop-colour, post-tag
 REAL=/usr/local/bin/docker
 ST=${HARNESS_STATE:?}
 A=${APP:?}
+# The lanes build and remove images at the same time, and the classic builder fails
+# ("unable to find image") when another lane removes an image while it looks for a
+# cached step. So builds share this lock and removals take it alone (lib.sh too).
+IMAGE_LOCK=/tmp/aipt-harness-images.lock
 printf '%s %s [pid %s ppid %s] docker %s\n' "$(/bin/date +%T.%3N)" "$(/bin/date +%s.%3N)" "$$" "$PPID" "$*" >> "$ST/trace.log"
 last=${*: -1}
 
 case "$1" in
   build)
-    /h/bin/fire build ;;
+    /h/bin/fire build
+    # Docker Desktop's image store also fails a build when another client changes images at
+    # that moment ("lease does not exist", "failed to export layer"). Such a build is tried
+    # again, from a copy of the context deploy.sh pipes in, so that the case still tests
+    # what it says; any other failure is deploy.sh's.
+    ctx=$(mktemp) err=$(mktemp)
+    cat > "$ctx"
+    for try in 1 2 3; do
+      flock -s "$IMAGE_LOCK" "$REAL" "$@" < "$ctx" 2> "$err"; rc=$?
+      cat "$err" >&2
+      (( rc != 0 )) && grep -qE 'unable to find image|lease does not exist|failed to export layer' "$err" || break
+      echo "$(/bin/date +%T.%3N) DAEMON: the build failed on its own (attempt $try of 3)" >> "$ST/trace.log"
+    done
+    rm -f "$ctx" "$err"
+    exit "$rc" ;;
+  rmi)
+    exec flock "$IMAGE_LOCK" "$REAL" "$@" ;;
+  image)
+    [[ "$2" == prune || "$2" == rm ]] && exec flock "$IMAGE_LOCK" "$REAL" "$@" ;;
+  rm)
+    # rm-colour: right after a colour was removed (in a deploy, the previous release).
+    if [[ "$last" == "$A-blue" || "$last" == "$A-green" ]]; then
+      "$REAL" "$@"; rc=$?
+      trap '' INT TERM HUP          # the removal has completed; the signal is for deploy.sh
+      /h/bin/fire rm-colour
+      exit $rc
+    fi ;;
   run)
     if [[ " $* " == *" --name $A-blue "* || " $* " == *" --name $A-green "* ]]; then
       case "${FAULT_STAGING:-}" in
@@ -46,10 +76,17 @@ case "$1" in
     if [[ "$2" == "$A-proxy" && "$3" == caddy && "$4" == reload ]]; then
       /h/bin/fire reload
       if [[ "${FAULT_RELOAD:-}" == fail ]]; then
+        echo "$(/bin/date +%T.%3N) FAULT: the reload fails before it reaches Caddy" >> "$ST/trace.log"
         echo "Error: sending configuration to instance: injected failure" >&2
         exit 1
       fi
+      # traffic.py saw the line above and sends its reload probes: they reach Caddy before
+      # the new configuration (and its listener, SO_REUSEPORT) exists.
+      sleep 0.3
+      printf '%s %s [pid %s ppid %s] reload-begins\n' "$(/bin/date +%T.%3N)" "$(/bin/date +%s.%3N)" "$$" "$PPID" >> "$ST/trace.log"
       "$REAL" "$@"; rc=$?
+      # Caddy has switched to the new configuration (or refused it) by now.
+      printf '%s %s [pid %s ppid %s] reload-done rc=%s\n' "$(/bin/date +%T.%3N)" "$(/bin/date +%s.%3N)" "$$" "$PPID" "$rc" >> "$ST/trace.log"
       /h/bin/fire after-reload
       exit $rc
     fi ;;

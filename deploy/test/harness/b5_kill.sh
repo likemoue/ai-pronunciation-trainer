@@ -34,7 +34,16 @@ for c in "${ORDER[@]}"; do
   run_deploy "${args[@]}"
   settle 3
   state "after SIGKILL"
+  point=${CASES[$c]#*FAULT_SIG_AT=}; point=${point%% *}
+  check "$c: the signal was sent at $point" fired "$point"
   check "$c: production serves something after the kill" serves_any
+  if [[ $c == wait ]]; then
+    # The idle colour holds the release the killed deploy was starting, never deployed.
+    run_deploy --rollback
+    check "$c: --rollback refuses the release the killed deploy left (exit 1)" test "$RC" = 1
+    check "$c: it says that release is not in the deploy log" grep -q "which is not in .* so it is not the previous release" "$LOG"
+    check "$c: still serves $prev" serves "$prev"
+  fi
   run_deploy
   state "after deploying again"
   check "$c: re-run exit 0" test "$RC" = 0
@@ -44,6 +53,5 @@ for c in "${ORDER[@]}"; do
   check "$c: only expected containers" only_expected_ctrs
 done
 traffic_stop 1
-say "  failed requests across ${#ORDER[@]} killed deploys and their re-runs: $(traffic_failures 1), of which not at a Caddy reload: $(traffic_failures_apart_from_reloads 1)"
-check "no request failed across ${#ORDER[@]} killed deploys and their re-runs, apart from Caddy reloads" test "$(traffic_failures_apart_from_reloads 1)" = 0
-say "FAILS=$FAILS"
+check "no request failed across ${#ORDER[@]} killed deploys and their re-runs" no_failed_requests 1
+end_scenario

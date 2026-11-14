@@ -38,7 +38,7 @@ run_deploy
 check "leftover: exit 1" test "$RC" = 1
 check "leftover: message" grep -q "single-container deploy.sh was interrupted" "$LOG"
 check "leftover: still serves C" serves "$C"
-$D rm -f "$APP-previous" >/dev/null
+$D rm -f "${APP:?}-previous" >/dev/null
 touch "$SW/state/swap-in-progress"
 run_deploy
 check "swap marker: exit 1" test "$RC" = 1
@@ -63,7 +63,7 @@ check "unpushed: message" grep -q "not on any branch of origin" "$LOG"
 check "refused refs: still serves C" serves "$C"
 
 # A stopped proxy is started again; a hand-edited Caddyfile is rewritten.
-$D stop "$APP-proxy" >/dev/null
+$D stop "${APP:?}-proxy" >/dev/null
 echo "# edited by hand" >> "$SW/state/proxy/Caddyfile"
 run_deploy
 state "after a deploy with the proxy stopped and its config edited"
@@ -86,4 +86,4 @@ run_deploy --help
 check "--help: exit 0" test "$RC" = 0
 check "--help: prints usage" grep -q -- "--rollback" "$LOG"
 check "only expected containers" only_expected_ctrs
-say "FAILS=$FAILS"
+end_scenario
