@@ -1,8 +1,10 @@
 # Flows to check
 
 Each feature adds the flows it touches. Before a release is called done, walk through them on the public site
-right after the deploy (deploy.sh goes from its checks to the switch without stopping; `--rollback` undoes it
-without downtime). "Auto" means a test, a CI job or a deploy step already checks it on every change.
+right after the deploy (deploy.sh goes from its checks to the switch without stopping). `--rollback` undoes a
+release without downtime, except the first deploy with the phase-1 deploy.sh, which leaves no previous colour:
+`deploy.sh --rollback-legacy` undoes that one, with downtime. "Auto" means a test, a CI job or a deploy step
+already checks it on every change.
 
 ## Phase 1: foundation (2026-11)
 
@@ -18,24 +20,31 @@ without downtime). "Auto" means a test, a CI job or a deploy step already checks
 - [ ] Phone browsers (Chrome Android, Safari iOS, Zalo in-app browser): record and score once each.
 
 ### Operations
-- [ ] Wait for CI on main to pass; deploy.sh refuses a commit whose CI run failed or is still going.
+- [ ] Wait for CI on main to pass; deploy.sh refuses a commit whose CI run failed, was cancelled or is still
+      going, and only warns when it cannot ask GitHub or the commit has no run (read its first lines).
 - [ ] First deploy with the new deploy.sh moves the single container behind Caddy; port 3000 is unavailable for a
       few seconds, once (deploy.sh prints how long). Then `deploy/deploy.sh --status` shows the proxy and blue live.
-- [ ] A normal deploy drops no request in flight. Auto: deploy harness (`deploy/test/`, CI when deploy/ changes).
+- [ ] A normal deploy drops no request in flight, uploads still arriving at the switch included. Auto: deploy
+      harness (`deploy/test/`, CI when deploy/ changes).
       Check once on the server with the public site open.
 - [ ] After the second deploy behind the proxy (the first leaves no previous colour): `deploy/deploy.sh --rollback`
       and back again, then `deploy/deploy.sh <older sha>`.
 - [ ] A failed release (staging or through the proxy) leaves the live colour serving and the previous release in
       place for `--rollback`. Auto: deploy harness.
-- [ ] Interrupted or killed deploys (Ctrl-C, dropped SSH, SIGKILL; a reboot is like SIGKILL) recover. Auto: deploy harness.
+- [ ] Interrupted or killed deploys (Ctrl-C, dropped SSH, SIGKILL) recover. Auto: deploy harness. A reboot during a
+      deploy is not covered: Caddy restarts with the last configuration it was given. After one, run
+      `deploy/deploy.sh --status` before anything else.
 - [ ] `/healthz`, `/readyz`, `/version` through Cloudflare. Auto: smoke test (`/version` printed), canary.
 - [ ] Logs: `docker logs ai-pronunciation-trainer-<colour>` shows JSON lines with `rid`; one `scored` line per
       recording; no text or audio in any line. Auto: `tests/test_operations.py`, the slow test that a worker start
       logs only JSON.
 - [ ] The canary runs every 15 minutes in GitHub Actions and is green; a failure sends an e-mail.
 - [ ] Cloudflare's 125 s limit: a long recording (30 s) still scores well under it.
-- [ ] The container opens no connection to the internet (HF and ONNX Runtime telemetry off). Auto: the tests in
-      the image run without network (CI).
+- [ ] The container opens no connection to the internet (Hugging Face offline, Hugging Face and ONNX Runtime
+      telemetry off). Auto, in part: `tests/test_build.py` checks the image's settings and that ONNX Runtime's
+      telemetry is off before onnxruntime is first imported. Checked by hand in this phase with a DNS logger: no
+      lookup while a container started and scored. The tests in the image run without network, which shows that
+      the app works offline but would not notice an attempt to connect.
 - [ ] Image rebuild after a code-only change reuses the dependency and model layers (`docker history`).
 
 ### Development

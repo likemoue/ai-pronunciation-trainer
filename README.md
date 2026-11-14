@@ -54,13 +54,17 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
 - Cloudflare gives up on a request after 125 s (error 524). Every step is bounded well below that.
 - Each gunicorn worker loads its own models and then scores a spoken warm-up sentence. It writes a readiness
   marker (`readiness.py`) only if that worked; the Docker `HEALTHCHECK` and `/readyz` count the markers.
-- Scoring is serialised within a worker, so the other threads keep serving the page, samples and speech. A
-  worker keeps accepting recordings while it scores one, so two recordings that arrive together can queue on one
-  worker while the other is idle; phase 2 replaces this with one shared model and a bounded queue.
+- Scoring is serialised within a worker, and its other threads serve the page, samples and speech meanwhile, as
+  long as fewer than four recordings wait on that worker. A worker keeps accepting recordings while it scores
+  one, so recordings that arrive together can queue on one worker while the other is idle. Under a burst (a class
+  sending their recordings at once), every thread of a worker can be waiting for its model, and then the page,
+  samples and speech wait too: up to 34 s, measured with 24 recordings sent at once. Phase 2 replaces this with
+  one shared model and a bounded queue.
 - Caddy receives each request in full before the app sees it, so a slow or stalled upload holds no app thread.
 - `deploy/deploy.sh` deploys a new release next to the live one and switches Caddy to it once it has passed
-  its checks. Requests in flight finish on the old release ([deploy/RUNBOOK.md](deploy/RUNBOOK.md) gives the
-  one exception: a request sent on an idle connection at the very moment of the switch).
+  its checks. Requests in flight finish on the old release, uploads still arriving included
+  ([deploy/RUNBOOK.md](deploy/RUNBOOK.md) gives the exception: a request sent at the very moment of the switch,
+  on an idle connection or, rarely, on a new one).
 
 ## Running it
 
@@ -176,20 +180,24 @@ Every response from the app carries `X-Request-ID` (Cloudflare's Ray ID when the
 - `model_pins.py` pins the Whisper checkpoint to a commit and every model file by sha256.
 - The `Dockerfile` pins its base image by digest. The Python packages and the models are built in stages of their
   own; the image's layers go from what changes least to what changes most: models, Python packages, system
-  packages (refreshed weekly: deploy.sh passes the ISO week as `SYSTEM_REFRESH`), code. Rebuilding after a code
-  change reuses everything else (about 35 s, most of it the warm-up check), so each kept release adds about 2 MB
-  on the host.
+  packages, code. The system packages are upgraded again whenever Debian publishes an update for the base image's
+  release: `scripts/system_refresh.sh` derives the build argument `SYSTEM_REFRESH` from Debian's package indexes
+  (the ISO week when Debian cannot be reached), and deploy.sh and CI pass it. A rebuild after a code change, while
+  Debian has published nothing new, reuses everything else (about 35 s, most of it the warm-up check), so such a
+  release adds about 2 MB on the host; one built after a Debian update adds about 460 MB.
 - CI (`.github/workflows/ci.yml`) runs ruff, shellcheck, actionlint, the lock check and pip-audit; the test
-  suite; and builds the image, smoke-tests it, runs every test inside it without network (real ffmpeg, Whisper
-  and Piper) and scans it with Trivy. `deploy-test.yml` runs deploy.sh's fault-injection harness
+  suite; and builds the image, smoke-tests it, runs the tests inside it against the image's own copy of the app,
+  without network (real ffmpeg, Whisper and Piper), and scans it with Trivy. A manual run with the input
+  `system_refresh` forces the system packages to be upgraded again. `deploy-test.yml` runs deploy.sh's fault-injection harness
   (`deploy/test/`) when `deploy/` changes. Actions, the BuildKit daemon and tool images are pinned by commit SHA
   or digest.
 
 ## Operations
 
 [deploy/RUNBOOK.md](deploy/RUNBOOK.md) covers the server: deploys without downtime (`deploy/deploy.sh`, which
-deploys only commits of main whose CI run passed), rollback, logs, health checks and the canary that smoke-tests
-the public site every 15 minutes (`.github/workflows/canary.yml`).
+deploys only commits of main, refuses one whose CI run failed or has not finished, and only warns when it cannot
+ask GitHub), rollback, logs, health checks and the canary that smoke-tests the public site every 15 minutes
+(`.github/workflows/canary.yml`).
 
 ## Modifications
 

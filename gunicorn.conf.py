@@ -10,9 +10,12 @@ import readiness as _readiness
 
 bind = os.environ.get('BIND', '0.0.0.0:3000')
 workers = int(os.environ.get('WEB_CONCURRENCY', '2'))
-# Threads let a worker serve the page, samples and TTS while another thread is
-# scoring; scoring itself is serialised per worker by a lock in
-# lambdaSpeechToScore, and Piper synthesis by one in piperTTS.
+# Threads let a worker serve the page, samples and TTS while one thread scores.
+# Scoring is serialised per worker by a lock in lambdaSpeechToScore, and Piper
+# synthesis by one in piperTTS. A recording that waits for the lock keeps its
+# thread, so once a worker holds 4 recordings, every later request (the page
+# and /healthz too) waits behind them: up to 34 s, measured with 24 recordings
+# sent at once. Phase 2's bounded queue removes this.
 # With threads, `timeout` only restarts a worker whose main loop hangs; a slow
 # request is not interrupted. Every request is bounded on its own: decoding by
 # AUDIO_DECODE_TIMEOUT, recordings by MAX_AUDIO_SECONDS, Whisper by

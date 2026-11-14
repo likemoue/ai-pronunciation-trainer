@@ -86,8 +86,9 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 | annotated-doc | 0.0.5 | MIT |
 
 Most packages ship their licence text in their `.dist-info` directory in the image
-(`/opt/venv/lib/python3.12/site-packages`). Three do not: eng-to-ipa (MIT, see its repository), flatbuffers
-(Apache-2.0, <https://github.com/google/flatbuffers>) and tokenizers (Apache-2.0, <https://github.com/huggingface/tokenizers>).
+(`/opt/venv/lib/python3.12/site-packages`). Four do not: eng-to-ipa (MIT, see its repository), flatbuffers
+(Apache-2.0, <https://github.com/google/flatbuffers>), tokenizers (Apache-2.0, <https://github.com/huggingface/tokenizers>)
+and onnxruntime (MIT), whose `LICENSE` and `ThirdPartyNotices.txt` are in `site-packages/onnxruntime/`.
 
 ## System packages and the page
 
@@ -102,5 +103,6 @@ Most packages ship their licence text in their `.dist-info` directory in the ima
 
 The GPL-licensed parts (piper-tts, eSpeak NG, FFmpeg) run in the same image as the AGPL-3.0 app. GPLv3 section 13
 and AGPLv3 section 13 allow combining the two; each part keeps its own licence. The source of every Python package
-is on PyPI (torch's at <https://github.com/pytorch/pytorch>; its CPU wheels come from download.pytorch.org), and
-Debian publishes the source of its packages.
+is on PyPI, except torch's (<https://github.com/pytorch/pytorch>; its CPU wheels come from download.pytorch.org) and
+onnxruntime's (<https://github.com/microsoft/onnxruntime>; PyPI has only its wheels). Debian publishes the source of
+its packages.

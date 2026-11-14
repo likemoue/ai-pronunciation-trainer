@@ -48,9 +48,13 @@ docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciati
 scripts/lock.sh [--upgrade | --check]   # requirements*.lock from requirements*.in (needs uv)
 ```
 
-The Docker build runs a strict warm-up and fails if the image cannot score a spoken sentence. Its layers go from what
-changes least to most (system packages, models, Python packages, code), so a code change rebuilds only a few MB.
-`.dockerignore` lets in only what the app needs; add new runtime files there.
+The Docker build runs a strict warm-up and fails if the image cannot score a spoken sentence. The runtime stage's
+layers are the models, the Python packages, the system packages and then the code, so a code change rebuilds only a
+few MB. The system packages are upgraded again when `SYSTEM_REFRESH` changes: `scripts/system_refresh.sh` derives it
+from Debian's package indexes, so a Debian update reaches the next build (it falls back to the ISO week when Debian
+cannot be reached). The image gets only what the Dockerfile's `COPY` lines name: deploy.sh builds from a `git archive`
+tar, to which `.dockerignore` does not apply. Add a new runtime file to those `COPY` lines and to `.dockerignore`
+(used by directory builds such as CI's); `tests/test_build.py` checks that the two agree.
 
 ## Dependencies
 
@@ -63,20 +67,26 @@ changes least to most (system packages, models, Python packages, code), so a cod
 ## Deploying
 
 Production is a Caddy proxy and two app colours on the VM in `deploy/RUNBOOK.md`. To deploy:
-1. Wait until CI has passed on main (deploy.sh asks the GitHub API and refuses otherwise; `SKIP_CI_CHECK=1` skips it).
+1. Wait until CI has passed on main. deploy.sh asks the GitHub API and refuses a commit whose run failed, was
+   cancelled or is still going. It only warns, and deploys, when GitHub cannot be asked, `origin` is not a GitHub
+   URL or the commit has no run, so read its first lines. `SKIP_CI_CHECK=1` skips the check.
 2. On the VM, check out main.
 3. Run `nohup deploy/deploy.sh > ~/deploy-<date>.log 2>&1 < /dev/null &`.
 
 `deploy.sh` does the following:
-1. Builds the image from `git archive` of the commit (commits of main only; the checkout is not changed). The
-   tar context ignores `.dockerignore`, so the Dockerfile lists what it copies.
+1. Builds the image from `git archive` of the commit (commits of main that contain 4290c3e only; the checkout is
+   not changed), with `SYSTEM_REFRESH` from `scripts/system_refresh.sh`. The tar context ignores `.dockerignore`,
+   so the Dockerfile lists what it copies.
 2. Starts it in the idle colour (`127.0.0.1:3001` or `3002`), waits until healthy and runs that commit's
    `deploy/smoke_test.py`, which scores a TTS sentence end to end. On failure the previous release goes back
    into that colour, stopped.
 3. Switches Caddy to it with a graceful reload (Caddy validates every configuration first) and smoke-tests it
-   through port 3000; switches back on failure. The live colour is what Caddy's admin API says, not the file.
-4. Records the deploy in `~/.local/state/ai-pronunciation-trainer/deploys.log`, stops the old colour (it finishes
-   its requests, up to 120 s; kept for `deploy.sh --rollback`) and keeps the images of the last 3 deploys.
+   through port 3000, with up to 60 s per check since the new colour may already be busy; switches back on
+   failure. The live colour is what Caddy's admin API says, not the file.
+4. Records the deploy in `~/.local/state/ai-pronunciation-trainer/deploys.log` and keeps the old colour running
+   for 65 s: Caddy sends it the requests that arrived before the switch once their body is in, and gives a client
+   up to 60 s (`READ_BODY_SECONDS`) to send it. Then it stops the old colour (it finishes its requests, up to
+   120 s; kept for `deploy.sh --rollback`) and keeps the images of the last 3 deploys.
 
 On a host that still has the single container of earlier versions, the first run moves it behind the proxy (a few
 seconds without service, once) and keeps it as `ai-pronunciation-trainer-legacy`. Interrupted runs undo themselves;
@@ -86,17 +96,23 @@ also in CI as `deploy-test.yml`).
 
 Rollback: `deploy/deploy.sh --rollback` (the previous colour, no downtime), `deploy/deploy.sh --rollback-legacy`
 (the single container from before the proxy, with downtime), or `deploy/deploy.sh <sha>` for a version from
-phase 0b (4290c3e) on. Older versions (51c9af9, kept as `ai-pronunciation-trainer:english-ui`) have no smoke test or
-HEALTHCHECK and predate the content and hardening fixes; deploy.sh refuses them. Cloudflare blocks Python's urllib
-user agent: check the public site in a browser, or run the smoke test with `--user-agent`.
+phase 0b (4290c3e) on. deploy.sh refuses every commit that does not contain 4290c3e (`OLDEST_RELEASE`), in a deploy
+and in `--rollback`: the phase 0a commits still have the unscreened sentences or the voice licensed for research
+only, and older ones (51c9af9, kept as `ai-pronunciation-trainer:english-ui`) have no smoke test or HEALTHCHECK
+either. Cloudflare blocks Python's urllib user agent: check the public site in a browser, or run the smoke test
+with `--user-agent`.
 
 CI (`.github/workflows/ci.yml`) checks every PR and push to main: ruff, shellcheck, actionlint, the lock (hashes
-included), pip-audit, pytest, then the image (smoke test, every test inside it without network, Trivy).
+included), pip-audit, pytest, then the image (smoke test; the tests inside it, run against the image's own `/app`
+without network; Trivy). A test that reads other files of the repository belongs in `tests/test_build.py`, which
+runs only outside the image.
 `canary.yml` smoke-tests the public site every 15 minutes.
 
 Known limits, for phase 2: a gthread worker keeps accepting recordings while it scores one, so two recordings can
-queue on one worker while the other is idle; and a Caddy reload can fail a request sent on an idle keep-alive
-connection at that instant.
+queue on one worker while the other is idle; under a burst of recordings every thread of a worker can be waiting for
+its model, so the page, samples and TTS wait too (up to 34 s, measured with 24 recordings sent at once); and a Caddy
+reload can fail a request at that instant: one sent on an idle keep-alive connection, or, rarely, a new connection
+that Caddy resets.
 
 ## Conventions
 
