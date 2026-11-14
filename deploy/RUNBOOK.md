@@ -67,13 +67,15 @@ checkout: it builds from `git archive` of the commit. The script does the follow
    ones made by hand), are never removed.
 
 The switch is one graceful `caddy reload`. Requests that arrived before it finish on the old colour, uploads still
-arriving included; new ones go to the new colour. Caddy closes its idle keep-alive connections when it reloads, so
-a request that a client sends on one of them at that very moment can fail. In a controlled test over 60 reloads,
-21 of 6,235 requests failed from a client that kept idle connections open and did not notice them closing, and
-none of 6,206 sent on new connections. How often Cloudflare's connector meets this was not measured. The test
-harness (deploy/test/) opens a new connection for every request, so it does not exercise this case; in its last
-full run, none of its 107,249 requests failed over 47 deploys, rollbacks and interrupted runs. With the real app,
-no request failed during a deploy and a rollback.
+arriving included; new ones go to the new colour. A request can still fail at the very moment of a reload. Caddy
+closes its idle keep-alive connections when it reloads, so a request that a client sends on one of them at that
+moment can fail: in a controlled test over 60 reloads, 21 of 6,235 requests failed from a client that kept idle
+connections open and did not notice them closing. More rarely, Caddy resets a new connection that arrives during
+the reload, or closes it without an answer: none of 6,206 requests in that test, 3 of about 70,000 in one run of
+the test harness (deploy/test/), which opens a new connection for every request. How often Cloudflare's connector
+meets either was not measured. In the harness's last full run (148 runs of deploy.sh: deploys, rollbacks, and
+failed, interrupted and killed runs), none of 111,882 requests failed apart from the planned outage of the move
+behind the proxy. With the real app, no request failed during a deploy and a rollback.
 
 If the deploy is interrupted (Ctrl-C, a dropped session, a closed output pipe), it undoes what it started:
 Caddy is pointed back if it had been switched (the new colour then gets the same 65 s for the requests it took,
