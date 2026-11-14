@@ -54,9 +54,13 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
 - Cloudflare gives up on a request after 125 s (error 524). Every step is bounded well below that.
 - Each gunicorn worker loads its own models and then scores a spoken warm-up sentence. It writes a readiness
   marker (`readiness.py`) only if that worked; the Docker `HEALTHCHECK` and `/readyz` count the markers.
-- Scoring is serialised within a worker, so the other threads keep serving the page, samples and speech.
+- Scoring is serialised within a worker, so the other threads keep serving the page, samples and speech. A
+  worker keeps accepting recordings while it scores one, so two recordings that arrive together can queue on one
+  worker while the other is idle; phase 2 replaces this with one shared model and a bounded queue.
+- Caddy receives each request in full before the app sees it, so a slow or stalled upload holds no app thread.
 - `deploy/deploy.sh` deploys a new release next to the live one and switches Caddy to it once it has passed
-  its checks, so a deploy drops no requests ([deploy/RUNBOOK.md](deploy/RUNBOOK.md)).
+  its checks. Requests in flight finish on the old release ([deploy/RUNBOOK.md](deploy/RUNBOOK.md) gives the
+  one exception: a request sent on an idle connection at the very moment of the switch).
 
 ## Running it
 
@@ -68,9 +72,11 @@ docker run -d --name aipt -p 3000:3000 --memory 9g --tmpfs /tmp:rw,nosuid,size=2
 docker ps --filter name=aipt   # (healthy) after about 30-60 s; then open http://localhost:3000
 ```
 
-The image is about 3.9 GB: torch takes 0.8 GB, the other Python packages 1.1 GB, ffmpeg's libraries 0.45 GB and
-the models 0.35 GB. The build downloads Whisper and the Piper voice once, checks them against their pins, and
-then scores a spoken sentence: it fails if the image cannot score. The image never reaches the network at run time.
+Unpacked, the image is about 2.9 GB: torch takes 0.8 GB, the other Python packages 1.1 GB, ffmpeg and its
+libraries 0.45 GB, the models 0.35 GB and the base image 0.13 GB (`docker images` shows about 3.9 GB, as it also
+counts the compressed layers). The build downloads Whisper and the Piper voice once, checks every file against its
+pinned sha256, and then scores a spoken sentence: it fails if the image cannot score. At run time the app opens no
+connection to the internet: Hugging Face is offline, and the telemetry of Hugging Face and ONNX Runtime is off.
 
 ### Local development
 
@@ -98,7 +104,7 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 | `BIND` | `0.0.0.0:3000` | Address gunicorn listens on |
 | `WEB_CONCURRENCY` | `2` (image) | gunicorn workers; each loads its own models (about 0.5 GB) |
 | `GUNICORN_THREADS` | `4` | Threads per worker |
-| `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` | `120` / `30` | Worker heartbeat timeout; time to finish requests when stopping |
+| `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` | `120` / `120` | Worker heartbeat timeout; time to finish the requests a stopping worker has accepted |
 | `OMP_NUM_THREADS` | `5` (image) | Threads per worker for torch (Whisper) |
 | `LOG_LEVEL` | `INFO` | Level of the app's own logs (libraries log errors only) |
 | `OPEN_BROWSER` | `1`, `0` (image) | `python webApp.py` opens a browser tab |
@@ -131,7 +137,7 @@ The page is `GET /`. The API routes take a JSON object (`Content-Type: applicati
 | `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty) |
 | `POST /getCustomSample` | `text` | the same, for the user's text |
 | `POST /getAudioFromText` | `value`: the text to read | `wavBase64`: a WAV file |
-| `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (0-100, as a string), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
+| `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
 | `GET /healthz` | | `{"status": "ok", "uptime_s": …}`: the worker answers HTTP |
 | `GET /readyz` | | 200 once every worker has warmed up, else 503: `ready_workers`, `expected_workers` |
 | `GET /version` | | `git_sha`, `git_date` |
@@ -148,14 +154,15 @@ Errors are JSON too: `{"error": "<message for the user>", "code": "<code>"}`, wi
 | `text_bad_characters` | 400 | Control characters or lone surrogates |
 | `no_audio` / `bad_audio` | 400 | No recording, or one that cannot be decoded |
 | `audio_too_long` | 413 | A recording over 35 s |
-| `request_entity_too_large` | 413 | A body over 4 MB |
+| `request_entity_too_large` | 413 | A body over 4 MB (over 5 MB, the proxy answers it) |
 | `unsupported_media_type` | 415 | Not `application/json` |
 | `no_speech` | 422 | Silence, or nothing Whisper recognised |
 | `tts_failed` | 503 | Speech synthesis failed for this text (the browser reads it instead) |
 | `tts_unavailable` | 503 | The server has no voice (the browser reads every text) |
 | `scoring_failed` / `server_error` | 500 | A bug; the response has an `X-Request-ID` to look up in the logs |
+| `server_unavailable` | 502-504 | The proxy could not reach the app (a restart) |
 
-Every response carries `X-Request-ID` (Cloudflare's Ray ID when there is one) and security headers
+Every response from the app carries `X-Request-ID` (Cloudflare's Ray ID when there is one) and security headers
 (a Content Security Policy without inline scripts or styles, `nosniff`, a microphone-only Permissions-Policy).
 
 ## Dependencies and builds
@@ -163,20 +170,26 @@ Every response carries `X-Request-ID` (Cloudflare's Ray ID when there is one) an
 - `requirements.in` lists the direct dependencies. `requirements.lock` pins them and everything they pull in,
   each file by its sha256, for CPython 3.12 on Linux x86_64; torch is the CPU build. `scripts/lock.sh`
   regenerates it with [uv](https://docs.astral.sh/uv/) from releases that are at least 7 days old
-  (`--upgrade` to move everything forward, `--check` in CI). `requirements-dev.lock` adds pytest, ruff and pip-audit.
-- `model_pins.py` pins the Whisper checkpoint to a commit and the Piper voices by sha256.
-- The `Dockerfile` pins its base image by digest and installs `requirements.lock` with `--require-hashes`.
-  Its layers go from what changes least to what changes most: system packages, models, Python packages, code.
-  Rebuilding after a code change reuses everything else, so each kept release adds only a few MB on the host.
+  (`--upgrade` to move everything forward; `--check` in CI, which fetches every hash again).
+  `requirements-dev.lock` adds pytest, ruff and pip-audit. `scripts/pip_install_locked.sh` installs the locks: it
+  also builds eng-to-ipa, which has no wheel, with the locked setuptools instead of one pip would fetch unchecked.
+- `model_pins.py` pins the Whisper checkpoint to a commit and every model file by sha256.
+- The `Dockerfile` pins its base image by digest. The Python packages and the models are built in stages of their
+  own; the image's layers go from what changes least to what changes most: models, Python packages, system
+  packages (refreshed weekly: deploy.sh passes the ISO week as `SYSTEM_REFRESH`), code. Rebuilding after a code
+  change reuses everything else (about 35 s, most of it the warm-up check), so each kept release adds about 2 MB
+  on the host.
 - CI (`.github/workflows/ci.yml`) runs ruff, shellcheck, actionlint, the lock check and pip-audit; the test
-  suite; and builds the image, smoke-tests it, runs every test inside it (real ffmpeg, Whisper and Piper) and
-  scans it with Trivy. Actions and tool images are pinned by commit SHA or digest.
+  suite; and builds the image, smoke-tests it, runs every test inside it without network (real ffmpeg, Whisper
+  and Piper) and scans it with Trivy. `deploy-test.yml` runs deploy.sh's fault-injection harness
+  (`deploy/test/`) when `deploy/` changes. Actions, the BuildKit daemon and tool images are pinned by commit SHA
+  or digest.
 
 ## Operations
 
-[deploy/RUNBOOK.md](deploy/RUNBOOK.md) covers the server: deploys without downtime (`deploy/deploy.sh`),
-rollback, logs, health checks and the canary that smoke-tests the public site every 15 minutes
-(`.github/workflows/canary.yml`).
+[deploy/RUNBOOK.md](deploy/RUNBOOK.md) covers the server: deploys without downtime (`deploy/deploy.sh`, which
+deploys only commits of main whose CI run passed), rollback, logs, health checks and the canary that smoke-tests
+the public site every 15 minutes (`.github/workflows/canary.yml`).
 
 ## Modifications
 

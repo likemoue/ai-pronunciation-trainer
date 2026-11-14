@@ -14,6 +14,9 @@ Versions are those of `requirements.lock` and the image built from it (Debian 13
 | Practice sentences, [Tatoeba](https://tatoeba.org) | `databases/data_en.csv` | CC BY 2.0 FR, credited in the page footer |
 | CMU Pronouncing Dictionary, bundled with `eng_to_ipa` | `eng_to_ipa/resources` | BSD-style licence of Carnegie Mellon University |
 | eSpeak NG data and library, bundled with `piper-tts` | `piper/espeak-ng-data`, `piper/espeakbridge.so` | GPL-3.0-or-later |
+| Hebrew diacritics model Nakdimon (Elazar Gershuni), bundled with `piper-tts`, not used by this edition | `piper/hebrew/nakdimon.onnx` | MIT (`piper/hebrew/LICENSE`) |
+| Arabic diacritics model (a port of libtashkeel), bundled with `piper-tts`, not used | `piper/tashkeel/model.onnx` | Distributed with piper-tts under its licence |
+| g2pW-derived code (Chinese), bundled with `piper-tts`, not used | `piper/g2pw_onnx.py` | Apache-2.0 (`piper_tts-1.8.0.dist-info/licenses/licenses/LICENSE.g2pW-Apache-2.0`) |
 | Feedback sounds `static/ASR_good.wav`, `ASR_okay.wav`, `ASR_bad.wav` | the page | From the upstream repository, which states no separate source or licence; they are distributed with it under its AGPL-3.0 |
 
 The German sentences (`databases/data_de.csv`, upstream) are in the repository but not in the image.
@@ -82,13 +85,16 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 | shellingham | 1.5.4 | ISC |
 | annotated-doc | 0.0.5 | MIT |
 
-Each package's licence text is in its `.dist-info` directory in the image (`/opt/venv/lib/python3.12/site-packages`).
+Most packages ship their licence text in their `.dist-info` directory in the image
+(`/opt/venv/lib/python3.12/site-packages`). Three do not: eng-to-ipa (MIT, see its repository), flatbuffers
+(Apache-2.0, <https://github.com/google/flatbuffers>) and tokenizers (Apache-2.0, <https://github.com/huggingface/tokenizers>).
 
 ## System packages and the page
 
 | Component | Licence |
 |---|---|
 | Python 3.12 (base image `python:3.12.16-slim-trixie`) | PSF-2.0 |
+| pip 25.0.1, in the base image (used only to build the image) | MIT |
 | Debian 13 packages in the base image | Various free licences; see `/usr/share/doc/*/copyright` in the image |
 | FFmpeg 7.1.5 (Debian package `ffmpeg`, built with `--enable-gpl`) and the libraries it pulls in | GPL-2.0-or-later as built; see `/usr/share/doc/ffmpeg/copyright` |
 | Caddy 2.11.9 (the proxy container on the server, not in the app image) | Apache-2.0 |
@@ -96,4 +102,5 @@ Each package's licence text is in its `.dist-info` directory in the image (`/opt
 
 The GPL-licensed parts (piper-tts, eSpeak NG, FFmpeg) run in the same image as the AGPL-3.0 app. GPLv3 section 13
 and AGPLv3 section 13 allow combining the two; each part keeps its own licence. The source of every Python package
-is on PyPI (or download.pytorch.org for torch), and Debian publishes the source of its packages.
+is on PyPI (torch's at <https://github.com/pytorch/pytorch>; its CPU wheels come from download.pytorch.org), and
+Debian publishes the source of its packages.
