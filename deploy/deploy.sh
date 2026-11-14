@@ -492,14 +492,16 @@ migrate() {  # migrate <target>
     create_proxy
     PHASE=migrating
     container_id "$LEGACY" > "$MIGRATION_MARK"
+    # gunicorn stops accepting connections as soon as it is told to stop, and
+    # then finishes the requests it has.
+    stopped_at=$(date +%s.%N)
     if container_running "$LEGACY"; then
         docker stop -t "$STOP_TIMEOUT" "$LEGACY" >/dev/null
     fi
-    stopped_at=$(date +%s.%N)
     if ! start_proxy || ! wait_http "http://127.0.0.1:$PROD_PORT/" 30; then
         on_abort "The proxy did not answer on port $PROD_PORT"
     fi
-    echo "Port $PROD_PORT was unavailable for $(awk -v a="$stopped_at" -v b="$(date +%s.%N)" 'BEGIN { printf "%.1f", b - a }') s after $LEGACY stopped."
+    echo "Port $PROD_PORT refused new connections for $(awk -v a="$stopped_at" -v b="$(date +%s.%N)" 'BEGIN { printf "%.1f", b - a }') s: from the stop of $LEGACY until the proxy answered."
     if ! smoke "http://127.0.0.1:$PROD_PORT"; then
         on_abort "The smoke test through the proxy failed"
     fi
