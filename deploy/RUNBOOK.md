@@ -54,8 +54,9 @@ changes the checkout: it builds from `git archive` of the commit. The script doe
 The switch is one graceful `caddy reload`: requests in flight finish on the old colour, and new ones go to the new
 colour. Caddy closes its idle keep-alive connections when it reloads, so a request that a client sends on one of
 them at that very moment can fail. Cloudflare's connector notices a closed connection within milliseconds, so this
-is rare: in the test harness (deploy/test/), 0 to 2 of about 40,000 requests failed per round of about 40 deploys,
-all at the moment of a reload; with the real app, no request failed during a deploy and a rollback.
+is rare: in the last full run of the test harness (deploy/test/), none of 107,249 requests failed over 47 deploys,
+rollbacks and interrupted runs (earlier runs: at most 2 of 40,000, at a reload); with the real app, no request
+failed during a deploy and a rollback.
 
 If the deploy is interrupted (Ctrl-C, a dropped session, a closed output pipe), it undoes what it started:
 Caddy is pointed back if it had been switched, the new colour finishes its requests and is removed, and the
@@ -70,7 +71,8 @@ phase 1) is moved behind the proxy by the first run:
 1. The new release is started as blue and checked while the old container keeps serving.
 2. The old container is stopped and the proxy takes over port 3000. gunicorn refuses new connections from the
    moment it is told to stop and finishes the requests it has, so port 3000 is unavailable for a few seconds
-   (about 2.5 s in the test with the real app); deploy.sh prints how long. Do it outside school hours.
+   (about 4 s in the test with the real app, which first finishes the recordings it is scoring); deploy.sh prints
+   how long. Do it outside school hours.
 3. The proxy is smoke-tested. If that fails, or the run is interrupted, the old container is started again. If the
    old container cannot be started, the proxy serves the new release instead (it passed its own checks).
 4. The old container is kept, stopped, as `ai-pronunciation-trainer-legacy`.
