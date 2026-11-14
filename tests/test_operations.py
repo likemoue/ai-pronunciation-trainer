@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+import re
 import runpy
 import shutil
 import socket
@@ -418,6 +419,32 @@ def _bash():
 def test_deploy_script_parses():
     with open(os.path.join(ROOT, 'deploy', 'deploy.sh'), encoding='utf-8') as f:
         subprocess.run([_bash(), '-n'], input=f.read(), text=True, check=True)
+
+
+def _shell_default(script, name):
+    """The default in a line NAME=${NAME:-default} of a shell script."""
+    match = re.search(r'^%s=\$\{%s:-([^}]*)\}$' % (name, name), script, re.M)
+    assert match, f'{name} has no default'
+    return match.group(1)
+
+
+def test_deploy_script_timings_fit_together():
+    # The harness (deploy/test/) runs with short timings, so only this test sees
+    # the production ones that deploy/RUNBOOK.md and CLAUDE.md describe.
+    with open(os.path.join(ROOT, 'deploy', 'deploy.sh'), encoding='utf-8') as f:
+        script = f.read()
+    read_body = int(_shell_default(script, 'READ_BODY_SECONDS'))
+    margin = int(_shell_default(script, 'DRAIN_MARGIN'))
+    stop = int(_shell_default(script, 'STOP_TIMEOUT'))
+    smoke = int(_shell_default(script, 'PROD_SMOKE_TIMEOUT'))
+    assert (read_body, margin, stop, smoke) == (60, 5, 130, 60)
+    # The drain covers exactly the time Caddy gives a client to send its body.
+    assert 'read_body @READ_BODY_SECONDS@s' in script
+    # A stopping worker finishes its requests before docker kills it, and
+    # Cloudflare (125 s) gives up on a request between the two.
+    with open(os.path.join(ROOT, 'gunicorn.conf.py'), encoding='utf-8') as f:
+        graceful = re.search(r"GUNICORN_GRACEFUL_TIMEOUT', '(\d+)'", f.read())
+    assert graceful and int(graceful.group(1)) < 125 < stop
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='needs a POSIX bash')

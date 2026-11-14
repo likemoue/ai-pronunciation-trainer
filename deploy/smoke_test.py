@@ -15,8 +15,8 @@ Python's default user agent, so give the canary its own.
 On a busy instance every request, /healthz too, waits behind the recordings
 queued on its worker. --timeout (default 10 s) is the wait for the quick
 checks; the page, samples, TTS and scoring wait at least 120 s. deploy.sh gives
-the checks on port 3000 60 s, as the colour that has just taken the traffic may
-be busy.
+the quick checks on port 3000 60 s, as the colour that has just taken the
+traffic may be busy.
 """
 import argparse
 import json

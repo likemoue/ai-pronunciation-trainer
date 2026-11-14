@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Build, check and roll out AI Pronunciation Trainer on this host without
-# dropping requests.
+# Build, check and roll out AI Pronunciation Trainer on this host while the
+# requests in flight finish (deploy/RUNBOOK.md: one sent at the very moment of a
+# switch can still fail).
 #
 #   deploy/deploy.sh [git-ref]          build and deploy a commit on main (default: origin/main)
 #   deploy/deploy.sh --rollback         make the previous release live again, without downtime
@@ -65,7 +66,8 @@ STOP_TIMEOUT=${STOP_TIMEOUT:-130}
 READ_BODY_SECONDS=${READ_BODY_SECONDS:-60}
 DRAIN_MARGIN=${DRAIN_MARGIN:-5}
 # The smoke tests on PROD_PORT run once traffic has moved, and the colour that
-# took it may be busy with recordings: each check may take this long.
+# took it may be busy with recordings: each quick check may take this long, and
+# the page, samples, speech and scoring at least 120 s (smoke_test.py --timeout).
 PROD_SMOKE_TIMEOUT=${PROD_SMOKE_TIMEOUT:-60}
 # The oldest commit deploy.sh deploys (phase 0b, 4290c3e). Older commits have
 # sentences unsuitable for children or a voice licensed for research only.
@@ -230,6 +232,17 @@ running_upstream() {
     { docker exec "$PROXY" wget -qO- http://127.0.0.1:2019/config/apps/http/servers 2>/dev/null || true; } \
         | grep -oE '"dial":"[^"]+:3000"' | head -n 1 | sed -E 's/^"dial":"(.*):3000"$/\1/' || true
 }
+# The same, tried for a few seconds while the proxy runs: empty if it cannot be read.
+running_upstream_patiently() {
+    local try upstream=
+    for try in 1 2 3 4 5; do
+        upstream=$(running_upstream)
+        [[ -n "$upstream" ]] && break
+        container_running "$PROXY" || break
+        sleep 1
+    done
+    echo "$upstream"
+}
 
 wait_healthy() {
     local name=$1 deadline=$((SECONDS + HEALTH_TIMEOUT)) status
@@ -259,7 +272,7 @@ wait_http() {  # wait_http <url> <seconds>
 }
 
 # smoke <base url> [seconds]: the smoke test of the commit being deployed, with
-# that long for each check (smoke_test.py --timeout; smoke tests from before
+# that long for each quick check (smoke_test.py --timeout; smoke tests from before
 # phase 1 do not have the option and keep their 10 s).
 smoke() {
     local options=()
@@ -269,10 +282,14 @@ smoke() {
     python3 "$WORK/smoke_test.py" "$1" "${options[@]}"
 }
 
+# The docker CLI gives up at once on SIGINT, SIGTERM or SIGHUP while the daemon
+# carries on with what it was asked. setsid -w keeps the commands that change a
+# colour away from the terminal's signals, so bash runs its trap only once they
+# have returned, and on_abort finds the colour as they left it.
 remove_container() {
     container_exists "$1" || return 0
-    container_running "$1" && docker stop -t "$STOP_TIMEOUT" "$1" >/dev/null
-    docker rm -f "$1" >/dev/null
+    container_running "$1" && setsid -w docker stop -t "$STOP_TIMEOUT" "$1" >/dev/null
+    setsid -w docker rm -f "$1" >/dev/null
 }
 
 ensure_network() {
@@ -499,6 +516,7 @@ critical_section() {
 }
 
 on_abort() {  # on_abort <what happened>
+    local upstream
     critical_section
     say ""
     say "!! $1 while $PHASE."
@@ -524,12 +542,20 @@ on_abort() {  # on_abort <what happened>
                     RELOADED_AT=$SECONDS
                 fi
             fi
-            if [[ -n "$STAGED" ]] && proxy_sends_to "$STAGED"; then
-                # Never stop the colour that serves.
-                say "!! The proxy still sends traffic to $STAGED, so it is left running. Check with deploy/deploy.sh --status (deploy/RUNBOOK.md)."
-                exit 2
+            if [[ -n "$STAGED" ]]; then
+                upstream=$(running_upstream_patiently)
+                if [[ "$upstream" == "$STAGED" ]]; then
+                    # Never stop the colour that serves.
+                    say "!! The proxy still sends traffic to $STAGED, so it is left running. Check with deploy/deploy.sh --status (deploy/RUNBOOK.md)."
+                    exit 2
+                elif [[ -z "$upstream" ]] && container_running "$PROXY"; then
+                    # Nor one that may serve: the proxy runs, but what it sends
+                    # traffic to cannot be read.
+                    say "!! Caddy's running configuration cannot be read, so $STAGED, which it may still send traffic to, is left running. Check with deploy/deploy.sh --status (deploy/RUNBOOK.md)."
+                    exit 2
+                fi
             fi
-            [[ -n "$SWITCHED_FROM" ]] && say "The proxy sends traffic to $SWITCHED_FROM."
+            proxy_sends_to "$SWITCHED_FROM" && say "The proxy sends traffic to $SWITCHED_FROM."
             if [[ -n "$STAGED" ]]; then
                 # It still gets the requests Caddy accepted before the switch
                 # back, and finishes them when it is stopped.
@@ -724,7 +750,11 @@ stage() {  # stage <colour>: start IMAGE in that colour and check it
     fi
     ensure_network
     STAGED=$target
-    docker run -d --name "$target" --network "$NETWORK" --restart unless-stopped \
+    # Out of reach of the terminal's signals (see remove_container): interrupted
+    # here, on_abort runs once the container exists, and removes it before it
+    # puts the previous release back. Otherwise the daemon could create it just
+    # after on_abort's removal and take the name the previous release needs.
+    setsid -w docker run -d --name "$target" --network "$NETWORK" --restart unless-stopped \
         -p "127.0.0.1:$port:3000" --stop-timeout "$STOP_TIMEOUT" "${RUN_FLAGS[@]}" "$IMAGE" >/dev/null
     if ! wait_healthy "$target" || ! smoke "http://127.0.0.1:$port"; then
         on_abort "The new release failed its checks"
