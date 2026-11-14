@@ -7,8 +7,20 @@ outside the standard library: the Docker layer that holds the models is
 rebuilt only when this file or the download script changes.
 """
 import hashlib
+import http.client
 import os
+import shutil
+import time
+import urllib.error
 import urllib.request
+
+# A download that receives nothing for this many seconds fails instead of
+# hanging the Docker build, and deploy.sh with it (it holds its lock meanwhile).
+DOWNLOAD_TIMEOUT = 60
+# Tries per file. Network errors, truncated files and HTTP 408, 429 and 5xx are
+# tried again after RETRY_DELAY seconds, then twice that; other errors are not.
+DOWNLOAD_ATTEMPTS = 3
+RETRY_DELAY = 10
 
 # Whisper base at a fixed commit of https://huggingface.co/openai/whisper-base.
 WHISPER_REPO = 'openai/whisper-base'
@@ -69,6 +81,22 @@ def sha256(path) -> str:
     return digest.hexdigest()
 
 
+def _download(url, path):
+    """Write the body of url to path. Fails when the connection stalls for
+    DOWNLOAD_TIMEOUT seconds or closes before the whole body has arrived."""
+    with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT) as response, open(path, 'wb') as f:
+        shutil.copyfileobj(response, f, 1 << 20)
+        length = response.headers.get('Content-Length')
+        if length is not None and f.tell() != int(length):
+            raise ConnectionError(f'the connection closed after {f.tell()} of {length} bytes')
+
+
+def _worth_retrying(error) -> bool:
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in (408, 429) or error.code >= 500
+    return True  # timeouts, resets, DNS failures, truncated files
+
+
 def fetch(url, dest, expected=None) -> bool:
     """Download url to dest unless dest is there; check it against its sha256.
     Returns True when it downloaded the file."""
@@ -78,11 +106,22 @@ def fetch(url, dest, expected=None) -> bool:
         return False
     # Download to a temporary name first so an interrupted download never
     # leaves a truncated file that looks complete on the next run.
+    name = os.path.basename(dest)
     partial = dest + '.part'
-    urllib.request.urlretrieve(url, partial)
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            _download(url, partial)
+            break
+        except (OSError, http.client.HTTPException) as error:
+            if attempt == DOWNLOAD_ATTEMPTS or not _worth_retrying(error):
+                if os.path.exists(partial):
+                    os.remove(partial)
+                tries = 'once' if attempt == 1 else f'{attempt} times'
+                raise RuntimeError(f'Could not download {url} (tried {tries}): {error}') from error
+            time.sleep(RETRY_DELAY * 2 ** (attempt - 1))
     if expected and sha256(partial) != expected:
         os.remove(partial)
-        raise RuntimeError(f'The downloaded {os.path.basename(dest)} does not match its pinned sha256.')
+        raise RuntimeError(f'The downloaded {name} does not match its pinned sha256.')
     os.replace(partial, dest)
     return True
 

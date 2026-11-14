@@ -36,11 +36,11 @@ def test_voice_files_are_checked_against_their_pinned_hash(monkeypatch, tmp_path
     monkeypatch.setitem(piperTTS.VOICE_CONFIGS, 'en', 'en_US-test')
     served = {'data': good}
 
-    def fake_urlretrieve(url, dest):
+    def fake_download(url, dest):
         with open(dest, 'wb') as f:
             f.write(served['data'])
 
-    monkeypatch.setattr(model_pins.urllib.request, 'urlretrieve', fake_urlretrieve)
+    monkeypatch.setattr(model_pins, '_download', fake_download)
     piperTTS._download_model('en')
     assert (tmp_path / 'en_US-test.onnx').read_bytes() == good
 

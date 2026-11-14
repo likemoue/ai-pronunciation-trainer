@@ -5,8 +5,9 @@
 # deploy/deploy.sh builds, smoke-tests and rolls out the image (deploy/RUNBOOK.md).
 # The models (model_pins.py) and the Python packages (requirements.lock) are
 # built in stages of their own. In the image, the layers that change least come
-# first: models, packages, system packages (refreshed weekly), then the code,
-# so a change to the code only rebuilds the last layers, which hold a few MB.
+# first: models, packages, system packages (refreshed when Debian publishes an
+# update), then the code, so a change to the code only rebuilds the last
+# layers, which hold a few MB.
 
 # python:3.12.16-slim-trixie, pinned by the digest of its multi-platform index.
 ARG PYTHON_IMAGE=python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
@@ -47,8 +48,11 @@ COPY --from=deps /opt/venv /opt/venv
 
 # ffmpeg decodes the recordings (audioPreprocessing.py). The upgrade applies
 # Debian security fixes released after the base image was built. deploy.sh and
-# CI pass the ISO week as SYSTEM_REFRESH, so this layer, and only it and the
-# code after it, is rebuilt once a week.
+# CI pass SYSTEM_REFRESH from scripts/system_refresh.sh: a digest of the package
+# indexes that apt reads here, so this layer, and only it and the code after it,
+# is rebuilt when Debian publishes an update to any of those packages (once a
+# week, by the ISO week, when the archive cannot be reached). Any new value
+# forces a rebuild.
 ARG SYSTEM_REFRESH=
 RUN echo "System packages as of ${SYSTEM_REFRESH:-this build}." \
     && apt-get update \
@@ -59,7 +63,8 @@ RUN echo "System packages as of ${SYSTEM_REFRESH:-this build}." \
 WORKDIR /app
 # Only what the app reads at run time. deploy.sh sends the build context as a
 # `git archive` tar, to which .dockerignore does not apply, so the copies are
-# listed here.
+# listed here. CI builds from the directory, so a file added here must be let
+# in by .dockerignore too (tests/test_build.py checks that they agree).
 COPY *.py LICENSE THIRD_PARTY_NOTICES.md ./
 COPY databases/data_en.csv databases/
 COPY static/ static/

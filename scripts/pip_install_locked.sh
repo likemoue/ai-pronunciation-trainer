@@ -17,8 +17,10 @@ shift
 backend=$(mktemp)
 trap 'rm -f "$backend"' EXIT
 # The setuptools entry: its requirement line and the hash lines that follow it.
-awk '/^setuptools==/ { keep = 1 } keep { print } keep && !/\\$/ { exit }' "$1" > "$backend"
-[[ -s "$backend" ]] || { echo "No setuptools in $1." >&2; exit 1; }
+# A carriage return is dropped first, so a lock with CRLF line endings (a
+# Windows checkout, or a `git archive` made from one) keeps its hash lines.
+awk '{ sub(/\r$/, "") } /^setuptools==/ { keep = 1 } keep { print } keep && !/\\$/ { exit }' "$1" > "$backend"
+grep -q -- '--hash=sha256:' "$backend" || { echo "No setuptools with hashes in $1." >&2; exit 1; }
 pip --python "$python" install --require-hashes --no-deps -r "$backend"
 
 locks=()

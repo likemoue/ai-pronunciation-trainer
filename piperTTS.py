@@ -11,6 +11,12 @@ from collections import OrderedDict
 import logging_setup
 import model_pins
 
+# ONNX Runtime (onnxruntime, imported on first use below) uploads usage events
+# to Microsoft on Linux unless ORT_DISABLE_TELEMETRY is set when it is first
+# imported; onnxruntime.disable_telemetry_events() does not stop that. The
+# Dockerfile sets it too; this covers runs outside the image.
+os.environ.setdefault('ORT_DISABLE_TELEMETRY', '1')
+
 _models = {}
 _cache = OrderedDict()
 _cache_bytes = 0
@@ -111,8 +117,8 @@ def _load_model(language):
             _download_model(language)
             import onnxruntime
             from piper import PiperVoice
-            # ONNX Runtime sends usage events to Microsoft unless told not to
-            # (ORT_DISABLE_TELEMETRY in the Dockerfile does the same).
+            # On Windows, ONNX Runtime writes its usage events to ETW instead and
+            # ignores ORT_DISABLE_TELEMETRY; this call turns those events off.
             onnxruntime.disable_telemetry_events()
             model_path = os.path.join(MODEL_DIR, VOICE_CONFIGS[language] + '.onnx')
             voice = PiperVoice.load(model_path)

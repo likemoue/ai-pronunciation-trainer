@@ -9,14 +9,24 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      system_refresh:
+        description: >-
+          Key for the system-package layer (letters, digits, . _ : -). A new value
+          rebuilds it with the latest Debian packages; empty keys it on Debian's archive.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # A newer push to a pull request replaces the older run; every commit of main
-  # is checked to the end, since deploy.sh asks for its result.
+  # A newer push to a pull request replaces its older run. Pushes to main and
+  # manual runs get a group per commit: GitHub cancels a run that is waiting
+  # in a group when a newer one joins it, even without cancel-in-progress, and
+  # deploy.sh refuses a commit whose run was cancelled.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -103,9 +113,18 @@ jobs:
         with:
           version: v0.38.2
           driver-opts: image=moby/buildkit:v0.34.2@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
-      - name: The week, so the system packages are refreshed as deploy.sh does
-        id: week
-        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - name: Key the system packages on Debian's archive, as deploy.sh does
+        id: system
+        env:
+          OVERRIDE: ${{ inputs.system_refresh }}
+        run: |
+          key=${OVERRIDE:-$(scripts/system_refresh.sh)}
+          if ! [[ $key =~ ^[A-Za-z0-9._:-]+$ ]]; then
+            echo "::error::system_refresh may hold only letters, digits and . _ : -"
+            exit 1
+          fi
+          echo "SYSTEM_REFRESH=$key"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
       - name: Build the image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -114,7 +133,7 @@ jobs:
           tags: aipt:ci
           build-args: |
             GIT_SHA=${{ github.sha }}
-            SYSTEM_REFRESH=${{ steps.week.outputs.week }}
+            SYSTEM_REFRESH=${{ steps.system.outputs.key }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Image size
@@ -135,13 +154,19 @@ jobs:
           docker rm -f app
           [ "$status" = healthy ]
       - name: All tests inside the image, without network (real ffmpeg, Whisper and Piper)
+        # The tests run on the code and files of the image's /app, so a runtime
+        # file the Dockerfile does not copy fails them. From the checkout come
+        # only the tests, pytest.ini and deploy/ (two tests read it).
+        # test_build.py checks the repository's build files, which the image
+        # does not hold; the test job runs it.
         run: |
           docker volume create aipt-dev >/dev/null
           docker run --rm -v "$PWD:/src:ro" -v aipt-dev:/tmp/dev -w /src --user 0 --entrypoint sh aipt:ci -c \
             'pip install --quiet --disable-pip-version-check --target /tmp/dev --require-hashes --no-deps -r requirements-dev.lock'
-          docker run --rm --network none -v "$PWD:/src:ro" -v aipt-dev:/tmp/dev:ro -w /src \
+          docker run --rm --network none -v aipt-dev:/tmp/dev:ro -w /app \
+            -v "$PWD/tests:/app/tests:ro" -v "$PWD/pytest.ini:/app/pytest.ini:ro" -v "$PWD/deploy:/app/deploy:ro" \
             -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONUTF8=1 -e PYTHONPATH=/tmp/dev \
-            --entrypoint python aipt:ci -m pytest -q -p no:cacheprovider -m "not de"
+            --entrypoint python aipt:ci -m pytest -q -p no:cacheprovider -m "not de" --ignore=tests/test_build.py
       - name: Trivy (fixable HIGH and CRITICAL vulnerabilities)
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image --timeout 20m \

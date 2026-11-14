@@ -1,3 +1,9 @@
 # Shell scripts run on Linux and must keep LF line endings, also in a Windows checkout.
 *.sh text eol=lf
 deploy/test/harness/bin/* text eol=lf
+# The image build reads these with Linux tools (awk, uv, docker), also when it
+# is built from a Windows checkout or from a `git archive` made there.
+requirements*.lock text eol=lf
+requirements*.in text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
