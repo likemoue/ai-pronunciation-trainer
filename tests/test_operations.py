@@ -2,14 +2,18 @@
 import ast
 import datetime
 import glob
+import http.server
 import io
 import json
 import logging
 import os
 import runpy
 import shutil
+import socket
 import subprocess
 import sys
+import threading
+import time
 
 import pytest
 
@@ -294,10 +298,182 @@ def test_smoke_test_scores_the_warm_up_sentence():
     assert f"SENTENCE = {lambdaSpeechToScore.WARMUP_SENTENCES['en']!r}" in source
 
 
-@pytest.mark.skipif(os.name == 'nt', reason='needs a POSIX bash')
-def test_deploy_script_parses():
+class _FakeInstance(http.server.BaseHTTPRequestHandler):
+    """Answers the smoke test's requests like the app. `delays` holds seconds per path; `status`, when
+    set, is the answer to every request (a proxy that cannot reach the app)."""
+    delays = {}
+    status = None
+    requests = []
+
+    def _answer(self, code, payload, content_type='application/json'):
+        body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Security-Policy', "default-src 'self'")
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle(self):
+        type(self).requests.append(self.path)
+        length = int(self.headers.get('Content-Length') or 0)
+        data = self.rfile.read(length) if length else b''
+        time.sleep(self.delays.get(self.path, 0))
+        if self.status:
+            return self._answer(self.status, {'error': 'The server is restarting.', 'code': 'server_unavailable'})
+        if self.command == 'GET':
+            pages = {'/': (b'<title>AI Pronunciation Trainer</title>', 'text/html'),
+                     '/healthz': ({'status': 'ok'}, 'application/json'),
+                     '/readyz': ({'ready_workers': 2}, 'application/json'),
+                     '/version': ({'git_sha': 'abc1234'}, 'application/json')}
+            payload, content_type = pages.get(self.path, ({'error': 'not found'}, 'application/json'))
+            return self._answer(200 if self.path in pages else 404, payload, content_type)
+        if self.headers.get('Content-Type') != 'application/json':
+            return self._answer(415, {'error': 'JSON only', 'code': 'unsupported_media_type'})
+        request = json.loads(data)
+        if self.path == '/getSample':
+            if request.get('category') not in (0, 1, 2, 3):
+                return self._answer(400, {'error': 'bad category', 'code': 'bad_request'})
+            return self._answer(200, {'real_transcript': ['I have a cat.']})
+        if self.path == '/getAudioFromText':
+            return self._answer(200, {'wavBase64': 'UklGRg=='})
+        return self._answer(200, {'pronunciation_accuracy': '100', 'real_transcript': request.get('title')})
+
+    do_GET = do_POST = _handle
+
+    def log_message(self, *args):
+        pass
+
+
+class _QuietServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        pass   # a client that gave up waiting
+
+
+@pytest.fixture
+def fake_instance(monkeypatch):
+    monkeypatch.setattr(_FakeInstance, 'delays', {})
+    monkeypatch.setattr(_FakeInstance, 'status', None)
+    monkeypatch.setattr(_FakeInstance, 'requests', [])
+    server = _QuietServer(('127.0.0.1', 0), _FakeInstance)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f'http://127.0.0.1:{server.server_address[1]}', _FakeInstance
+    server.shutdown()
+    server.server_close()
+
+
+def _smoke(base, *options):
+    start = time.time()
+    result = subprocess.run([sys.executable, os.path.join(ROOT, 'deploy', 'smoke_test.py'), base, *options],
+                            capture_output=True, text=True, timeout=120)
+    return result.returncode, result.stdout, time.time() - start
+
+
+def test_smoke_test_passes_against_an_instance_that_answers(fake_instance):
+    base, _ = fake_instance
+    code, out, _ = _smoke(base)
+    assert code == 0, out
+    assert 'Smoke test passed.' in out
+
+
+def test_smoke_test_waits_as_long_as_its_timeout_for_a_busy_instance(fake_instance):
+    # deploy.sh gives the checks after a switch 60 s: the colour that has just
+    # taken the traffic may make /healthz wait behind recordings.
+    base, instance = fake_instance
+    instance.delays = {'/healthz': 1.5}
+    code, out, _ = _smoke(base, '--timeout', '0.5')
+    assert code == 1 and 'FAIL /healthz no answer' in out, out
+    code, out, _ = _smoke(base, '--timeout', '5')
+    assert code == 0, out
+
+
+def test_smoke_test_stops_at_once_when_nothing_answers():
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
+    code, out, seconds = _smoke(f'http://127.0.0.1:{port}', '--timeout', '60')
+    assert code == 1 and 'the instance does not answer' in out, out
+    assert seconds < 30
+
+
+def test_smoke_test_stops_at_once_on_a_gateway_error(fake_instance):
+    base, instance = fake_instance
+    instance.status = 502
+    code, out, seconds = _smoke(base, '--timeout', '60')
+    assert code == 1 and 'FAIL / 502' in out and 'the instance does not answer' in out, out
+    assert instance.requests == ['/']
+
+
+def _bash():
     bash = shutil.which('bash')
     if not bash:
         pytest.skip('bash is not installed')
+    return bash
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='needs a POSIX bash')
+def test_deploy_script_parses():
     with open(os.path.join(ROOT, 'deploy', 'deploy.sh'), encoding='utf-8') as f:
-        subprocess.run([bash, '-n'], input=f.read(), text=True, check=True)
+        subprocess.run([_bash(), '-n'], input=f.read(), text=True, check=True)
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='needs a POSIX bash')
+def test_deploy_script_help_names_the_rollbacks():
+    out = subprocess.run([_bash(), os.path.join(ROOT, 'deploy', 'deploy.sh'), '--help'],
+                         capture_output=True, text=True, check=True).stdout
+    assert 'deploy/deploy.sh --rollback ' in out
+    assert '--rollback-legacy can bring it' in out
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='needs a POSIX bash, git and flock')
+def test_deploy_script_refuses_commits_older_than_the_oldest_release(tmp_path):
+    # Commits from before 4290c3e have the unscreened sentences or the voice
+    # licensed for research only; deploy.sh must never deploy them.
+    if not (shutil.which('git') and shutil.which('flock')):
+        pytest.skip('needs git and flock')
+    env = {**os.environ, 'GIT_AUTHOR_NAME': 't', 'GIT_AUTHOR_EMAIL': 't@example.invalid',
+           'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.invalid'}
+
+    def git(*args, cwd=tmp_path):
+        return subprocess.run(['git', *args], cwd=cwd, env=env, capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    git('init', '-q', '--bare', '-b', 'main', 'origin.git')
+    git('clone', '-q', 'origin.git', 'work')
+    work = tmp_path / 'work'
+    (work / 'deploy').mkdir()
+    (work / 'deploy' / 'smoke_test.py').write_text('print("smoke")\n')
+    shas = []
+    for name in ('old', 'oldest-release', 'new'):
+        (work / 'release').write_text(name)
+        git('add', '-A', cwd=work)
+        git('commit', '-qm', name, cwd=work)
+        shas.append(git('rev-parse', 'HEAD', cwd=work))
+    git('push', '-q', 'origin', 'HEAD:main', cwd=work)
+    git('clone', '-q', 'origin.git', 'repo')
+    stubs = tmp_path / 'bin'
+    stubs.mkdir()
+    (stubs / 'docker').write_text('#!/bin/sh\n# No containers; every docker command fails.\nexit 1\n')
+    (stubs / 'docker').chmod(0o755)
+    env.update(PATH=f'{stubs}{os.pathsep}{os.environ["PATH"]}', APP='aipt-test', REPO_DIR=str(tmp_path / 'repo'),
+               DEPLOY_LOG=str(tmp_path / 'state' / 'deploys.log'), OLDEST_RELEASE=shas[1],
+               SKIP_CI_CHECK='1', SYSTEM_REFRESH='test')
+
+    def deploy(ref):
+        return subprocess.run([_bash(), os.path.join(ROOT, 'deploy', 'deploy.sh'), ref], cwd=tmp_path / 'repo',
+                              env=env, capture_output=True, text=True, timeout=120)
+
+    old = deploy(shas[0][:7])
+    assert old.returncode == 1
+    assert 'does not contain' in old.stderr and 'Building' not in old.stdout, old.stdout + old.stderr
+    for ref in (shas[1][:7], 'origin/main'):
+        accepted = deploy(ref)   # refused only by the stub docker, at the build
+        assert 'does not contain' not in accepted.stderr, accepted.stderr
+        assert 'SYSTEM_REFRESH=test (SYSTEM_REFRESH)' in accepted.stdout, accepted.stdout + accepted.stderr
+    # GitHub being down does not stop a deploy: the refs fetched earlier are used.
+    git('remote', 'set-url', 'origin', str(tmp_path / 'gone.git'), cwd=tmp_path / 'repo')
+    offline = deploy(shas[0][:7])
+    assert 'Warning: could not fetch origin' in offline.stderr and 'does not contain' in offline.stderr

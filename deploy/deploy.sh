@@ -5,7 +5,7 @@
 #   deploy/deploy.sh [git-ref]          build and deploy a commit on main (default: origin/main)
 #   deploy/deploy.sh --rollback         make the previous release live again, without downtime
 #   deploy/deploy.sh --status           show what is live
-#   deploy/deploy.sh --replace-proxy    recreate the proxy from CADDY_IMAGE (a few seconds of downtime)
+#   deploy/deploy.sh --replace-proxy    recreate the proxy from CADDY_IMAGE (downtime: see deploy/RUNBOOK.md)
 #   deploy/deploy.sh --rollback-legacy  bring back the single container of earlier versions (downtime)
 #
 # Layout (deploy/RUNBOOK.md):
@@ -17,22 +17,27 @@
 #
 # A deploy:
 # 1. builds $APP:<short sha> from the commit with `git archive`, so the
-#    checkout is never changed and local edits are never built;
+#    checkout is never changed and local edits are never built. Commits that
+#    do not contain OLDEST_RELEASE are refused;
 # 2. starts it in the idle colour, waits until it is healthy and runs that
 #    commit's deploy/smoke_test.py against it. Production is not touched if
 #    anything fails, and the failed image is removed;
-# 3. points Caddy at the new colour with a graceful reload (requests in flight
-#    finish on the old colour) and smoke-tests it through the proxy; if that
-#    fails, Caddy is pointed back;
-# 4. records the deploy in DEPLOY_LOG, lets the old colour finish its requests,
-#    stops it, and keeps the images of the last KEEP_IMAGES deploys. Image tags
-#    that are not in DEPLOY_LOG (for example ones made by hand) are never removed.
+# 3. points Caddy at the new colour with a graceful reload and smoke-tests it
+#    through the proxy; if that fails, Caddy is pointed back. Requests that
+#    Caddy accepted before the reload, including those whose body is still
+#    arriving, go to the old colour;
+# 4. records the deploy in DEPLOY_LOG, keeps the old colour running until Caddy
+#    can no longer send it a request (READ_BODY_SECONDS + DRAIN_MARGIN after the
+#    reload), stops it once it has finished its requests, and keeps the images
+#    of the last KEEP_IMAGES deploys. Image tags that are not in DEPLOY_LOG, or
+#    that do not name a commit (for example ones made by hand), are never removed.
 #
 # The first run on a host that still has the single container of earlier
 # versions ($APP, publishing PROD_PORT) moves it behind the proxy. It keeps
 # serving until the new colour has passed its checks; then it is stopped and
 # the proxy takes over its port, which interrupts service for a few seconds,
-# once. It is kept, stopped, as $APP-legacy, and --rollback can bring it back.
+# once. It is kept, stopped, as $APP-legacy, and --rollback-legacy can bring it
+# back, with downtime.
 #
 # Only one deploy runs at a time. An interrupted run (Ctrl-C, a dropped session,
 # a closed output pipe) undoes what it started. If a run is killed (SIGKILL, a
@@ -53,8 +58,21 @@ HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-360}
 # A stopping colour finishes the requests it has accepted within 120 s
 # (gunicorn's graceful_timeout, gunicorn.conf.py); docker kills it after this.
 STOP_TIMEOUT=${STOP_TIMEOUT:-130}
-# After the switch, the old colour gets this long before it is told to stop.
-DRAIN_SECONDS=${DRAIN_SECONDS:-5}
+# Caddy's read_body: the longest a client may take to send a whole request.
+# Caddy sends a request to the colour of the configuration that accepted it,
+# once its body has arrived, so a colour that loses its traffic at a reload
+# keeps running READ_BODY_SECONDS + DRAIN_MARGIN after that reload.
+READ_BODY_SECONDS=${READ_BODY_SECONDS:-60}
+DRAIN_MARGIN=${DRAIN_MARGIN:-5}
+# The smoke tests on PROD_PORT run once traffic has moved, and the colour that
+# took it may be busy with recordings: each check may take this long.
+PROD_SMOKE_TIMEOUT=${PROD_SMOKE_TIMEOUT:-60}
+# The oldest commit deploy.sh deploys (phase 0b, 4290c3e). Older commits have
+# sentences unsuitable for children or a voice licensed for research only.
+OLDEST_RELEASE=${OLDEST_RELEASE:-4290c3e5bb19d32bffd6e28d2d243b8950e56842}
+# The key of the image's system-package layer (Dockerfile). Empty: what
+# scripts/system_refresh.sh beside this script prints, else the ISO week.
+SYSTEM_REFRESH=${SYSTEM_REFRESH:-}
 # Caddy 2.11.9 (alpine), pinned by the digest of its multi-platform index.
 CADDY_IMAGE=${CADDY_IMAGE:-caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0}
 # One line per successful deploy: "<UTC time> <short sha> <container id>", newest last.
@@ -70,6 +88,10 @@ BLUE="$APP-blue"
 GREEN="$APP-green"
 LEGACY="$APP"
 LEGACY_KEPT="$APP-legacy"
+# Images built by deploy.sh carry this label (value: APP), so the ones that lost
+# their tag to a rebuild of the same commit can be removed. It is the build's
+# only --label, so no layer cached by docker's legacy builder carries it.
+BUILD_LABEL=aipt.deploy.app
 
 # Resource limits and log rotation for the app containers.
 # shellcheck disable=SC2054  # the commas belong to --tmpfs options
@@ -82,7 +104,11 @@ RUN_FLAGS=(--memory 9g --memory-swap 9g --pids-limit 512
 LEGACY_RUN_FLAGS=(--memory 9g --memory-swap 9g --pids-limit 512
                   --log-opt max-size=10m --log-opt max-file=3
                   --tmpfs /tmp:rw,nosuid,size=256m)
-PROXY_FLAGS=(--memory 256m --pids-limit 256 --read-only
+# Caddy holds each request body in memory until it is complete (request_buffers,
+# up to 5 MB, in a buffer that grows to about 10 MB). With 1 GB and no swap, and
+# Go's garbage collector working hard from 800 MiB, it held about 110 uploads of
+# 4.9 MB at once (256 MB held 40).
+PROXY_FLAGS=(--memory 1g --memory-swap 1g --pids-limit 256 --read-only -e GOMEMLIMIT=800MiB
              --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges
              --tmpfs /config --tmpfs /data --tmpfs /tmp
              --log-opt max-size=10m --log-opt max-file=3)
@@ -102,11 +128,12 @@ read -r -d '' CADDYFILE <<'EOF' || true
 		level WARN
 	}
 	# A client that sends its request slowly holds a connection here, not one of
-	# the app's threads (see request_buffers below), and only for so long.
+	# the app's threads (see request_buffers below), and only for so long. After
+	# a switch, deploy.sh keeps the old colour running for read_body and a margin.
 	servers {
 		timeouts {
 			read_header 10s
-			read_body 60s
+			read_body @READ_BODY_SECONDS@s
 		}
 	}
 }
@@ -143,6 +170,7 @@ read -r -d '' CADDYFILE <<'EOF' || true
 	}
 }
 EOF
+CADDYFILE=${CADDYFILE//@READ_BODY_SECONDS@/$READ_BODY_SECONDS}
 
 log() { printf '\n==> %s\n' "$*"; }
 say() { printf '%s\n' "$*" >&2; }
@@ -157,6 +185,22 @@ container_image() { docker container inspect -f '{{.Config.Image}}' "$1" 2>/dev/
 container_image_id() { docker container inspect -f '{{.Image}}' "$1" 2>/dev/null || true; }
 image_id() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
 deployed_before() { [[ -f "$DEPLOY_LOG" ]] && awk -v sha="$1" '$2 == sha { found = 1 } END { exit !found }' "$DEPLOY_LOG"; }
+# The newest distinct releases in DEPLOY_LOG, on one line.
+recent_deploys() { { awk '{print $2}' "$DEPLOY_LOG" | tac | awk '!seen[$0]++' | head -n 4 | paste -sd ' ' -; } 2>/dev/null || true; }
+
+# The commit a container runs: its image's revision label (the Dockerfile sets
+# it from phase 1 on; a container recreated from a bare image id has no tag),
+# else the tag of its image.
+release_of() {  # release_of <container>
+    local revision image
+    revision=$(docker container inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$1" 2>/dev/null || true)
+    if [[ $revision =~ ^[0-9a-f]{7,40}$ ]]; then
+        echo "$revision"
+    else
+        image=$(container_image "$1")
+        echo "${image##*:}"
+    fi
+}
 # True if the container publishes port 3000 as host port PROD_PORT.
 publishes_prod_port() { docker port "$1" 3000/tcp 2>/dev/null | grep -qE ":$PROD_PORT\$"; }
 port_of() { if [[ $1 == "$BLUE" ]]; then echo "$BLUE_PORT"; else echo "$GREEN_PORT"; fi; }
@@ -214,8 +258,16 @@ wait_http() {  # wait_http <url> <seconds>
     done
 }
 
-# smoke <base url>: the smoke test of the commit being deployed.
-smoke() { python3 "$WORK/smoke_test.py" "$1"; }
+# smoke <base url> [seconds]: the smoke test of the commit being deployed, with
+# that long for each check (smoke_test.py --timeout; smoke tests from before
+# phase 1 do not have the option and keep their 10 s).
+smoke() {
+    local options=()
+    if [[ -n "${2:-}" ]] && grep -q -- '--timeout' "$WORK/smoke_test.py"; then
+        options=(--timeout "$2")
+    fi
+    python3 "$WORK/smoke_test.py" "$1" "${options[@]}"
+}
 
 remove_container() {
     container_exists "$1" || return 0
@@ -229,18 +281,29 @@ ensure_network() {
 
 # Write the proxy's configuration for <colour>. Caddy checks it first: a file it
 # refuses would stop the proxy at its next start (a reboot), so it is never put
-# in place.
-write_proxy_config() {  # write_proxy_config <colour>
-    local next="$PROXY_DIR/next"
+# in place. CADDY_IMAGE checks it and, unless a new proxy will read it ("new"),
+# so does the image of the existing proxy when it is another one (see --status).
+write_proxy_config() {  # write_proxy_config <colour> [new]
+    local next="$PROXY_DIR/next" images=("$CADDY_IMAGE") image running
+    if [[ "${2:-}" != new ]] && container_exists "$PROXY" && [[ "$(container_image "$PROXY")" != "$CADDY_IMAGE" ]]; then
+        running=$(container_image_id "$PROXY")
+        [[ -z "$running" ]] || images+=("$running")
+    fi
     mkdir -p "$next"
     printf '%s\n' "$CADDYFILE" > "$next/Caddyfile"
     printf 'to %s:3000\n' "$1" > "$next/upstream.caddy"
-    if ! docker run --rm --network none -v "$next:/etc/caddy:ro" "$CADDY_IMAGE" \
-            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$next/validate.log" 2>&1; then
-        tail -n 5 "$next/validate.log" >&2
-        say "!! Caddy refuses the new configuration ($next); the files in $PROXY_DIR are unchanged."
-        return 1
-    fi
+    for image in "${images[@]}"; do
+        if ! docker run --rm --network none -v "$next:/etc/caddy:ro" "$image" \
+                caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >"$next/validate.log" 2>&1; then
+            tail -n 5 "$next/validate.log" >&2
+            say "!! Caddy refuses the new configuration ($next); the files in $PROXY_DIR are unchanged."
+            if [[ "$image" != "$CADDY_IMAGE" ]]; then
+                say "   $PROXY runs $(container_image "$PROXY"), which refuses it; $CADDY_IMAGE accepts it."
+                say "   Recreate the proxy from $CADDY_IMAGE with deploy/deploy.sh --replace-proxy (deploy/RUNBOOK.md)."
+            fi
+            return 1
+        fi
+    done
     # Replace the files, never edit them in place: the proxy reads them through
     # a mount of the directory.
     mv -f "$next/Caddyfile" "$PROXY_DIR/Caddyfile"
@@ -248,7 +311,10 @@ write_proxy_config() {  # write_proxy_config <colour>
 }
 
 reload_proxy() {
-    docker exec "$PROXY" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -n 3 >&2
+    # The status is caddy reload's: a terminal that has gone away (tail cannot
+    # write) does not undo a reload that Caddy applied.
+    docker exec "$PROXY" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 \
+        | { tail -n 3 >&2 || true; }
 }
 
 # True if Caddy's running configuration sends traffic to <colour>.
@@ -259,16 +325,17 @@ proxy_sends_to() { [[ -n "$1" && "$(running_upstream)" == "$1" ]]; }
 # container whose start failed on a taken port may later start without
 # publishing it, so each new attempt uses a new container.
 start_proxy() {
-    local try
+    local try error=
     for try in 1 2 3 4 5 6; do
-        if docker start "$PROXY" >/dev/null 2>&1 && publishes_prod_port "$PROXY"; then
+        if error=$(docker start "$PROXY" 2>&1 >/dev/null) && publishes_prod_port "$PROXY"; then
             return 0
         fi
         docker rm -f "$PROXY" >/dev/null 2>&1
         create_proxy || return 1
         sleep 0.5
     done
-    say "Could not start $PROXY on port $PROD_PORT."
+    say "Could not start $PROXY on port $PROD_PORT. The last docker start said: ${error:-nothing, but the port was not published}"
+    say "Check what holds port $PROD_PORT with: docker ps --filter publish=$PROD_PORT"
     return 1
 }
 
@@ -302,7 +369,13 @@ start_legacy() {
 
 # Start a new proxy in front of <colour>. PROD_PORT must be free.
 proxy_in_front_of() {  # proxy_in_front_of <colour>
-    write_proxy_config "$1"
+    write_proxy_config "$1" new || return 1
+    recreate_proxy
+}
+
+# Replace the proxy container with a new one from CADDY_IMAGE, which reads the
+# files in PROXY_DIR, and wait until it answers.
+recreate_proxy() {
     docker rm -f "$PROXY" >/dev/null 2>&1
     create_proxy && start_proxy && wait_http "http://127.0.0.1:$PROD_PORT/" 30
 }
@@ -359,14 +432,19 @@ remove_failed_image() {
 
 prune_images() {
     # Keep the images of the last KEEP_IMAGES distinct deploys; docker refuses
-    # to remove an image a container (running or stopped) still uses.
+    # to remove an image a container (running or stopped) still uses. Only the
+    # entries that name a commit are tags of this script: a release switched to
+    # by hand (deploy/RUNBOOK.md) is logged under its own tag, which stays.
     local keep sha
     keep=$(awk '{print $2}' "$DEPLOY_LOG" | tac | awk -v n="$KEEP_IMAGES" '!seen[$0]++ { if (count++ < n) print }')
-    for sha in $(awk '{print $2}' "$DEPLOY_LOG" | sort -u); do
+    for sha in $(awk '$2 ~ /^[0-9a-f]+$/ && length($2) >= 7 && length($2) <= 40 { print $2 }' "$DEPLOY_LOG" | sort -u); do
         grep -qx "$sha" <<<"$keep" && continue
         [[ -n "$(image_id "$APP:$sha")" ]] || continue
         docker rmi "$APP:$sha" >/dev/null 2>&1 && echo "removed $APP:$sha" || true
     done
+    # Images that lost their tag to a rebuild of the same commit (a new
+    # SYSTEM_REFRESH) and that no container uses.
+    docker image prune --force --filter "label=$BUILD_LABEL=$APP" >/dev/null 2>&1 || true
 }
 
 record_deploy() {  # record_deploy <sha> <container>
@@ -376,11 +454,26 @@ record_deploy() {  # record_deploy <sha> <container>
 # ------------------------------------------------------------------ interruptions
 
 PHASE=prepare   # prepare, staging, switching, migrating, live
-STAGED=         # container started by this run
+STAGED=         # colour this run fills: set before its previous release is removed
 SWITCHED_FROM=  # live colour before the switch
 MIGRATED=0      # this run moved the single container behind the proxy
 PREVIOUS_REF=   # image of the release that STAGED replaced (name, and id)
 PREVIOUS_ID=
+RELOADED_AT=    # SECONDS when a caddy reload last took the traffic off a colour
+
+# Caddy sends a request to the colour of the configuration that accepted it,
+# once its body has arrived: up to READ_BODY_SECONDS after the reload that took
+# the traffic off that colour. Wait until then, and DRAIN_MARGIN more, before
+# <colour> is told to stop.
+drain() {  # drain <colour>
+    local left
+    # SECONDS counts whole seconds; one more makes the wait at least that long.
+    # When the time of the reload is not known, it counts from now.
+    left=$((${RELOADED_AT:-$SECONDS} + READ_BODY_SECONDS + DRAIN_MARGIN + 1 - SECONDS))
+    (( left > 0 )) || return 0
+    echo "$1 gets $left s more for the requests Caddy accepted before the switch (read_body $READ_BODY_SECONDS s + $DRAIN_MARGIN s)."
+    sleep "$left"
+}
 
 # After a failed deploy, the stopped previous release goes back into its slot,
 # so --rollback still finds it.
@@ -412,7 +505,11 @@ on_abort() {  # on_abort <what happened>
     case "$PHASE" in
         staging)
             if [[ -n "$STAGED" ]]; then
-                docker logs --tail 50 "$STAGED" 2>&1 | tail -n 50 >&2
+                # The new release's log; not the previous release's, if the run
+                # was interrupted while that one was being removed.
+                if [[ "$(container_image "$STAGED")" == "${IMAGE:-}" ]]; then
+                    docker logs --tail 50 "$STAGED" 2>&1 | tail -n 50 >&2
+                fi
                 docker rm -f "$STAGED" >/dev/null 2>&1
                 restore_previous_release "$STAGED"
             fi
@@ -420,7 +517,12 @@ on_abort() {  # on_abort <what happened>
             say "Production was not touched." ;;
         switching)
             if [[ -n "$SWITCHED_FROM" ]] && container_running "$SWITCHED_FROM"; then
-                write_proxy_config "$SWITCHED_FROM" && reload_proxy
+                # Even if the reload's status is lost (a signal, a closed
+                # terminal), Caddy may have applied it: drain from now.
+                if write_proxy_config "$SWITCHED_FROM"; then
+                    reload_proxy || true
+                    RELOADED_AT=$SECONDS
+                fi
             fi
             if [[ -n "$STAGED" ]] && proxy_sends_to "$STAGED"; then
                 # Never stop the colour that serves.
@@ -429,8 +531,9 @@ on_abort() {  # on_abort <what happened>
             fi
             [[ -n "$SWITCHED_FROM" ]] && say "The proxy sends traffic to $SWITCHED_FROM."
             if [[ -n "$STAGED" ]]; then
-                # Let the requests it took before the switch back finish.
-                sleep "$DRAIN_SECONDS"
+                # It still gets the requests Caddy accepted before the switch
+                # back, and finishes them when it is stopped.
+                drain "$STAGED"
                 docker stop -t "$STOP_TIMEOUT" "$STAGED" >/dev/null 2>&1
                 docker rm -f "$STAGED" >/dev/null 2>&1
                 restore_previous_release "$STAGED"
@@ -475,7 +578,7 @@ recover_interrupted_migration() {
         if container_running "$LEGACY"; then
             docker stop -t "$STOP_TIMEOUT" "$LEGACY" >/dev/null
         fi
-        sha=$(container_image "$live"); sha=${sha##*:}
+        sha=$(release_of "$live")
         record_deploy "$sha" "$live"
         rm -f "$MIGRATION_MARK"
         docker tag "$(container_image_id "$live")" "$APP:latest"
@@ -499,10 +602,26 @@ ensure_proxy_running() {
 
 # ------------------------------------------------------------------ steps
 
+# deploy.sh never makes live a commit that does not contain OLDEST_RELEASE.
+check_not_too_old() {  # check_not_too_old <commit> <what to call it>
+    local rc=0
+    git -C "$REPO_DIR" cat-file -e "$OLDEST_RELEASE^{commit}" 2>/dev/null \
+        || die "OLDEST_RELEASE ($OLDEST_RELEASE) is not a commit in $REPO_DIR; fetch it, or set OLDEST_RELEASE."
+    git -C "$REPO_DIR" merge-base --is-ancestor "$OLDEST_RELEASE" "$1" 2>/dev/null || rc=$?
+    case $rc in
+        0) ;;
+        1) die "$2 does not contain ${OLDEST_RELEASE:0:7} (OLDEST_RELEASE), the oldest release that deploy.sh deploys: older commits have sentences unsuitable for children or the voice licensed for research only. See deploy/RUNBOOK.md." ;;
+        *) die "$2 is not a commit in $REPO_DIR, so deploy.sh cannot tell whether it contains ${OLDEST_RELEASE:0:7} (OLDEST_RELEASE)." ;;
+    esac
+}
+
 prepare_commit() {  # prepare_commit <ref>: sets COMMIT, SHA, IMAGE and WORK/smoke_test.py
     local ref=$1
     log "Fetching $ref"
-    git -C "$REPO_DIR" fetch --quiet --prune origin '+refs/heads/*:refs/remotes/origin/*'
+    # GitHub being down must not stop a deploy, for example of an older commit.
+    if ! git -C "$REPO_DIR" fetch --quiet --prune origin '+refs/heads/*:refs/remotes/origin/*'; then
+        say "Warning: could not fetch origin; using the refs fetched earlier."
+    fi
     COMMIT=$(git -C "$REPO_DIR" rev-parse --verify -q "$ref^{commit}" || true)
     [[ -n "$COMMIT" ]] || die "Unknown ref $ref (after the fetch, branches are origin/<name>)."
     # CI checks every pull request and every push to main.
@@ -514,6 +633,7 @@ prepare_commit() {  # prepare_commit <ref>: sets COMMIT, SHA, IMAGE and WORK/smo
     elif ! git -C "$REPO_DIR" merge-base --is-ancestor "$COMMIT" origin/main 2>/dev/null; then
         die "$ref is not on main. deploy.sh deploys commits of main, which CI has checked; for a test of another pushed branch, set DEPLOY_ANY_BRANCH=1."
     fi
+    check_not_too_old "$COMMIT" "$ref"
     # Versions from before deploy.sh have no smoke test, and their image no
     # health check; they are rolled back by hand, see deploy/RUNBOOK.md.
     git -C "$REPO_DIR" show "$COMMIT:deploy/smoke_test.py" > "$WORK/smoke_test.py" 2>/dev/null \
@@ -532,10 +652,11 @@ check_ci() {
         say "SKIP_CI_CHECK=1: not asking GitHub whether CI passed for $SHA."
         return 0
     fi
-    origin=$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)
-    repo=$(sed -nE 's#^(https://|ssh://git@|git@)github\.com[:/]([^/]+/[^/]+)$#\2#p' <<<"${origin%.git}")
+    # Without the credentials that an https origin may carry (https://user:token@...).
+    origin=$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null | sed -E 's#^([a-z+]+://)[^/@]*@#\1#' || true)
+    repo=$(sed -nE 's#^(https://|ssh://|git@)github\.com[:/]([^/]+/[^/]+)$#\2#p' <<<"${origin%.git}")
     if [[ -z "$repo" ]]; then
-        say "origin ($origin) is not a GitHub repository; not checking CI."
+        say "Warning: origin ($origin) is not a GitHub repository; not checking CI."
         return 0
     fi
     verdict=$(curl -fsS -m 20 -H 'Accept: application/vnd.github+json' \
@@ -555,17 +676,33 @@ else:
         none) say "Warning: CI has no run for $SHA (a commit from before CI existed?); deploying it anyway." ;;
         unknown) say "Warning: could not ask GitHub whether CI passed for $SHA; deploying it anyway." ;;
         pending) die "CI is still running for $SHA. Wait for it (https://github.com/$repo/actions), or set SKIP_CI_CHECK=1." ;;
+        # A newer push to main cancels the run that was waiting for its turn.
+        cancelled) die "CI's run for $SHA was cancelled. Re-run it (https://github.com/$repo/actions), or set SKIP_CI_CHECK=1." ;;
         *) die "CI did not pass for $SHA ($verdict). Fix it first, or set SKIP_CI_CHECK=1 to deploy it anyway." ;;
     esac
 }
 
 build_image() {
+    local refresh=$SYSTEM_REFRESH from=SYSTEM_REFRESH script
     log "Building $IMAGE"
-    # SYSTEM_REFRESH, the ISO week, refreshes the Debian packages once a week.
+    # The Debian packages are refreshed when SYSTEM_REFRESH changes: by hand, or
+    # from the state of Debian's archive (scripts/system_refresh.sh beside this
+    # script), or else once a week.
+    script="$(dirname "${BASH_SOURCE[0]}")/../scripts/system_refresh.sh"
+    if [[ -z "$refresh" && -f "$script" ]]; then
+        refresh=$(timeout 60 bash "$script" | head -n 1 | tr -d '\r' || true)
+        from=scripts/system_refresh.sh
+    fi
+    if [[ -z "$refresh" ]]; then
+        # The same form as the script's own fallback.
+        refresh="week-$(date -u +%G-W%V)"
+        from="the ISO week"
+    fi
+    echo "SYSTEM_REFRESH=$refresh ($from)"
     git -C "$REPO_DIR" archive --format=tar "$COMMIT" \
         | docker build --build-arg GIT_SHA="$SHA" \
             --build-arg GIT_DATE="$(git -C "$REPO_DIR" show -s --format=%cI "$COMMIT")" \
-            --build-arg SYSTEM_REFRESH="$(date -u +%G-W%V)" \
+            --build-arg SYSTEM_REFRESH="$refresh" --label "$BUILD_LABEL=$APP" \
             -t "$IMAGE" -
     # The proxy image is needed later, at a moment when a download would add to an outage.
     [[ -n "$(image_id "$CADDY_IMAGE")" ]] || docker pull --quiet "$CADDY_IMAGE" >/dev/null
@@ -577,11 +714,12 @@ stage() {  # stage <colour>: start IMAGE in that colour and check it
     log "Starting $IMAGE as $target (127.0.0.1:$port)"
     PHASE=staging
     if container_exists "$target"; then
-        # The previous release, kept for --rollback. If this deploy fails, it is
-        # created again from its image.
+        # The previous release, kept for --rollback. If this deploy fails or is
+        # interrupted from here on, it is created again from its image.
         PREVIOUS_REF=$(container_image "$target")
         PREVIOUS_ID=$(container_image_id "$target")
         echo "Replacing $target ($PREVIOUS_REF), the previous release."
+        STAGED=$target
         remove_container "$target"
     fi
     ensure_network
@@ -599,12 +737,13 @@ switch_proxy() {  # switch_proxy <live> <target>
     log "Switching the proxy: ${live:-nothing} -> $target"
     PHASE=switching
     SWITCHED_FROM=$live
-    write_proxy_config "$target"
+    write_proxy_config "$target" || on_abort "Caddy refused the new configuration"
     reload_proxy
+    RELOADED_AT=$SECONDS
     if ! proxy_sends_to "$target"; then
         on_abort "Caddy did not take the new configuration"
     fi
-    if ! smoke "http://127.0.0.1:$PROD_PORT"; then
+    if ! smoke "http://127.0.0.1:$PROD_PORT" "$PROD_SMOKE_TIMEOUT"; then
         on_abort "The smoke test through the proxy failed"
     fi
     if ! serves_release "$SHA"; then
@@ -627,7 +766,7 @@ sys.exit(0 if served in (None, "unknown", sys.argv[1]) else 1)' "$1"
 migrate() {  # migrate <target>
     local target=$1 stopped_at
     log "Moving $LEGACY behind the proxy (port $PROD_PORT is unavailable for a few seconds)"
-    write_proxy_config "$target"
+    write_proxy_config "$target" new || on_abort "Caddy refused the proxy's configuration"
     # From here on, an interruption puts the single container back, and a run
     # that is killed leaves the mark for the next one.
     PHASE=migrating
@@ -644,22 +783,23 @@ migrate() {  # migrate <target>
         on_abort "The proxy did not answer on port $PROD_PORT"
     fi
     echo "Port $PROD_PORT refused new connections for $(awk -v a="$stopped_at" -v b="$(date +%s.%N)" 'BEGIN { printf "%.1f", b - a }') s: from the stop of $LEGACY until the proxy answered."
-    if ! smoke "http://127.0.0.1:$PROD_PORT"; then
+    if ! smoke "http://127.0.0.1:$PROD_PORT" "$PROD_SMOKE_TIMEOUT"; then
         on_abort "The smoke test through the proxy failed"
     fi
     MIGRATED=1
 }
 
 # After a move behind the proxy has been recorded: keep the single container,
-# stopped, for --rollback.
+# stopped, for --rollback-legacy.
 keep_legacy() {  # keep_legacy <live colour>
     container_exists "$LEGACY" || return 0
     if container_exists "$LEGACY_KEPT"; then
         docker rm -f "$LEGACY_KEPT" >/dev/null 2>&1 || true
     fi
     docker rename "$LEGACY" "$LEGACY_KEPT" || say "Could not rename $LEGACY to $LEGACY_KEPT; it is stopped."
-    # A colour left from before a rollback to the single container is older than
-    # it; --rollback goes to the single container instead.
+    # The other colour can only hold a release from before --rollback-legacy,
+    # which was rolled back from: it is removed, so --rollback has no previous
+    # colour until the next deploy (--rollback-legacy goes to the single container).
     docker rm -f "$(other_colour "$1")" >/dev/null 2>&1 || true
 }
 
@@ -668,20 +808,21 @@ start_proxy_fresh() {  # start_proxy_fresh <target>
     local target=$1
     log "Starting the proxy on port $PROD_PORT"
     PHASE=switching
-    write_proxy_config "$target"
+    write_proxy_config "$target" new || on_abort "Caddy refused the proxy's configuration"
     docker rm -f "$PROXY" >/dev/null 2>&1 || true
     create_proxy
-    if ! start_proxy || ! wait_http "http://127.0.0.1:$PROD_PORT/" 30 || ! smoke "http://127.0.0.1:$PROD_PORT"; then
+    if ! start_proxy || ! wait_http "http://127.0.0.1:$PROD_PORT/" 30 || ! smoke "http://127.0.0.1:$PROD_PORT" "$PROD_SMOKE_TIMEOUT"; then
         docker rm -f "$PROXY" >/dev/null 2>&1
         on_abort "The proxy did not serve the new release"
     fi
 }
 
-# Stop the old colour once its requests are done; keep it for --rollback.
+# Stop the old colour once Caddy can no longer send it a request; it finishes
+# the requests it has, and is kept for --rollback.
 retire() {  # retire <container>
     [[ -n "$1" ]] && container_running "$1" || return 0
     log "Stopping $1 (kept for deploy/deploy.sh --rollback)"
-    sleep "$DRAIN_SECONDS"
+    drain "$1"
     docker stop -t "$STOP_TIMEOUT" "$1" >/dev/null
 }
 
@@ -735,10 +876,12 @@ replace_proxy() {
     [[ -n "$live" ]] && container_running "$live" || die "No live colour is running; nothing to put the proxy in front of."
     log "Replacing $PROXY ($(container_image "$PROXY")) with $CADDY_IMAGE in front of $live"
     [[ -n "$(image_id "$CADDY_IMAGE")" ]] || docker pull --quiet "$CADDY_IMAGE" >/dev/null
+    # The new image checks the configuration before the proxy is touched.
+    write_proxy_config "$live" new || die "!! $CADDY_IMAGE refuses the configuration, so $PROXY was left as it was."
     critical_section
     # Caddy finishes the requests in flight when it is stopped.
     docker stop -t "$STOP_TIMEOUT" "$PROXY" >/dev/null 2>&1
-    if ! proxy_in_front_of "$live"; then
+    if ! recreate_proxy; then
         die "!! The new proxy does not serve. Production is DOWN; see deploy/RUNBOOK.md." 2
     fi
     log "$PROXY runs $CADDY_IMAGE"
@@ -753,7 +896,12 @@ rollback() {
     previous=$(other_colour "$live")
     if container_exists "$previous"; then
         image=$(container_image "$previous")
-        sha=${image##*:}
+        sha=$(release_of "$previous")
+        # A deploy killed while it started its release leaves that release in
+        # the idle colour, never deployed: it is not the previous release.
+        deployed_before "$sha" \
+            || die "$previous holds $image, which is not in $DEPLOY_LOG (a deploy that was interrupted?), so it is not the previous release. Deploy the release you want with deploy/deploy.sh <sha> (recent deploys: $(recent_deploys))."
+        check_not_too_old "$sha" "$previous ($image)"
         log "Rolling back: $live ($(container_image "$live")) -> $previous ($image)"
         git -C "$REPO_DIR" show "$sha:deploy/smoke_test.py" > "$WORK/smoke_test.py" 2>/dev/null \
             || cp "$REPO_DIR/deploy/smoke_test.py" "$WORK/smoke_test.py"
@@ -771,9 +919,9 @@ rollback() {
         return 0
     fi
     say "There is no previous release in $previous. To go back without downtime, deploy an older commit:"
-    say "  deploy/deploy.sh <sha>     (recent deploys: $(awk '{print $2}' "$DEPLOY_LOG" 2>/dev/null | tac | awk '!seen[$0]++' | head -n 4 | tr '\n' ' '))"
+    say "  deploy/deploy.sh <sha>     (recent deploys: $(recent_deploys))"
     if container_exists "$LEGACY_KEPT"; then
-        say "or bring back the single container from before the proxy ($(container_image "$LEGACY_KEPT")), with a few seconds of downtime:"
+        say "or bring back the single container from before the proxy ($(container_image "$LEGACY_KEPT")), with downtime (deploy/RUNBOOK.md):"
         say "  deploy/deploy.sh --rollback-legacy"
     fi
     exit 1
@@ -785,7 +933,8 @@ rollback_legacy() {
     container_exists "$LEGACY_KEPT" || die "There is no $LEGACY_KEPT to roll back to."
     live=$(live_colour)
     log "Rolling back to the single container from before the proxy ($(container_image "$LEGACY_KEPT"))"
-    say "Port $PROD_PORT is unavailable for a few seconds, and the first requests are slow while it warms up."
+    say "Port $PROD_PORT refuses new connections until the proxy has finished its requests (up to about 2 minutes) and the single container has started; the first requests are slow while it warms up."
+    cp "$REPO_DIR/deploy/smoke_test.py" "$WORK/smoke_test.py"
     critical_section
     docker rename "$LEGACY_KEPT" "$LEGACY"
     container_id "$LEGACY" > "$MIGRATION_MARK"
@@ -795,12 +944,12 @@ rollback_legacy() {
         [[ -n "$live" ]] && container_running "$live" && fall_forward "$live"
         exit 2
     fi
-    if ! wait_healthy "$LEGACY" || ! python3 "$REPO_DIR/deploy/smoke_test.py" "http://127.0.0.1:$PROD_PORT"; then
+    if ! wait_healthy "$LEGACY" || ! smoke "http://127.0.0.1:$PROD_PORT" "$PROD_SMOKE_TIMEOUT"; then
         say "!! $LEGACY serves port $PROD_PORT but failed its checks; the colours are still there (deploy/RUNBOOK.md)."
         exit 2
     fi
     [[ -n "$live" ]] && docker stop -t "$STOP_TIMEOUT" "$live" >/dev/null 2>&1
-    sha=$(container_image "$LEGACY"); sha=${sha##*:}
+    sha=$(release_of "$LEGACY")
     record_deploy "$sha" "$LEGACY"
     docker tag "$(container_image_id "$LEGACY")" "$APP:latest"
     log "$LEGACY is live again. The colours are stopped; the next deploy moves it behind the proxy again."
@@ -838,6 +987,8 @@ main() {
         -h|--help) sed -n '2,/^set -E/p' "$0" | sed '$d; s/^# \{0,1\}//'; return 0 ;;
         --status) status; return 0 ;;
     esac
+    [[ $READ_BODY_SECONDS =~ ^[1-9][0-9]*$ && $DRAIN_MARGIN =~ ^[0-9]+$ ]] \
+        || die "READ_BODY_SECONDS ($READ_BODY_SECONDS) and DRAIN_MARGIN ($DRAIN_MARGIN) must be whole numbers of seconds."
 
     # One deploy at a time. Commands the script starts inherit the lock, so
     # after a run is killed, a docker command it left running keeps it until
@@ -871,12 +1022,13 @@ main() {
     if container_exists "$PROXY"; then
         local live last_id
         live=$(live_colour)
-        # A run killed after the switch but before it recorded the deploy.
-        last_id=$(tail -n 1 "$DEPLOY_LOG" 2>/dev/null | awk '{print $3}')
+        # A run killed after the switch but before it recorded the deploy (or a
+        # first deploy interrupted once the proxy had started: no DEPLOY_LOG yet).
+        last_id=$(tail -n 1 "$DEPLOY_LOG" 2>/dev/null | awk '{print $3}' || true)
         if [[ -n "$live" ]] && container_running "$live" && [[ "$(container_id "$live")" != "$last_id" ]] \
                 && proxy_sends_to "$live"; then
             local served
-            served=$(container_image "$live"); served=${served##*:}
+            served=$(release_of "$live")
             say "Caddy serves $live ($served), which an interrupted run did not record; recording it."
             record_deploy "$served" "$live"
             docker tag "$(container_image_id "$live")" "$APP:latest"
@@ -884,11 +1036,11 @@ main() {
         # The files must say what Caddy does (a run killed before its reload
         # leaves them ahead of it), and the Caddyfile must be this script's.
         if [[ -n "$live" ]] && ! cmp -s <(printf '%s\n' "$CADDYFILE") "$PROXY_DIR/Caddyfile"; then
-            write_proxy_config "$live"
+            write_proxy_config "$live" || die "The proxy's configuration was not changed (deploy/RUNBOOK.md)."
             container_running "$PROXY" && reload_proxy
         elif [[ -n "$live" && "$(file_upstream)" != "$live" ]]; then
             say "$PROXY_DIR/upstream.caddy named $(file_upstream), but Caddy sends traffic to $live; corrected the file."
-            write_proxy_config "$live"
+            write_proxy_config "$live" || die "The proxy's configuration was not changed (deploy/RUNBOOK.md)."
         fi
         # A move behind the proxy that was recorded but interrupted before the
         # single container was renamed.
