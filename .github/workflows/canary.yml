@@ -39,7 +39,8 @@ jobs:
       - name: Smoke test the public site (one retry after a minute)
         run: |
           for attempt in 1 2; do
-            # 60 s per check, as deploy.sh allows after a switch: during a burst of
+            # 60 s per quick check (120 s for the page, sample, speech and score), as
+            # deploy.sh allows after a switch: during a burst of
             # recordings the page and /healthz wait behind them (up to 34 s measured).
             # A site that does not answer at all still fails at the first check.
             python3 deploy/smoke_test.py "$SITE" --user-agent "$USER_AGENT" --timeout 60 && exit 0

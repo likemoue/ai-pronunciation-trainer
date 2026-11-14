@@ -90,15 +90,17 @@ a run is killed (SIGKILL, a reboot), the next run takes what Caddy actually serv
 API, not from `upstream.caddy`), records it if it was not recorded, and goes on. A run killed while it was
 starting the new release leaves that release in the idle colour, and the previous release is gone: `--rollback`
 then refuses, since that release is not in the deploy log. Deploy the previous commit by its sha instead
-(`--status` lists the last deploys).
+(`--status` lists the last deploys). A run killed during staging or during the 65 s drain also leaves the other
+colour running: once `--status` shows which colour is live, stop the other one
+(`docker stop ai-pronunciation-trainer-<colour>`), at least 65 s after Caddy stopped sending it traffic.
 
-A reboot during a deploy is handled like SIGKILL, but the harness does not test it, and two things differ.
-Caddy starts from the files in the proxy directory: if the reboot came between deploy.sh writing `upstream.caddy`
-and its reload, Caddy serves the new colour, which then has not passed its smoke test through port 3000, and the
-next run records it as deployed. And docker starts every container that was running, so after a reboot during
-the 65 s drain both colours run. After such a reboot, run `deploy/deploy.sh --status` and
-`python3 deploy/smoke_test.py http://127.0.0.1:3000`, and stop the colour that is not live if it runs
-(`docker stop ai-pronunciation-trainer-<colour>`).
+A reboot during a deploy is handled like SIGKILL, but the harness does not test it. Caddy starts from the files in
+the proxy directory: if the reboot came between deploy.sh writing `upstream.caddy` and its reload, Caddy serves the
+new colour, which then has not passed its smoke test through port 3000, and the next run records it as deployed.
+Docker starts every container that was running, and each warms up again. After such a reboot, wait until
+`deploy/deploy.sh --status` shows the live colour `(healthy)`, then run
+`python3 deploy/smoke_test.py http://127.0.0.1:3000 --timeout 60`; if it fails, `deploy/deploy.sh --rollback`.
+Stop the colour that is not live if it runs, as above.
 
 When CI fails at Trivy on a Debian package that has a fix, nothing in the repository needs to change: the system
 packages are keyed on Debian's package indexes, so the next build upgrades them once Debian has published the fix
@@ -220,7 +222,9 @@ What deploy.sh prints, and what to do:
   deploy/deploy.sh --status   # the proxy, the live colour, the other colour stopped, -legacy
   ```
 
-  Find out what held port 3000 before you run `--rollback-legacy` again.
+  Find out what held port 3000 before you run `--rollback-legacy` again. The same applies when the run after a
+  `--rollback-legacy` that was killed (SIGKILL, a reboot) reports "An earlier deploy was interrupted while it moved
+  ai-pronunciation-trainer behind the proxy": clear the two leftovers as above before any other run of deploy.sh.
 * **`The proxy still sends traffic to <colour>, so it is left running`**: a deploy failed after the switch, and
   Caddy did not take the switch back. That colour passed its own checks and serves. `deploy/deploy.sh --rollback`
   goes back to the other colour, or deploy again.
@@ -234,6 +238,12 @@ What deploy.sh prints, and what to do:
   serves, go on as in the entry above once `--status` marks it live. If the other colour serves, stop the new one
   (`docker stop ai-pronunciation-trainer-<colour>`): it holds the release that failed. `--rollback` refuses that
   release, so until the next deploy, the way back is to deploy an older commit by its sha.
+  deploy.sh reads Caddy through that admin API. While it cannot, `--status` and deploy.sh take the colour that
+  `upstream.caddy` names (the previous one) as live: a deploy would then stop and replace the colour that serves.
+  So do not deploy or run `--rollback` until `--status` agrees with `/version`. If the new colour serves and the
+  admin API does not come back within a few minutes, run `deploy/deploy.sh --replace-proxy` (outside school
+  hours if you can): it starts a proxy from the files, in front of the colour that `upstream.caddy` names. Then
+  stop the new colour, at least 65 s after Caddy stopped sending it traffic.
 * **`Could not start ai-pronunciation-trainer-proxy`** (with Production is DOWN) or **`The new proxy does not
   serve`**: deploy.sh prints the last `docker start` error. If port 3000 is taken, `docker ps --filter publish=3000`
   shows by what (for example `ai-pronunciation-trainer-legacy`, if it was started by hand): stop it, then run
@@ -293,7 +303,7 @@ deploy/deploy.sh --replace-proxy
 ```bash
 deploy/deploy.sh --status
 docker logs -f --tail 100 ai-pronunciation-trainer-blue   # or -green: one JSON object per line
-python3 deploy/smoke_test.py http://127.0.0.1:3000         # through the proxy; :3001 / :3002 for one colour
+python3 deploy/smoke_test.py http://127.0.0.1:3000 --timeout 60   # through the proxy; :3001 / :3002 for one colour
 curl -s http://127.0.0.1:3000/readyz                       # 200 once every worker has warmed up
 ```
 
@@ -332,7 +342,8 @@ after 60 days without activity in the repository (re-enable it in the Actions ta
 
 Cloudflare blocks the default Python `urllib` user agent with a 403 error (error 1010). Test
 https://aitrainer.ism.io.vn/ with a browser, with curl using a browser user agent, or with
-`python3 deploy/smoke_test.py https://aitrainer.ism.io.vn --user-agent 'aitrainer-canary/1.0'`.
+`python3 deploy/smoke_test.py https://aitrainer.ism.io.vn --user-agent 'aitrainer-canary/1.0' --timeout 60` (with the
+default 10 s, the quick checks fail on a site that is busy with recordings).
 
 ## Testing deploy.sh
 

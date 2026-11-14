@@ -31,7 +31,8 @@ already checks it on every change.
       and back again, then `deploy/deploy.sh <older sha>`.
 - [ ] A failed release (staging or through the proxy) leaves the live colour serving and the previous release in
       place for `--rollback`, unless Caddy did not take the switch back or deploy.sh cannot tell whether it did
-      (it then leaves both colours running and says so; deploy/RUNBOOK.md). Auto: deploy harness.
+      (it then leaves both colours running and says so; deploy/RUNBOOK.md). Auto: deploy harness, except those two
+      cases, which no scenario reaches.
 - [ ] Interrupted or killed deploys (Ctrl-C, dropped SSH, SIGKILL) recover. Auto: deploy harness. A reboot during a
       deploy is handled like SIGKILL, but the harness does not test it. Caddy then starts from the files on disk,
       and `upstream.caddy` already names the new colour if the reboot came between deploy.sh writing it and its
