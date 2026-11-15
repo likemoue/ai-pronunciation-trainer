@@ -32411,6 +32411,218 @@
     "words": []
    }
   },
+  "long-01": {
+   "reference": "Yes.",
+   "outcome": "scored",
+   "score": 100,
+   "labels": [
+    0
+   ],
+   "letters": [
+    "1111"
+   ],
+   "matched": [
+    "Yes."
+   ],
+   "heard": "Yes.",
+   "asr": {
+    "samples": 408917,
+    "transcript": "Yes.",
+    "words": [
+     [
+      "Yes.",
+      0.0,
+      19200.0
+     ]
+    ]
+   }
+  },
+  "long-02": {
+   "reference": "Thank you.",
+   "outcome": "scored",
+   "score": 100,
+   "labels": [
+    0,
+    0
+   ],
+   "letters": [
+    "11111",
+    "1111"
+   ],
+   "matched": [
+    "Thank",
+    "you."
+   ],
+   "heard": "Thank you.",
+   "asr": {
+    "samples": 347332,
+    "transcript": "Thank you.",
+    "words": [
+     [
+      "Thank",
+      0.0,
+      19520.0
+     ],
+     [
+      "you.",
+      19520.0,
+      24960.0
+     ]
+    ]
+   }
+  },
+  "long-03": {
+   "reference": "Good morning.",
+   "outcome": "scored",
+   "score": 100,
+   "labels": [
+    0,
+    0
+   ],
+   "letters": [
+    "1111",
+    "11111111"
+   ],
+   "matched": [
+    "Good",
+    "morning."
+   ],
+   "heard": "Good morning.",
+   "asr": {
+    "samples": 395332,
+    "transcript": "Good morning.",
+    "words": [
+     [
+      "Good",
+      0.0,
+      34560.0
+     ],
+     [
+      "morning.",
+      34560.0,
+      40320.0
+     ]
+    ]
+   }
+  },
+  "long-04": {
+   "reference": "I am well.",
+   "outcome": "scored",
+   "score": 100,
+   "labels": [
+    0,
+    0,
+    0
+   ],
+   "letters": [
+    "1",
+    "11",
+    "11111"
+   ],
+   "matched": [
+    "I",
+    "am",
+    "well."
+   ],
+   "heard": "I am well.",
+   "asr": {
+    "samples": 316818,
+    "transcript": "I am well.",
+    "words": [
+     [
+      "I",
+      0.0,
+      18880.0
+     ],
+     [
+      "am",
+      18880.0,
+      21120.0
+     ],
+     [
+      "well.",
+      21120.0,
+      25600.0
+     ]
+    ]
+   }
+  },
+  "long-05": {
+   "reference": "Look at it.",
+   "outcome": "scored",
+   "score": 100,
+   "labels": [
+    0,
+    0,
+    0
+   ],
+   "letters": [
+    "1111",
+    "11",
+    "111"
+   ],
+   "matched": [
+    "Look",
+    "at",
+    "it."
+   ],
+   "heard": "Look at it.",
+   "asr": {
+    "samples": 422118,
+    "transcript": "Look at it.",
+    "words": [
+     [
+      "Look",
+      0.0,
+      11200.0
+     ],
+     [
+      "at",
+      11200.0,
+      15360.0
+     ],
+     [
+      "it.",
+      15360.0,
+      19200.0
+     ]
+    ]
+   }
+  },
+  "long-06": {
+   "reference": "Speed up.",
+   "outcome": "scored",
+   "score": 100,
+   "labels": [
+    0,
+    0
+   ],
+   "letters": [
+    "11111",
+    "111"
+   ],
+   "matched": [
+    "Speed",
+    "up."
+   ],
+   "heard": "Speed up.",
+   "asr": {
+    "samples": 378960,
+    "transcript": "Speed up.",
+    "words": [
+     [
+      "Speed",
+      31360.0,
+      53760.0
+     ],
+     [
+      "up.",
+      53760.0,
+      57920.0
+     ]
+    ]
+   }
+  },
   "noise-white": {
    "reference": "Someone will have to tell Tom.",
    "outcome": "no_speech",
@@ -33732,6 +33944,11 @@
    "clips": 15,
    "median_s": 0.59,
    "total_s": 8.7
+  },
+  {
+   "clips": 6,
+   "median_s": 0.44,
+   "total_s": 3.3
   }
  ]
 }

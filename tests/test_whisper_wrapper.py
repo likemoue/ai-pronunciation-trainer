@@ -30,6 +30,7 @@ def wrapper_with(segments, max_new_tokens=160, vad_threshold=0.0):
     model.max_new_tokens = max_new_tokens
     model.sample_rate = 16000
     model.vad_threshold = vad_threshold
+    model.vad_min_windows = 3
     return model
 
 
@@ -172,3 +173,24 @@ def test_a_recording_without_a_tap_keeps_its_shape():
     assert abs(float(out.mean())) < 1e-3  # the offset is removed
     assert 0.6 < np.abs(out).max() <= 1.0
     assert np.corrcoef(out[0], audio[0])[0, 1] > 0.99
+
+
+@pytest.mark.parametrize('value,expected', [(None, 0.5), ('', 0.5), ('0.3', 0.3), ('0', 0.0), ('abc', 0.5),
+                                            ('1', 0.5), ('1.5', 0.5), ('-0.1', 0.5), ('nan', 0.5)])
+def test_the_vad_threshold_is_read_safely(monkeypatch, value, expected):
+    if value is None:
+        monkeypatch.delenv('VAD_THRESHOLD', raising=False)
+    else:
+        monkeypatch.setenv('VAD_THRESHOLD', value)
+    assert whisper_wrapper._float_env('VAD_THRESHOLD', 0.5, 0.0, 1.0) == expected
+
+
+def test_a_lone_window_of_speech_does_not_open_the_gate(monkeypatch):
+    pytest.importorskip('faster_whisper')
+    import faster_whisper.vad
+    probabilities = {'one': [0.1, 0.9, 0.1, 0.9, 0.9, 0.2], 'three': [0.1, 0.9, 0.9, 0.9, 0.2, 0.1]}
+    for name, expected in (('one', False), ('three', True)):
+        monkeypatch.setattr(faster_whisper.vad, 'get_vad_model',
+                            lambda name=name: (lambda audio: np.array(probabilities[name]).reshape(-1, 1)))
+        model = wrapper_with([], vad_threshold=0.5)
+        assert model.has_speech(np.zeros(512 * 6, dtype=np.float32)) is expected, name

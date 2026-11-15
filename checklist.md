@@ -10,7 +10,7 @@ already checks it on every change.
 
 ### Step 1: the evaluation harness (`evaluation/`)
 Adds no code to the image and changes no learner flow: the page, the API and the scores stay as they are.
-- [x] The harness scores the 435 recordings of `evaluation/clips.json` in the image as the server does, and its
+- [x] The harness scores the 441 recordings of `evaluation/clips.json` in the image as the server does, and its
       report (`evaluation/report.md`) is the report of the committed run. Auto: `tests/test_evaluation.py` (the run
       is what the code makes of what Whisper heard; the text simulation's digest; the report).
 - [x] The set holds only synthetic voices and sentences fit for a class. Auto: `tests/test_evaluation.py` (the

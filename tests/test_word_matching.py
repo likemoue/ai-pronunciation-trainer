@@ -93,12 +93,13 @@ def test_letters_heard_as_written(real, heard, flags):
 
 @pytest.mark.parametrize('written,said', [
     ('2:30.', ['two', 'thirty']), ('6:00', ['six']), ('2:05', ['two', 'oh', 'five']),
-    ('3-day', ['three', 'day']), ('next-door', ['next', 'door']), ('70%', ['seventy', 'percent']),
+    ('3-day', ['three', 'day']), ('next-door', ['next', 'door']), ('70%', ['seventy', 'per', 'cent']),
     ('€2.', ['two', 'euros']), ('$1', ['one', 'dollar']), ('1st', ['first']), ('22nd', ['twenty', 'second']),
     ('105', ['one', 'hundred', 'five']), ('1,000', ['one', 'thousand']), ('1990', ['nineteen', 'ninety']),
     ('3.5', ['three', 'point', 'five']), ('Mr.', ['mister']), ('OK.', ['okay']), ("o'clock", ['oclock']),
     ('“Hello,”', ['hello']), ('&', ['and']), ('...', []), ('​​as', ['as']), ('André', ['andré']),
-    ('theatre', ['theater']),
+    ('theatre', ['theater']), ('1,200', ['one', 'thousand', 'two', 'hundred']), ('2:30pm', ['two', 'thirty', 'pm']),
+    ('6am', ['six', 'am']), ('alright', ['all', 'right']), ('cannot', ['can', 'not']),
 ])
 def test_words_are_read_as_they_are_said(written, said):
     assert wm.canonical(written) == said
@@ -127,6 +128,14 @@ def heard(sentence, transcript, same_sound):
     ('He loves theatre.', 'He loves theater.'),
     ('I want two apples.', 'I want to apples.'),  # homophones: the same sound
     ('Our grandfather learned five languages ​​as a child.', 'Our grandfather learned five languages as a child.'),
+    ('The tree is almost a hundred years old.', 'The tree is almost 100 years old.'),
+    ('It cost six hundred and twenty-five dollars.', 'It cost 625 dollars.'),
+    ('We left at 10:30.', 'We left at 1030.'),
+    ('We left at 2:30pm.', 'We left at 2:30 p.m.'),
+    ('Is it all right?', 'Is it alright?'),
+    ('Fifty per cent of them came.', 'Fifty percent of them came.'),
+    ('Fifty per cent of them came.', '50% of them came.'),
+    ('I cannot swim.', 'I can not swim.'),
 ])
 def test_another_way_of_writing_the_same_words_is_heard_as_written(sentence, transcript, same_sound):
     assert heard(sentence, transcript, same_sound) == sentence.split()
@@ -203,3 +212,10 @@ def test_a_word_heard_with_a_known_mistake_is_never_correct(fake_asr):
     categories = lambdaSpeechToScore._build_response(result)['pair_accuracy_category'].split()
     # "book" is 80% of "books" and "tank" 80% of "thank": letters alone said Correct.
     assert categories == ['0', '0', '0', '0', '1', '0', '0', '1', '0']
+
+
+def test_a_very_long_number_is_compared_as_written():
+    # A custom text can hold one word of hundreds of digits: it must not become hundreds of words.
+    word = '9' * 296 + 'th'
+    assert wm.canonical(word) == [word]
+    assert len(wm.canonical('1,234,567,890,123')) <= 40

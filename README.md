@@ -54,7 +54,7 @@ own, is planned.
 
 ### Evaluating the scoring
 
-[`evaluation/`](evaluation/README.md) holds 435 synthetic recordings (the app's own Piper voice; no learner's
+[`evaluation/`](evaluation/README.md) holds 441 synthetic recordings (the app's own Piper voice; no learner's
 voice) whose truth is known word by word: bank sentences read clean, slowly, fast, under noise and by a higher
 voice; Vietnamese learners' typical mistakes made in the phonemes (θ→t, ð→d, ʃ→s, dropped final stops, plural
 -s and past -ed); words left out, repeated or added; numbers and spellings Whisper writes otherwise; soft speech
@@ -166,6 +166,8 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 | `WHISPER_CPU_THREADS` | `OMP_NUM_THREADS`, else `4` | CTranslate2 threads per worker; workers × threads should not exceed the CPUs |
 | `WHISPER_COMPUTE_TYPE` | `int8` | CTranslate2 compute type (`int8`, `float32`, …) |
 | `WHISPER_MAX_NEW_TOKENS` | `160` | Longest transcript Whisper may produce (stops hallucinations on noise) |
+| `VAD_THRESHOLD` | `0.5` | Silero VAD's speech probability for a 32 ms window to count as speech, in [0, 1); a recording without `VAD_MIN_WINDOWS` such windows in a row is "no speech" without Whisper. `0` turns the gate off; keep it on, since the recording level (`preprocessAudio`) was chosen with it: without it, silent takes with a tap at each end were heard as "I'm sorry." |
+| `VAD_MIN_WINDOWS` | `3` | Windows of speech in a row (96 ms) the gate needs; one let long white noise through |
 | `PIPER_VOICE_EN` | `en_US-ljspeech-medium` | English voice, one of `model_pins.PIPER_VOICES`; the image holds the one it was built with (build argument `PIPER_VOICE_EN`) |
 | `PIPER_MODEL_DIR` | `models/piper`; `/models/piper` (image) | Where the voices are |
 | `PIPER_THREADS` | `2` | ONNX Runtime threads for speech synthesis |

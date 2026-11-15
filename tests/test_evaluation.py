@@ -112,7 +112,7 @@ def test_comparing_two_runs_counts_words_fixed_and_broken():
 # ---------------------------------------------------------------- the set
 def test_the_set_is_well_formed():
     assert len(MANIFEST) >= 400
-    groups = {'bank', 'learner', 'edit', 'normalisation', 'soft_tap', 'wrong', 'no_speech'}
+    groups = {'bank', 'learner', 'edit', 'normalisation', 'soft_tap', 'long_take', 'wrong', 'no_speech'}
     for clip in MANIFEST.values():
         assert clip['group'] in groups, clip['id']
         assert clip['expect'] in ('scored', 'no_speech'), clip['id']
@@ -136,7 +136,7 @@ def test_every_recording_is_in_the_set_and_small():
     used = {clip['file'] for clip in MANIFEST.values()}
     assert used == files
     sizes = [os.path.getsize(os.path.join(ROOT, 'evaluation', f)) for f in files]
-    assert max(sizes) < 100_000
+    assert max(sizes) < 130_000  # 30 s at the page's 32 kbps is about 120 KB
     assert sum(sizes) < 8_000_000
 
 

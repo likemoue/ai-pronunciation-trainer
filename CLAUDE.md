@@ -62,7 +62,7 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   count the markers of live workers.
 - Logs (`logging_setup.py`): one JSON object per line, with the request id (`rid`, Cloudflare's Ray ID). App loggers come
   from `logging_setup.get_logger(__name__)` (namespace `aipt`) and log from INFO; `print` is not used.
-- `evaluation/` (not in the image): the scoring evaluation harness of phase 3, `evaluation/README.md`. 435 synthetic
+- `evaluation/` (not in the image): the scoring evaluation harness of phase 3, `evaluation/README.md`. 441 synthetic
   recordings (Piper's voice; learners' mistakes made in the phonemes, noise, soft speech, Chrome-recorded noise) with
   the truth for every word, a harness that scores them as the server does, and the text simulation over the bank.
   `evaluation/report.md` is the report of `harness.REPORT['run']`; `tests/test_evaluation.py` fails when the code no
@@ -80,8 +80,8 @@ docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciati
 scripts/lock.sh [--upgrade | --check]   # requirements*.lock from requirements*.in (needs uv)
 
 # Scoring evaluation (evaluation/README.md): a full run belongs in the image (see there).
-python -m evaluation.harness rescore evaluation/runs/phase3-4-level-vad.json --out evaluation/runs/<name>.json --every 1
-python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-5-known-mistakes.json
+python -m evaluation.harness rescore evaluation/runs/phase3-6-review.json --out evaluation/runs/<name>.json --every 1
+python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-6-review.json
 python -m evaluation.harness report --committed   # evaluation/report.md from harness.REPORT
 ```
 

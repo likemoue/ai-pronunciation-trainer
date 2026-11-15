@@ -32,6 +32,22 @@ def _int_env(name, default):
     return int(value) if value else default
 
 
+def _float_env(name, default, low, high):
+    """A number from the environment in [low, high); the default when unset,
+    unreadable or out of range (logged)."""
+    value = os.environ.get(name)
+    if not value:
+        return default
+    try:
+        number = float(value)
+    except ValueError:
+        number = None
+    if number is None or not low <= number < high:
+        logger.error('%s=%r is not a number in [%s, %s); using %s', name, value, low, high, default)
+        return default
+    return number
+
+
 def words_and_locations(words, sample_rate=16000):
     """The transcript and one location per word of it, from Whisper's timed
     words [(text, start s, end s)].
@@ -85,13 +101,17 @@ class WhisperASRModel(IASRModel):
         # phrase until the window ends. 160 tokens comfortably cover a
         # 300-character practice text.
         self.max_new_tokens = _int_env('WHISPER_MAX_NEW_TOKENS', 160)
-        # Silero VAD (faster-whisper's, MIT) before Whisper: a recording in which
-        # no 32 ms window is speech with probability VAD_THRESHOLD or more is
-        # not sent to Whisper at all, which invented "I'm sorry." for white
-        # noise recorded by the page. On the evaluation set every recording of
-        # speech has a window above 0.87 and 10 of 11 of noise none above 0.32
-        # (scaled by preprocessAudio's level). 0 turns the gate off.
-        self.vad_threshold = float(os.environ.get('VAD_THRESHOLD', '0.5'))
+        # Silero VAD (faster-whisper's, MIT) before Whisper: a recording without
+        # VAD_MIN_WINDOWS 32 ms windows in a row that are speech with
+        # probability VAD_THRESHOLD or more is not sent to Whisper at all,
+        # which invented "I'm sorry." for white noise recorded by the page. On
+        # the evaluation set every recording of speech has 7 such windows in a
+        # row at least, and 10 of 11 of noise none (scaled by preprocessAudio's
+        # level); a single window let long white noise through. 0 turns the
+        # gate off, but keep it with the level: without it, silent takes with
+        # a tap at each end came back as "I'm sorry." (README, configuration).
+        self.vad_threshold = _float_env('VAD_THRESHOLD', 0.5, 0.0, 1.0)
+        self.vad_min_windows = max(1, _int_env('VAD_MIN_WINDOWS', 3))
         self.sample_rate = 16000
         self._transcript = ''
         self._word_locations = []
@@ -133,15 +153,24 @@ class WhisperASRModel(IASRModel):
             [(word.word, word.start, word.end) for segment in segments for word in (segment.words or [])],
             self.sample_rate)
 
+    VAD_WINDOW = 512  # samples (32 ms at 16 kHz): what Silero VAD rates at a time
+
     def has_speech(self, samples) -> bool:
-        """Whether Silero VAD hears speech anywhere in the recording (always
-        True with the gate off). Its model runs on one thread, in about 30 ms
-        for a 10 s recording on the development machine."""
+        """Whether Silero VAD hears speech in the recording: vad_min_windows
+        windows in a row at vad_threshold or more (always True with the gate
+        off). Its model runs on one thread: 8 ms for 5 s of audio and 55 ms
+        for 35 s on the development machine."""
         if self.vad_threshold <= 0:
             return True
-        from faster_whisper.vad import VadOptions, get_speech_timestamps
-        options = VadOptions(threshold=self.vad_threshold, min_speech_duration_ms=0, speech_pad_ms=0)
-        return bool(get_speech_timestamps(samples, options, sampling_rate=self.sample_rate))
+        from faster_whisper.vad import get_vad_model
+        padding = (-samples.size) % self.VAD_WINDOW or (0 if samples.size else self.VAD_WINDOW)
+        padded = np.pad(samples, (0, padding))  # whole windows, at least one
+        run = 0
+        for probability in get_vad_model()(padded).reshape(-1):
+            run = run + 1 if probability >= self.vad_threshold else 0
+            if run >= self.vad_min_windows:
+                return True
+        return False
 
     def getTranscript(self) -> str:
         return self._transcript

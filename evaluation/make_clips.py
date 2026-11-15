@@ -256,6 +256,13 @@ TAP_PHASE2 = [
     ('I am well.', 'child', 3.0, 3.0, 'stop, floor 25', 52, 'chrome-capture'),
 ]
 
+# A short phrase at a normal level in a long take: the learner waits before
+# pressing Stop (the page records up to 30 s), over a quiet microphone noise
+# floor (2e-3, -54 dBFS). A level set by a share of the recording clipped such
+# a phrase (the second review round of phase 3). (phrase, seconds before, after)
+LONG_TAKES = [('Yes.', 1.0, 24.0), ('Thank you.', 1.0, 20.0), ('Good morning.', 2.0, 22.0), ('I am well.', 1.0, 18.0),
+              ('Look at it.', 0.5, 25.0), ('Speed up.', 3.0, 20.0)]
+
 # Noise alone. The reference is the sentence the learner was asked to read.
 NOISE_REFERENCE = 'Someone will have to tell Tom.'
 # White noise as a page records it: played into MediaRecorder by a stand-in
@@ -396,6 +403,13 @@ def tapped(speech, rate, db, seed, before=0.5, after=2.0):
     at = int(rate * 0.15)
     x[at:at + n] += (thump / np.max(np.abs(thump)) * 0.7).astype(np.float32)
     return x.astype(np.float32)
+
+
+def long_take(speech, rate, seed, before, after, peak=0.4, floor=2e-3):
+    """Speech peaking at `peak`, then a long wait, over white noise of RMS `floor`."""
+    voice = speech / np.max(np.abs(speech)) * peak
+    x = np.concatenate([np.zeros(int(before * rate), np.float32), voice, np.zeros(int(after * rate), np.float32)])
+    return (x + np.random.default_rng(seed).standard_normal(x.size) * floor).astype(np.float32)
 
 
 def child_like(speech, rate, factor=1.3):
@@ -688,6 +702,12 @@ def plan():
                                   f"{' and a noise floor 25 dB under the voice' if 'floor' in tap else ''}; "
                                   "made by phase 2's third review round, which phase 2 refuses as no speech"),
                         ('imported',)))
+    for n, (phrase, before, after) in enumerate(LONG_TAKES, start=1):
+        entries.append((clip(f'long-{n:02d}', 'long_take', f'{before + after:g}s', phrase, phrase,
+                             ['ok'] * len(phrase.split()), source='written',
+                             note=f'said at a normal level {before:g} s into the take, then {after:g} s of a quiet '
+                                  'microphone floor before Stop'),
+                        ('long', phrase, before, after)))
     for name, said in (('white', 'white noise, 3 s'), ('quiet', 'quiet white noise, 3 s'), ('hum', '50 Hz hum, 3 s'),
                        ('keyboard', 'sparse clicks over a faint noise floor, 4 s')):
         entries.append((clip(f'noise-{name}', 'no_speech', name, NOISE_REFERENCE, f'({said})',
@@ -782,6 +802,9 @@ def make(entries, chrome=None):
         elif kind == 'tap':
             speech, rate = say(how[1])
             data = encode(tapped(speech, rate, how[2], seed=n), rate)
+        elif kind == 'long':
+            speech, rate = say(how[1])
+            data = encode(long_take(speech, rate, n, how[2], how[3]), rate)
         elif kind == 'noise':
             data = noise_audio(how[1])
         elif kind in ('tap-chrome', 'page-noise'):

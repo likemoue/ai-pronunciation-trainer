@@ -14,6 +14,6 @@ numpy
 pandas             # reads the sentence bank (lambdaGetSample.py)
 faster-whisper     # Whisper speech recognition on CTranslate2, int8 on CPU (whisper_wrapper.py)
 piper-tts          # reference voice (piperTTS.py)
-onnxruntime        # runs the Piper voice with our own session options (piperTTS.py)
+onnxruntime        # runs the Piper voice with our own session options (piperTTS.py), and faster-whisper's Silero VAD
 eng-to-ipa         # reference IPA from the CMU Pronouncing Dictionary (RuleBasedModels.py)
 setuptools         # not imported: builds eng-to-ipa, which has no wheel (scripts/pip_install_locked.sh)

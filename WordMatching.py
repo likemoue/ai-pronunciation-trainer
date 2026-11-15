@@ -150,6 +150,17 @@ _SPELLINGS = {
     'licence': 'license', 'offence': 'offense', 'practise': 'practice', 'sceptical': 'skeptical',
     'pyjamas': 'pajamas', 'moustache': 'mustache', 'plough': 'plow', 'aluminium': 'aluminum',
 }
+# Words written as one or as two: both read as the two ("all right", "alright").
+_COMPOUNDS = {
+    'alright': ('all', 'right'), 'cannot': ('can', 'not'), 'everyday': ('every', 'day'),
+    'everyone': ('every', 'one'), 'anyone': ('any', 'one'), 'someone': ('some', 'one'), 'anymore': ('any', 'more'),
+    'maybe': ('may', 'be'), 'percent': ('per', 'cent'),
+}
+_SCALES_WORDS = ('hundred', 'thousand', 'million', 'billion')
+_NUMBER_WORDS = frozenset(_ONES + _TENS + list(_SCALES_WORDS))
+# A word read as more words than this is too long to be read out (a custom text
+# can hold a word of 300 digits): it is compared as written.
+_MAX_SAID_AS = 40
 # Stripped from both ends of a word before it is read (inner ones count: 2:30, 3.5).
 _EDGE = '\'"“”‘’«»()[]{}.,!?;:…'
 
@@ -181,11 +192,12 @@ def _ordinal(words: list) -> list:
 
 def _number(text: str) -> list:
     """Digits as they are read: 1,000 -> one thousand; 3.5 -> three point
-    five; 1990 -> nineteen ninety; a long string of digits one by one."""
+    five; 1990 -> nineteen ninety (1,990 is a number, not a year); a long
+    string of digits one by one."""
     whole, _, fraction = text.replace(',', '').partition('.')
     if len(whole) > 12:
         words = [_ONES[int(d)] for d in whole]
-    elif len(whole) == 4 and 1100 <= int(whole) <= 1999:
+    elif ',' not in text and len(whole) == 4 and 1100 <= int(whole) <= 1999:
         century, year = divmod(int(whole), 100)
         words = number_words(century) + (['hundred'] if year == 0 else
                                           ['oh', _ONES[year]] if year < 10 else number_words(year))
@@ -204,7 +216,10 @@ def _said_as(part: str) -> list:
         return _number(match.group(2)) + [_CURRENCIES[match.group(1)][0 if singular else 1]]
     match = re.fullmatch(r'(\d[\d,]*(?:\.\d+)?)%', part)
     if match:
-        return _number(match.group(1)) + ['percent']
+        return _number(match.group(1)) + list(_COMPOUNDS['percent'])
+    match = re.fullmatch(r'(\d{1,2}(?::\d{2})?)([ap]m)', part)
+    if match:  # 2:30pm, 6am
+        return _said_as(match.group(1)) + [match.group(2)]
     match = re.fullmatch(r'(\d{1,2}):(\d{2})', part)
     if match:
         minutes = match.group(2)
@@ -213,13 +228,14 @@ def _said_as(part: str) -> list:
         return number_words(int(match.group(1))) + said
     match = re.fullmatch(r'(\d+)(st|nd|rd|th)', part)
     if match:
-        return _ordinal(number_words(int(match.group(1))))
+        return _ordinal(_number(match.group(1)))
     if re.fullmatch(r'\d[\d,]*(?:\.\d+)?', part):
         return _number(part)
     if part in _SYMBOLS:
         return [_SYMBOLS[part]]
     letters = ''.join(ch for ch in part if unicodedata.category(ch)[0] in 'LN')
-    return [_SPELLINGS.get(letters, letters)] if letters else []
+    letters = _SPELLINGS.get(letters, letters)
+    return list(_COMPOUNDS.get(letters, [letters])) if letters else []
 
 
 def canonical(word: str) -> list:
@@ -233,7 +249,39 @@ def canonical(word: str) -> list:
     words = []
     for part in re.split(r'[-‐‑–—/]+', text):
         words += _said_as(part.strip(_EDGE))
+    if len(words) > _MAX_SAID_AS:
+        letters = ''.join(ch for ch in text if unicodedata.category(ch)[0] in 'LN')
+        return [letters] if letters else []
     return words
+
+
+def _as_numbers_are_said(words: list) -> list:
+    """(owner, word) pairs with numbers in words read as digits are: "a"
+    before hundred, thousand, ... is "one" ("a hundred" is "100"), and an "and"
+    inside a number is dropped ("six hundred and twenty-five" is "625")."""
+    out = []
+    for k, (owner, word) in enumerate(words):
+        following = words[k + 1][1] if k + 1 < len(words) else ''
+        if word == 'a' and following in _SCALES_WORDS:
+            word = 'one'
+        elif word == 'and' and out and out[-1][1] in _SCALES_WORDS and following in _NUMBER_WORDS:
+            continue
+        out.append((owner, word))
+    return out
+
+
+_TIME = re.compile(r'(\d{1,2}):(\d{2})([ap]m)?')
+
+
+def _times_without_colons(real_words: list) -> dict:
+    """The times of the sentence by their digits ("1030" -> "10:30"): Whisper
+    sometimes writes a time without its colon."""
+    times = {}
+    for written in real_words:
+        match = _TIME.fullmatch(written.lower().strip(_EDGE))
+        if match:
+            times[match.group(1) + match.group(2)] = match.group(0)
+    return times
 
 
 # Vietnamese learners' typical mistakes that leave a word close in spelling to
@@ -278,8 +326,10 @@ def match_words(real_words: list, heard_words: list, same_sound=None) -> list:
     word; a word of the sentence is heard as written when every word it is
     said as is paired with the same word, or with one the dictionary says
     alike (same_sound(a, b): homophones, spellings of one word)."""
-    real = [(i, word) for i, written in enumerate(real_words) for word in canonical(written)]
-    heard = [(j, word) for j, written in enumerate(heard_words) for word in canonical(written)]
+    times = _times_without_colons(real_words)
+    real = _as_numbers_are_said([(i, word) for i, written in enumerate(real_words) for word in canonical(written)])
+    heard = _as_numbers_are_said([(j, word) for j, written in enumerate(heard_words)
+                                  for word in canonical(times.get(written.lower().strip(_EDGE), written))])
 
     def same(a, b):
         return a == b or (same_sound is not None and same_sound(a, b))

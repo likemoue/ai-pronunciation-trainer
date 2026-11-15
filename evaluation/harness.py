@@ -44,7 +44,7 @@ FORMAT = 1
 # tests/test_evaluation.py checks that the run is what this checkout's
 # alignment and scoring make of what Whisper heard, and that report.md is its
 # report. A change to the scoring adds its own run here and points REPORT at it.
-REPORT = {'run': 'runs/phase3-5-known-mistakes.json', 'against': 'runs/phase2-1c4813c.json',
+REPORT = {'run': 'runs/phase3-6-review.json', 'against': 'runs/phase2-1c4813c.json',
           'against_name': 'phase 2 (main, 1c4813c)', 'markdown': 'report.md'}
 
 
@@ -272,6 +272,7 @@ GROUP_TITLES = {
     'edit': 'A word left out, the reading stopped early, a word repeated, a filler, a fresh start',
     'normalisation': 'Read correctly; Whisper may write the words otherwise (2:30, 3-day, OK, Mr., colour, %)',
     'soft_tap': 'A short phrase spoken softly after a much louder tap on Record',
+    'long_take': 'A short phrase at a normal level, then a long wait before Stop (18-25 s)',
     'wrong': 'A clean reading scored against another sentence',
     'no_speech': 'Noise alone, encoded by ffmpeg or recorded by Chrome as the page records',
 }

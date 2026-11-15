@@ -1,7 +1,6 @@
 
 import numpy as np
 import models as mo
-import WordMetrics
 import WordMatching as wm
 import ModelInterfaces as mi
 import RuleBasedModels
@@ -165,7 +164,7 @@ class PronunciationTrainer:
         for match in matches:
 
             real_without_punctuation = match.real_canonical.replace(' ', '')
-            number_of_word_mismatches = WordMetrics.edit_distance_python(
+            number_of_word_mismatches = wm.edit_distance(
                 real_without_punctuation, match.heard_canonical.replace(' ', ''))
             total_mismatches += number_of_word_mismatches
             number_of_phonemes_in_word = len(real_without_punctuation)
@@ -204,18 +203,26 @@ class PronunciationTrainer:
     def getPronunciationCategoryFromAccuracy(self, accuracy) -> int:
         return np.argmin(abs(self.categories_thresholds-accuracy))
 
-    # The recording is scaled by a level that one loud click cannot set: the
-    # 99.5th percentile of its samples is brought to 1/1.5 of full scale, and
-    # the few samples above (a tap on Record, the loudest syllables) are
-    # clipped. Scaled by its peak, a short phrase spoken softly after a tap
-    # 30-50 dB louder stayed too quiet for Whisper and was refused as no
-    # speech (evaluation/report.md, soft_tap).
-    LEVEL_PERCENTILE = 99.5
+    # The recording is scaled by a level that one loud click cannot set: its
+    # loudest samples - 0.5% of them, and never more than 50 ms of them - are
+    # left out, the next one is brought to 1/1.5 of full scale, and the few
+    # above it (a tap on Record, the loudest syllables) are clipped. Scaled by
+    # its peak, a short phrase spoken softly after a tap 30-50 dB louder
+    # stayed too quiet for Whisper and was refused as no speech; a share of
+    # the recording alone would clip a short phrase in a long take (one word
+    # in 30 s).
+    LEVEL_IGNORED_SHARE = 0.005
+    LEVEL_IGNORED_SECONDS = 0.05
     LEVEL_HEADROOM = 1.5
 
     def preprocessAudio(self, audio: np.ndarray) -> np.ndarray:
         audio = audio-np.mean(audio)
-        level = np.percentile(np.abs(audio), self.LEVEL_PERCENTILE) if audio.size else 0.0
+        magnitudes = np.abs(audio).reshape(-1)
+        level = 0.0
+        if magnitudes.size:
+            ignored = int(min(magnitudes.size * self.LEVEL_IGNORED_SHARE, self.LEVEL_IGNORED_SECONDS * self.sampling_rate))
+            index = magnitudes.size - 1 - ignored
+            level = float(np.partition(magnitudes, index)[index])
         if level > 0:
             audio = np.clip(audio / (level * self.LEVEL_HEADROOM), -1.0, 1.0)
         return audio.astype(np.float32, copy=False)

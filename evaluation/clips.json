@@ -9255,6 +9255,103 @@
    "note": "spoken softly (child voice) with 3 s of silence before and 3 s after, the voice's peak 52 dB under a tap on Stop and a noise floor 25 dB under the voice; made by phase 2's third review round, which phase 2 refuses as no speech"
   },
   {
+   "id": "long-01",
+   "file": "clips/long-01.webm",
+   "group": "long_take",
+   "condition": "25s",
+   "reference": "Yes.",
+   "said": "Yes.",
+   "expect": "scored",
+   "truth": [
+    "ok"
+   ],
+   "capture": "ffmpeg",
+   "source": "written",
+   "note": "said at a normal level 1 s into the take, then 24 s of a quiet microphone floor before Stop"
+  },
+  {
+   "id": "long-02",
+   "file": "clips/long-02.webm",
+   "group": "long_take",
+   "condition": "21s",
+   "reference": "Thank you.",
+   "said": "Thank you.",
+   "expect": "scored",
+   "truth": [
+    "ok",
+    "ok"
+   ],
+   "capture": "ffmpeg",
+   "source": "written",
+   "note": "said at a normal level 1 s into the take, then 20 s of a quiet microphone floor before Stop"
+  },
+  {
+   "id": "long-03",
+   "file": "clips/long-03.webm",
+   "group": "long_take",
+   "condition": "24s",
+   "reference": "Good morning.",
+   "said": "Good morning.",
+   "expect": "scored",
+   "truth": [
+    "ok",
+    "ok"
+   ],
+   "capture": "ffmpeg",
+   "source": "written",
+   "note": "said at a normal level 2 s into the take, then 22 s of a quiet microphone floor before Stop"
+  },
+  {
+   "id": "long-04",
+   "file": "clips/long-04.webm",
+   "group": "long_take",
+   "condition": "19s",
+   "reference": "I am well.",
+   "said": "I am well.",
+   "expect": "scored",
+   "truth": [
+    "ok",
+    "ok",
+    "ok"
+   ],
+   "capture": "ffmpeg",
+   "source": "written",
+   "note": "said at a normal level 1 s into the take, then 18 s of a quiet microphone floor before Stop"
+  },
+  {
+   "id": "long-05",
+   "file": "clips/long-05.webm",
+   "group": "long_take",
+   "condition": "25.5s",
+   "reference": "Look at it.",
+   "said": "Look at it.",
+   "expect": "scored",
+   "truth": [
+    "ok",
+    "ok",
+    "ok"
+   ],
+   "capture": "ffmpeg",
+   "source": "written",
+   "note": "said at a normal level 0.5 s into the take, then 25 s of a quiet microphone floor before Stop"
+  },
+  {
+   "id": "long-06",
+   "file": "clips/long-06.webm",
+   "group": "long_take",
+   "condition": "23s",
+   "reference": "Speed up.",
+   "said": "Speed up.",
+   "expect": "scored",
+   "truth": [
+    "ok",
+    "ok"
+   ],
+   "capture": "ffmpeg",
+   "source": "written",
+   "note": "said at a normal level 3 s into the take, then 20 s of a quiet microphone floor before Stop"
+  },
+  {
    "id": "noise-white",
    "file": "clips/noise-white.webm",
    "group": "no_speech",

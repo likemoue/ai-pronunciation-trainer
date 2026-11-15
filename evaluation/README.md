@@ -8,7 +8,7 @@ and says how often the pipeline's labels (Correct, Almost, Needs work) agree wit
 
 ## The set
 
-`clips.json` lists 435 recordings (`clips/`, WebM/Opus at 32 kbps as the page sends them). Each gives the sentence
+`clips.json` lists 441 recordings (`clips/`, WebM/Opus at 32 kbps as the page sends them). Each gives the sentence
 it is scored against (`reference`), what was actually said (`said`), whether it should be scored or refused as
 "no speech" (`expect`), and the truth for every word of the sentence:
 
@@ -23,6 +23,7 @@ it is scored against (`reference`), what was actually said (`said`), whether it 
 | `edit` | 18 | a word left out, the reading stopped before the last word, a word said twice, a filler ("um"), a fresh start |
 | `normalisation` | 20 | read correctly; Whisper may write the words otherwise: 2:30, 3, 70%, €2, hyphens, OK, Mr., British spellings |
 | `soft_tap` | 43 | a short phrase spoken softly after a much louder tap on Record (30 to 52 dB louder), 4 of them recorded by Chrome; and 15 that phase 2's third review round made (longer silences, a child-like voice, the tap on Stop, 6 through Chrome) and that phase 2 refuses as no speech, the known limit |
+| `long_take` | 6 | a short phrase at a normal level, then 18-25 s of a quiet microphone floor before Stop (the review of phase 3 found a level set by a share of the recording clipped such phrases) |
 | `wrong` | 26 | a clean reading scored against another sentence (judged as a whole; its words are not counted) |
 | `no_speech` | 11 | noise alone: white noise, quiet noise, hum and clicks encoded by ffmpeg, and white noise recorded by Chrome's MediaRecorder as the page records it (a stand-in microphone, as the production check that heard "I'm sorry." used, and Chrome's capture path with its audio processing) |
 
@@ -71,7 +72,7 @@ image of the commit and mount the set into it (Git Bash: `export MSYS_NO_PATHCON
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t aipt:eval .
 docker run --rm --network none --cpus 10 --memory 9g -v "$PWD/evaluation:/app/evaluation" -w /app \
   --entrypoint python aipt:eval -m evaluation.harness run --out evaluation/runs/<name>.json
-python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-5-known-mistakes.json
+python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-6-review.json
 ```
 
 On the development machine a run scores the recordings in about 3.5 minutes (0.46 s each) and then simulates
@@ -88,7 +89,7 @@ machine.
 ## Judging a change
 
 - **Alignment, normalisation, IPA comparison** (anything after Whisper): `python -m evaluation.harness rescore
-  evaluation/runs/phase3-4-level-vad.json --out evaluation/runs/<name>.json --every 1` (the last full run) scores what Whisper heard in
+  evaluation/runs/phase3-6-review.json --out evaluation/runs/<name>.json --every 1` (the last full run) scores what Whisper heard in
   each recording again with the checkout's code, in seconds, and prints the words fixed and broken.
 - **Anything before or inside Whisper** (voice activity detection, scaling by a robust level instead of the peak,
   Whisper's settings): a full `run` in the image.
@@ -102,8 +103,10 @@ report; it cannot tell that a full run is due, so a change before Whisper must b
 
 `runs/` keeps every run the report has been judged on: `phase1-e4a1693` and `phase2-1c4813c` (the images of phases
 1 and 2), then one per step of phase 3: `phase3-2-alignment` and `phase3-3-normalisation` (rescored from phase 2's
-run), `phase3-4-level-vad` (a full run: the step changed what Whisper hears) and `phase3-5-known-mistakes`
-(rescored from it). Each commit message gives the words its step fixed and broke.
+run), `phase3-4-level-vad` (a full run: the step changed what Whisper hears), `phase3-5-known-mistakes`
+(rescored from it) and `phase3-6-review` (a full run with the review's fixes and the `long_take` recordings, the
+phase as merged). Each commit message gives the words its step fixed and broke. The runs before `phase3-6-review`
+lack the `long_take` recordings, except phase 2's, which has them.
 
 ## Limits
 
