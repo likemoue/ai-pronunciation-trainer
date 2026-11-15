@@ -157,7 +157,8 @@ jobs:
       - name: All tests inside the image, without network (real ffmpeg, Whisper and Piper)
         # The tests run on the code and files of the image's /app, so a runtime
         # file the Dockerfile does not copy fails them. From the checkout come
-        # only the tests, pytest.ini and deploy/ (some tests read it).
+        # only the tests, pytest.ini, deploy/ (some tests read it) and
+        # evaluation/ (the scoring evaluation set, which stays out of the image).
         # test_build.py checks the repository's build files, which the image
         # does not hold; the test job runs it.
         run: |
@@ -166,6 +167,7 @@ jobs:
             'pip install --quiet --disable-pip-version-check --target /tmp/dev --require-hashes --no-deps -r requirements-dev.lock'
           docker run --rm --network none -v aipt-dev:/tmp/dev:ro -w /app \
             -v "$PWD/tests:/app/tests:ro" -v "$PWD/pytest.ini:/app/pytest.ini:ro" -v "$PWD/deploy:/app/deploy:ro" \
+            -v "$PWD/evaluation:/app/evaluation:ro" \
             -e PYTHONDONTWRITEBYTECODE=1 -e PYTHONUTF8=1 -e PYTHONPATH=/tmp/dev \
             --entrypoint python aipt:ci -m pytest -q -p no:cacheprovider -m "not de" --ignore=tests/test_build.py
       - name: Trivy (fixable HIGH and CRITICAL vulnerabilities)
