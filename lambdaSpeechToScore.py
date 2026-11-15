@@ -45,11 +45,13 @@ class ScoringQueue:
     125 s. The client tries again after Retry-After.
     """
 
-    def __init__(self, limit: int, max_wait: float, initial_seconds: float = 2.0):
+    def __init__(self, limit: int, max_wait: float, initial_seconds: float = 1.0):
         self.limit = limit
         self.max_wait = max_wait
         self._lock = threading.Lock()
         self._pending = 0
+        # A guess until recordings have been timed: faster-whisper holds the
+        # model for 0.5-1.2 s per recording on the production VM.
         self._seconds = initial_seconds
 
     def admit(self) -> int:
@@ -64,11 +66,13 @@ class ScoringQueue:
             return ahead
 
     def release(self, held_seconds=None):
-        """Give the place back; held_seconds is how long the recording held the model."""
+        """Give the place back; held_seconds is how long the recording held the
+        model (None: not timed, as for the warm-up, whose first pass through a
+        cold model takes several times longer than any later one)."""
         with self._lock:
             self._pending -= 1
             if held_seconds is not None:
-                self._seconds += 0.2 * (held_seconds - self._seconds)
+                self._seconds += 0.3 * (held_seconds - self._seconds)
 
     @property
     def pending(self) -> int:
@@ -84,7 +88,7 @@ def _queue_limit(environ) -> int:
     (gunicorn.conf.py), which leaves 2 for speech synthesis and 2 for the rest."""
     if environ.get('SCORING_QUEUE_LIMIT'):
         return max(1, int(environ['SCORING_QUEUE_LIMIT']))
-    return max(1, int(environ.get('GUNICORN_THREADS', '16')) - 4)
+    return max(1, int(environ.get('GUNICORN_THREADS', '24')) - 4)
 
 
 _queue = ScoringQueue(limit=_queue_limit(os.environ),
@@ -139,7 +143,7 @@ def warm_up(language, strict=None) -> bool:
             raise RuntimeError(f'No warm-up voice for language "{language}"')
         audio = base64.b64decode(piperTTS.generate_wav_base64(sentence, language))
         start = time.perf_counter()
-        result = score(sentence, audio, language)
+        result = score(sentence, audio, language, warm_up=True)
         accuracy = int(result['pronunciation_accuracy'])
         if accuracy < 50:
             raise RuntimeError(f'Warm-up sentence scored only {accuracy}% '
@@ -155,12 +159,14 @@ def warm_up(language, strict=None) -> bool:
         return False
 
 
-def score(real_text: str, audio_bytes: bytes, language: str, client_gone=None) -> dict:
+def score(real_text: str, audio_bytes: bytes, language: str, client_gone=None, *, warm_up=False) -> dict:
     """Score one recording of real_text. Raises NoSpeechError when nothing was
     said, audioPreprocessing.AudioDecodeError / AudioTooLongError for unusable
     uploads, ServerBusyError when this worker holds too many recordings, and
     ClientGoneError when client_gone() says, once the model is free, that
-    nobody is waiting for the answer any more."""
+    nobody is waiting for the answer any more. The warm-up (warm_up=True) takes
+    no place in the queue, since it must run even when learners fill it, and
+    its time, a cold model's first pass, stays out of the queue's estimate."""
     if not real_text.strip():
         raise ValueError('There is no sentence to compare with.')
 
@@ -170,8 +176,9 @@ def score(real_text: str, audio_bytes: bytes, language: str, client_gone=None) -
     admitted = False
     held_seconds = None
     try:
-        stats['queue_ahead'] = _queue.admit()
-        admitted = True
+        if not warm_up:
+            stats['queue_ahead'] = _queue.admit()
+            admitted = True
         signal = audioPreprocessing.decode_audio(audio_bytes, target_rate=16000)
         stats['decode_ms'] = round((time.perf_counter() - started) * 1000)
         stats['audio_s'] = round(signal.shape[-1] / 16000, 2)

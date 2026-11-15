@@ -28,7 +28,7 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
 1. The browser records with MediaRecorder at 32 kbps (Opus in WebM or Ogg; AAC in MP4 on Safari) and sends it
    as base64.
 2. One ffmpeg process decodes it to 16 kHz mono, with limits on size, length (35 s), formats, codecs, streams,
-   memory and time (`audioPreprocessing.py`).
+   memory and time (`audioPreprocessing.py`), single-threaded and at most 4 at a time per worker.
 3. [Whisper base](https://huggingface.co/openai/whisper-base), run by
    [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2, int8 on CPU), transcribes it with a
    timestamp for every word. Noise or silence gives no words at all.
@@ -48,7 +48,7 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
                                                                             │
                          Caddy (ai-pronunciation-trainer-proxy) ────────────┘
                            └─> the live colour: ai-pronunciation-trainer-blue or -green
-                                 gunicorn (gunicorn.conf.py): 2 workers × 16 threads, Flask (webApp.py)
+                                 gunicorn (gunicorn.conf.py): 2 workers × 24 threads, Flask (webApp.py)
                                    ├─ /getSample, /getCustomSample   lambdaGetSample.py, validation.py
                                    ├─ /tts/<language>/<key>.mp3       piperTTS.py (Piper, ONNX Runtime; ffmpeg)
                                    ├─ /getAudioFromText               piperTTS.py
@@ -60,18 +60,20 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
 - Each gunicorn worker loads its own models and then scores a spoken warm-up sentence. It writes a readiness
   marker (`readiness.py`) only if that worked; the Docker `HEALTHCHECK` and `/readyz` count the markers.
 - Scoring is serialised within a worker, and every recording waiting for the model holds a thread. So a worker
-  takes at most 12 recordings (`SCORING_QUEUE_LIMIT`), and fewer when those ahead would take over 30 s; the next
+  takes at most 20 recordings (`SCORING_QUEUE_LIMIT`), and fewer when those ahead would take over 30 s; the next
   ones get 503 with `Retry-After` at once, and the page sends the recording again by itself after that time plus
   up to 2 s, at most 3 times, counting down in the popup. Speech synthesis is bounded the same way (2 texts per
-  worker; the browser's voice reads a text the server turns away). That leaves at least 2 of the 16 threads free
-  for the page, the samples and `/healthz` during a burst. A recording whose client gave up while it waited
+  worker; the browser's voice reads a text the server turns away). That leaves at least 2 of the 24 threads free
+  for the page, the samples and `/healthz` during a burst. A worker accepts no more connections than it has
+  threads, so in a burst a full worker leaves new connections to the other one, and two workers take a class of
+  40 recordings at once; gunicorn closes each connection after its response (no keep-alive behind Caddy). A recording whose client gave up while it waited
   (the popup closed) is not scored: Caddy closes the connection, and the app checks it before it uses the model.
-  A worker keeps accepting recordings while it scores one, so recordings that arrive together can queue on one
-  worker while the other is idle; with faster-whisper a recording holds the model for about a second.
+  With faster-whisper a recording holds the model for about a second.
 - Static files are named by version: the page asks for its stylesheet and script with `?v=` and a hash of their
   content, and browsers and Cloudflare keep those, the fonts and the bank-sentence MP3s for a year. The page itself
   is checked on every load, and API answers are never stored. The page loads nothing from another site: its fonts
-  (Inter, Noto Sans) are served by the app, and the result chime is synthesised in the browser.
+  (Inter, Noto Sans with its Greek subset for the IPA's θ) are served by the app, and the result chime is
+  synthesised in the browser.
 - Caddy receives each request in full before the app sees it, so a slow or stalled upload holds no app thread.
   It holds the bodies in up to 1 GB of memory, which held about 110 uploads of 4.9 MB at once in a test. More
   than that at once can make the kernel kill Caddy, which cuts every request in flight until docker has
@@ -121,7 +123,7 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 | `PORT` | `3000` | Port of `python webApp.py` |
 | `BIND` | `0.0.0.0:3000` | Address gunicorn listens on |
 | `WEB_CONCURRENCY` | `2` (image) | gunicorn workers; each loads its own models |
-| `GUNICORN_THREADS` | `16` | Threads per worker |
+| `GUNICORN_THREADS` | `24` | Threads per worker, and the most connections a worker accepts at once |
 | `SCORING_QUEUE_LIMIT` | `GUNICORN_THREADS` - 4 | Recordings a worker holds (scored or waiting) before it answers 503 |
 | `SCORING_MAX_WAIT_SECONDS` | `30` | A recording that would wait longer than this, from recent scoring times, gets 503 |
 | `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` | `120` / `120` | Worker heartbeat timeout; time to finish the requests a stopping worker has accepted |
@@ -146,6 +148,7 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 | `MAX_CUSTOM_TEXT_CHARS` / `MAX_TEXT_WORDS` | `300` / `60` | Longest practice text |
 | `MAX_AUDIO_SECONDS` | `35` | Longest recording |
 | `AUDIO_DECODE_TIMEOUT` | `5` | Seconds ffmpeg may take to decode a recording |
+| `AUDIO_DECODE_CONCURRENCY` | `4` | Recordings a worker decodes at once (the others wait for a slot; each ffmpeg uses one thread) |
 | `MAX_REQUEST_BYTES` | `4194304` | Largest request body (Flask answers 413 above it) |
 | `FFMPEG_BINARY` | `ffmpeg` on the `PATH` | ffmpeg to use |
 | `GIT_SHA` / `GIT_DATE` | `unknown` (set by deploy.sh) | Reported by `/version` |
@@ -161,7 +164,7 @@ The page is `GET /`. The API routes take a JSON object (`Content-Type: applicati
 | `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty), `tts_url` |
 | `POST /getCustomSample` | `text` | the same, for the user's text |
 | `POST /getAudioFromText` | `value`: the text to read | `wavBase64`: a WAV file |
-| `GET /tts/<language>/<key>.mp3` | | A bank sentence read aloud (MP3); `/getSample` gives the URL as `tts_url`. The key is a hash of the voice and the sentence, so the file never changes and is cached for a year; any other key is 404 |
+| `GET /tts/<language>/<key>.mp3` | | A bank sentence read aloud (MP3); `/getSample` gives the URL as `tts_url`. The key is a hash of the voice, the MP3 bitrate and the sentence, so the file never changes and is cached for a year; any other key is 404 |
 | `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
 | `GET /healthz` | | `{"status": "ok", "uptime_s": …}`: the worker answers HTTP |
 | `GET /readyz` | | 200 once every worker has warmed up, else 503: `ready_workers`, `expected_workers` |

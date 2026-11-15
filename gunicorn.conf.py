@@ -14,10 +14,11 @@ workers = int(os.environ.get('WEB_CONCURRENCY', '2'))
 # Scoring is serialised per worker by a lock in lambdaSpeechToScore, and Piper
 # synthesis by one in piperTTS, and every recording or text waiting for its
 # lock keeps its thread. So each worker takes at most SCORING_QUEUE_LIMIT
-# recordings (12) and PIPER_QUEUE_LIMIT texts to synthesise (2) at a time and
-# answers the next ones at once with 503 and Retry-After; the browser sends
-# the recording again by itself, or reads the text with its own voice. Of the
-# 16 threads, at least 2 are always free for the page, samples and /healthz.
+# recordings (threads - 4: 20) and PIPER_QUEUE_LIMIT texts to synthesise (2)
+# at a time and answers the next ones at once with 503 and Retry-After; the
+# browser sends the recording again by itself, or reads the text with its own
+# voice. At least 2 threads per worker stay free for the page, samples and
+# /healthz. Two workers take a class of 40 recordings sent at once.
 # With threads, `timeout` only restarts a worker whose main loop hangs; a slow
 # request is not interrupted. Every request is bounded on its own: decoding by
 # AUDIO_DECODE_TIMEOUT, recordings by MAX_AUDIO_SECONDS, Whisper by
@@ -27,14 +28,23 @@ workers = int(os.environ.get('WEB_CONCURRENCY', '2'))
 # it and drops clients that take over 60 s to send one; the colours listen on
 # 127.0.0.1 only, so every request goes through it.
 worker_class = 'gthread'
-threads = int(os.environ.get('GUNICORN_THREADS', '16'))
+threads = int(os.environ.get('GUNICORN_THREADS', '24'))
+# A worker accepts no more connections than it has threads. Both workers accept
+# from the same socket, and in a burst one of them used to take most of the
+# recordings and turn half of them away while the other sat idle; a full
+# worker now leaves new connections to the other one. That leaves no
+# connection for keep-alive, so each response closes its connection (Caddy
+# opens a new one on 127.0.0.1, which costs nothing, and never reuses one that
+# gunicorn is about to close; its `keepalive 4s` in deploy/deploy.sh only
+# matters if gunicorn keeps connections open again).
+worker_connections = threads
 timeout = int(os.environ.get('GUNICORN_TIMEOUT', '120'))
 # Time a stopping worker has to finish the requests it has accepted, including
 # recordings queued behind the one being scored. Cloudflare gives up on a
 # request after 125 s, so nothing that could still be answered is cut.
 # deploy/deploy.sh gives a colour 130 s (docker stop -t) before it is killed.
 graceful_timeout = int(os.environ.get('GUNICORN_GRACEFUL_TIMEOUT', '120'))
-keepalive = 5
+keepalive = 0
 # Worker heartbeat files on tmpfs rather than the container's overlay filesystem.
 if os.path.isdir('/dev/shm'):
     worker_tmp_dir = '/dev/shm'

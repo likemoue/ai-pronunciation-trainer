@@ -16,18 +16,24 @@ import validation
 AUDIO_KEY = re.compile(r'[0-9a-f]{16}')
 
 
-def audio_key(sentence: str, voice: str) -> str:
+def recording_id(language: str) -> str:
+    """What a bank sentence's recording is made with: the voice and the MP3
+    bitrate. A change to either gives every sentence a new URL."""
+    return f'{piperTTS.VOICE_CONFIGS.get(language, "")} mp3 {piperTTS.MP3_BITRATE}'
+
+
+def audio_key(sentence: str, recording: str) -> str:
     """The name of a bank sentence's recording (/tts/<language>/<key>.mp3). It
-    depends on the sentence and the voice only, so the URL stays the same from
-    one release to the next and changes with the voice: browsers and
-    Cloudflare can keep the file for good."""
-    return hashlib.sha256('\n'.join((voice, sentence)).encode('utf-8')).hexdigest()[:16]
+    depends on the sentence and on how it is recorded (recording_id) only, so
+    the URL stays the same from one release to the next while neither changes,
+    and browsers and Cloudflare can keep the file for good."""
+    return hashlib.sha256('\n'.join((recording, sentence)).encode('utf-8')).hexdigest()[:16]
 
 
 class SentenceBank:
     """Practice sentences of one language, pre-sorted by difficulty category."""
 
-    def __init__(self, sentences, voice=''):
+    def __init__(self, sentences, recording=''):
         # Normalise once at load time with the same rules as custom text, so the
         # sentence the browser shows is exactly the one the scorer receives back.
         self.sentences = [validation.normalize_text(str(s)) for s in sentences]
@@ -37,8 +43,8 @@ class SentenceBank:
             self.by_category[category] = []
         for idx, sentence in enumerate(self.sentences):
             self.by_category[getSentenceCategory(sentence)].append(idx)
-        self.voice = voice
-        self.keys = [audio_key(sentence, voice) for sentence in self.sentences]
+        self.recording = recording
+        self.keys = [audio_key(sentence, recording) for sentence in self.sentences]
         self.by_key = dict(zip(self.keys, self.sentences, strict=True))
 
     def pick(self, category: int) -> int:
@@ -66,7 +72,7 @@ def _ensure_initialized(language):
         df = pd.read_csv(config.csv_path, delimiter=';')
         _ipa_converter_cache[language] = RuleBasedModels.get_phonem_converter(language)
         _database_cache[language] = SentenceBank(df['sentence'].tolist(),
-                                                 voice=piperTTS.VOICE_CONFIGS.get(language, ''))
+                                                 recording=recording_id(language))
 
 
 def sample(category: int, language: str) -> dict:

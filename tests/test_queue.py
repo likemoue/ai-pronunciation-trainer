@@ -37,6 +37,30 @@ def test_retry_after_is_at_least_a_second():
     assert busy.value.retry_after == 1
 
 
+def test_a_class_right_after_a_start_fits_the_limit():
+    # 20 ahead at the 1 s guess is 20 s, under max_wait: the limit decides.
+    queue = lambdaSpeechToScore.ScoringQueue(limit=20, max_wait=30)
+    assert [queue.admit() for _ in range(20)][-1] == 19
+    with pytest.raises(lambdaSpeechToScore.ServerBusyError) as busy:
+        queue.admit()
+    assert busy.value.retry_after == 20
+
+
+@requires_ffmpeg
+def test_the_warm_up_neither_queues_nor_counts(fake_asr, monkeypatch):
+    # A worker that restarts while learners fill its queue must still warm up
+    # (or it never becomes ready), and a cold model's first pass must not make
+    # the queue think every recording takes that long.
+    queue = lambdaSpeechToScore.ScoringQueue(limit=1, max_wait=30, initial_seconds=1.0)
+    monkeypatch.setattr(lambdaSpeechToScore, '_queue', queue)
+    queue.admit()  # a learner's recording holds the only place
+    lambdaSpeechToScore.score('Hello world', make_audio('webm', seconds=1.0), 'en', warm_up=True)
+    assert queue.pending == 1 and queue.seconds_per_recording == 1.0
+    queue.release()
+    lambdaSpeechToScore.score('Hello world', make_audio('webm', seconds=1.0), 'en')
+    assert queue.pending == 0 and queue.seconds_per_recording != 1.0
+
+
 def test_the_queue_learns_how_long_a_recording_takes():
     queue = lambdaSpeechToScore.ScoringQueue(limit=5, max_wait=30, initial_seconds=2.0)
     for _ in range(40):
@@ -50,8 +74,8 @@ def test_the_queue_learns_how_long_a_recording_takes():
 
 
 @pytest.mark.parametrize('environ,limit', [
-    ({}, 12), ({'GUNICORN_THREADS': '8'}, 4), ({'GUNICORN_THREADS': '2'}, 1),
-    ({'SCORING_QUEUE_LIMIT': '3', 'GUNICORN_THREADS': '16'}, 3), ({'SCORING_QUEUE_LIMIT': '0'}, 1),
+    ({}, 20), ({'GUNICORN_THREADS': '8'}, 4), ({'GUNICORN_THREADS': '2'}, 1),
+    ({'SCORING_QUEUE_LIMIT': '3', 'GUNICORN_THREADS': '24'}, 3), ({'SCORING_QUEUE_LIMIT': '0'}, 1),
 ])
 def test_the_limit_leaves_threads_for_other_requests(environ, limit):
     assert lambdaSpeechToScore._queue_limit(environ) == limit

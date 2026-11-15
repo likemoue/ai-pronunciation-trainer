@@ -6,7 +6,8 @@ trimmed to English. `README.md` describes it for readers; this file is the short
 
 ## How it fits together
 
-- `webApp.py`: Flask app, served by gunicorn (`gunicorn.conf.py`: gthread, 2 workers × 16 threads) in Docker.
+- `webApp.py`: Flask app, served by gunicorn (`gunicorn.conf.py`: gthread, 2 workers × 24 threads, a worker takes no more connections
+  than it has threads, no keep-alive) in Docker.
   Cloudflare is in front, through a tunnel on VM 202 (172.16.10.20) to VM port 3000, where Caddy forwards to the
   live colour (blue or green). Cloudflare drops requests after 125 s (error 524). With gthread workers, gunicorn's
   `timeout` no longer interrupts a slow request, so every step bounds itself.
@@ -20,10 +21,13 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   - `GET /healthz` (the worker answers), `/readyz` (every worker warmed up), `/version` (`GIT_SHA`, `GIT_DATE`).
 - Scoring pipeline (serialised per worker by `_inference_lock`; one `scored` log line per request with timings):
   0. `lambdaSpeechToScore.ScoringQueue`: a worker holds at most `GUNICORN_THREADS - 4` recordings (and none that would
-     wait over 30 s); the next ones get 503 `busy` with `Retry-After`, and app.js sends them again (3 times at most).
+     wait over 30 s); the next ones get 503 `busy` with `Retry-After`, and app.js sends them again (3 times at most;
+     each attempt has its own 100 s), as does `deploy/smoke_test.py` (deploy.sh and the canary). The warm-up takes no
+     place in the queue and its time stays out of the queue's estimate.
      A recording whose client left while it waited is skipped (`client_gone`, from the socket gunicorn hands Flask).
-  1. `audioPreprocessing.decode_audio`: one ffmpeg process, bounded by size, allocations, codecs, streams and time.
-     It returns numpy float32 `[1, samples]`; torch is gone since phase 2.
+  1. `audioPreprocessing.decode_audio`: one ffmpeg process, bounded by size, allocations, codecs, streams and time,
+     single-threaded, at most `AUDIO_DECODE_CONCURRENCY` (4) per worker at once (every thread counts against the
+     colour's `--pids-limit 512`). It returns numpy float32 `[1, samples]`; torch is gone since phase 2.
   2. Whisper base on faster-whisper (`whisper_wrapper.py`, CTranslate2 int8, greedy, English pinned), model files
      pinned in `model_pins.py`. The transcript is built from the timed words, so the two always line up.
   3. `pronunciationTrainer.py`: word alignment with DTW in `WordMatching.py`; reference IPA from `eng_to_ipa`, with the
@@ -125,11 +129,9 @@ without network; Trivy). A test that reads other files of the repository belongs
 runs only outside the image.
 `canary.yml` smoke-tests the public site every 15 minutes.
 
-Known limits, for phase 2: a gthread worker keeps accepting recordings while it scores one, so two recordings can
-queue on one worker while the other is idle; under a burst of recordings every thread of a worker can be waiting for
-its model, so the page, samples and TTS wait too (up to 34 s, measured with 24 recordings sent at once); a Caddy
-reload can fail a request at that instant: one sent on an idle keep-alive connection, or, rarely, a new connection
-that Caddy resets; and nothing on the VM limits requests per client: Caddy holds request bodies in up to 1 GB (it
+Known limits: more recordings at once than the two workers take (40) are answered 503 and sent again by the page;
+a Caddy reload can fail a request at that instant: one sent on an idle keep-alive connection, or, rarely, a new
+connection that Caddy resets; and nothing on the VM limits requests per client: Caddy holds request bodies in up to 1 GB (it
 held about 110 uploads of 4.9 MB at once), and beyond that the kernel can kill it, which cuts every request
 through port 3000 until docker has restarted it.
 
@@ -157,7 +159,7 @@ The full plan is in the maintainer's Claude plan file. Status:
   and images, multi-stage Dockerfile, CI and canary, blue/green deploys behind Caddy, docs. Deployed 2026-11-15
   (e4a1693). `checklist.md` lists the flows it touches.
 - **Phase 2, performance** (branch `phase2/performance`): IPA lookup in memory, faster-whisper int8 (no torch), a
-  bounded queue that answers 503 with Retry-After and a client that sends again, 16 threads per worker, static
+  bounded queue that answers 503 with Retry-After and a client that sends again, 24 threads per worker, static
   files cached by content version, fonts served by the app, bank sentences as cacheable MP3s (rendered on first
   request, then kept by Cloudflare), 32 kbps recordings, `scripts/load_test.py`.
 - **Phase 3, scoring accuracy:** build the evaluation harness first, then Levenshtein alignment, text normalisation, VAD and IPA comparison.

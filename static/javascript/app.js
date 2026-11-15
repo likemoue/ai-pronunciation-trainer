@@ -779,14 +779,10 @@
             return;
         }
 
+        // Closing the popup aborts everything (closeModal); each attempt also has
+        // its own time limit, which the waits between attempts do not use up.
         const abort = new AbortController();
         rec.abort = abort;
-        const timeout = setTimeout(() => abort.abort(), SCORE_TIMEOUT_MS);
-        rec.slowTimer = setTimeout(() => {
-            if (rec.phase === 'processing') {
-                els.recHint.textContent = 'Still working – the first check after a server restart can take up to a minute.';
-            }
-        }, 8000);
 
         try {
             const [base64Audio, buffer] = await Promise.all([
@@ -797,7 +793,7 @@
             let data;
             for (let attempt = 0; ; attempt += 1) {
                 try {
-                    data = await postJSON(API.score, body, { signal: abort.signal });
+                    data = await sendRecording(body, abort.signal);
                     break;
                 } catch (err) {
                     const busy = err.status === 503 || err.status === 429;
@@ -825,9 +821,30 @@
             else if (err.status === 400 && err.message) message = err.message;
             setModalPhase('error', message);
         } finally {
-            clearTimeout(timeout);
             clearTimeout(rec.slowTimer);
             if (rec.abort === abort) rec.abort = null;
+        }
+    }
+
+    // One attempt to score the recording, given up after SCORE_TIMEOUT_MS (an
+    // AbortError) or when the popup is closed (the outer signal).
+    async function sendRecording(body, outer) {
+        const attempt = new AbortController();
+        const stop = () => attempt.abort();
+        outer.addEventListener('abort', stop, { once: true });
+        const timeout = setTimeout(stop, SCORE_TIMEOUT_MS);
+        clearTimeout(rec.slowTimer);
+        rec.slowTimer = setTimeout(() => {
+            if (rec.phase === 'processing') {
+                els.recHint.textContent = 'Still working – the first check after a server restart can take up to a minute.';
+            }
+        }, 8000);
+        try {
+            return await postJSON(API.score, body, { signal: attempt.signal });
+        } finally {
+            clearTimeout(timeout);
+            clearTimeout(rec.slowTimer);
+            outer.removeEventListener('abort', stop);
         }
     }
 

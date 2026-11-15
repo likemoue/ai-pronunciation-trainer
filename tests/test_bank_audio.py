@@ -24,18 +24,23 @@ def test_a_sample_names_the_recording_of_its_sentence(client):
     assert lambdaGetSample.sentence_for_audio_key('en', match.group(1)) == data['real_transcript'][0]
 
 
-def test_the_key_depends_on_the_sentence_and_the_voice_only():
-    key = lambdaGetSample.audio_key('I have a cat.', 'en_US-ljspeech-medium')
-    assert key == lambdaGetSample.audio_key('I have a cat.', 'en_US-ljspeech-medium')
-    assert key != lambdaGetSample.audio_key('I have a cat.', 'en_US-ljspeech-high')
-    assert key != lambdaGetSample.audio_key('I have a dog.', 'en_US-ljspeech-medium')
+def test_the_key_depends_on_the_sentence_the_voice_and_the_bitrate_only(monkeypatch):
+    recording = lambdaGetSample.recording_id('en')
+    assert piperTTS.VOICE_CONFIGS['en'] in recording and piperTTS.MP3_BITRATE in recording
+    key = lambdaGetSample.audio_key('I have a cat.', recording)
+    assert key == lambdaGetSample.audio_key('I have a cat.', lambdaGetSample.recording_id('en'))
+    assert key != lambdaGetSample.audio_key('I have a dog.', recording)
+    monkeypatch.setattr(piperTTS, 'MP3_BITRATE', '64k')
+    assert key != lambdaGetSample.audio_key('I have a cat.', lambdaGetSample.recording_id('en'))
+    monkeypatch.setitem(piperTTS.VOICE_CONFIGS, 'en', 'en_US-ljspeech-high')
+    assert key != lambdaGetSample.audio_key('I have a cat.', lambdaGetSample.recording_id('en'))
 
 
 def test_every_bank_sentence_has_its_own_key(client):
     sample(client)  # loads the bank
     bank = lambdaGetSample._database_cache['en']
     assert len(set(bank.keys)) == len(bank.sentences)
-    assert bank.voice == piperTTS.VOICE_CONFIGS['en']
+    assert bank.recording == lambdaGetSample.recording_id('en')
 
 
 @requires_ffmpeg

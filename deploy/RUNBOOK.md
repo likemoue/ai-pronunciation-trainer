@@ -320,7 +320,9 @@ also shows any line that is not):
 * gunicorn's own messages (worker start and exit).
 
 Libraries that log through Python's root logger log errors only (faster-whisper would log every transcription
-at INFO). ONNX Runtime writes its own messages to stderr and reports errors only; what it says while it is
+at INFO). The smoke test (deploy.sh's checks and the canary) sends a recording or a text again after a 503 busy
+answer, as the page does, so a class at work neither fails a deploy nor sets off the canary; it prints
+`busy (503), sending it again in N s` when that happens. ONNX Runtime writes its own messages to stderr and reports errors only; what it says while it is
 imported (on some virtual machines, a warning that the display is not a PCI device) is logged as a JSON line from
 `aipt.piperTTS`. The proxy keeps no access log; it logs its own warnings and errors. Errors that the proxy answers
 itself (a body over 5 MB, a colour that does not answer) are JSON like the app's (`request_entity_too_large`,

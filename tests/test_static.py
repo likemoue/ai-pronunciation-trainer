@@ -74,7 +74,7 @@ def test_nothing_is_loaded_from_another_site():
 def test_every_font_the_stylesheet_names_is_served_with_its_licence():
     css = read('static/css/style.css')
     fonts = re.findall(r'url\("\.\./fonts/([^"]+)"\)', css)
-    assert len(fonts) == 4
+    assert len(fonts) == 5
     for name in fonts:
         assert os.path.isfile(os.path.join(ROOT, 'static', 'fonts', name)), name
     for licence in ('OFL-Inter.txt', 'OFL-NotoSans.txt'):
@@ -85,3 +85,22 @@ def test_the_page_downloads_no_sound_files():
     # The result chime is synthesised in the browser (app.js).
     assert not [name for _, _, names in os.walk(os.path.join(ROOT, 'static')) for name in names
                 if name.endswith(('.wav', '.mp3', '.ogg'))]
+
+
+def test_every_ipa_symbol_of_the_bank_has_a_served_font():
+    # The IPA font's subsets must cover every symbol the page shows (θ is Greek).
+    import pandas as pd
+    import RuleBasedModels
+    import validation
+    css = read('static/css/style.css')
+    ranges = []
+    for block in re.findall(r'@font-face \{(.*?)\}', css, re.S):
+        if '"Noto Sans"' in block:
+            for part in re.search(r'unicode-range: ([^;]+);', block).group(1).split(','):
+                low, _, high = part.strip()[2:].partition('-')
+                ranges.append((int(low, 16), int(high or low, 16)))
+    converter = RuleBasedModels.EngPhonemConverter()
+    sentences = pd.read_csv('databases/data_en.csv', delimiter=';')['sentence'].astype(str).tolist()
+    symbols = {ch for s in sentences[:3000] for ch in converter.convertToPhonem(validation.normalize_text(s))}
+    missing = sorted(ch for ch in symbols if not ch.isspace() and not any(lo <= ord(ch) <= hi for lo, hi in ranges))
+    assert not missing, missing

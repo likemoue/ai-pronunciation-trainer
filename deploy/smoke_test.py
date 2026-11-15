@@ -12,11 +12,15 @@ failure, and at once when a request gets no answer or a gateway error (502,
 (.github/workflows/canary.yml) against the public site. Cloudflare refuses
 Python's default user agent, so give the canary its own.
 
-On a busy instance every request, /healthz too, waits behind the recordings
-queued on its worker. --timeout (default 10 s) is the wait for the quick
-checks; the page, samples, TTS and scoring wait at least 120 s. deploy.sh gives
-the quick checks on port 3000 60 s, as the colour that has just taken the
-traffic may be busy.
+From phase 2 on, a worker that holds as many recordings (or texts to read
+aloud) as it takes answers 503 with Retry-After; like the page, the check sends
+them again after that time, 3 times at most, so a class at work does not fail
+a deploy or the canary. Before phase 2 every request, /healthz too, waited
+behind the recordings queued on its worker instead. --timeout (default 10 s)
+is the wait for the quick checks; the page, samples, TTS and scoring wait at
+least 120 s. deploy.sh gives the quick checks on port 3000 60 s, as the colour
+that has just taken the traffic may be busy. The recording of a bank sentence
+(/tts/<language>/<key>.mp3, phase 2 on) is checked when the sample names one.
 """
 import argparse
 import json
@@ -68,6 +72,20 @@ def call(path, body=None, content_type='application/json', timeout=SLOW, stop_if
     return result
 
 
+def call_resending(path, body=None, attempts=4):
+    """call(), sent again after a 503 busy answer with its Retry-After (30 s at
+    most), as the page does."""
+    for attempt in range(attempts):
+        result = call(path, body)
+        if result[0] != 503 or as_json(result[2]).get('code') not in ('busy', 'tts_busy') \
+                or attempt == attempts - 1:
+            return result
+        wait = min(30.0, float(result[1].get('Retry-After') or 5))
+        print(f'     {path}: busy (503), sending it again in {wait:g} s', flush=True)
+        time.sleep(wait)
+    return result
+
+
 def check(name, ok, detail=''):
     print(f'{"ok  " if ok else "FAIL"} {name} {detail}', flush=True)
     if not ok:
@@ -97,7 +115,13 @@ else:
 
 status, headers, body, seconds = call('/getSample', {'category': 1, 'language': 'en'})
 sentence = (as_json(body).get('real_transcript') or [''])[0]
+tts_url = as_json(body).get('tts_url')
 check('sample', status == 200 and bool(sentence), f'{status} {seconds:.2f}s')
+
+if tts_url:
+    status, headers, body, seconds = call_resending(tts_url)
+    check('sentence recording', status == 200 and headers.get('Content-Type', '').startswith('audio/mpeg')
+          and len(body) > 1000, f'{status} {seconds:.2f}s {len(body)} bytes')
 
 status, headers, body, seconds = call('/getSample', {'category': 7, 'language': 'en'}, timeout=QUICK)
 check('bad category is rejected', status == 400, f'{status} {seconds:.2f}s')
@@ -105,12 +129,12 @@ check('bad category is rejected', status == 400, f'{status} {seconds:.2f}s')
 status, headers, body, seconds = call('/getSample', b'{"category": 1}', content_type='text/plain', timeout=QUICK)
 check('non-JSON body is rejected', status == 415, f'{status} {seconds:.2f}s')
 
-status, headers, body, seconds = call('/getAudioFromText', {'value': SENTENCE, 'language': 'en'})
+status, headers, body, seconds = call_resending('/getAudioFromText', {'value': SENTENCE, 'language': 'en'})
 wav = as_json(body).get('wavBase64')
 check('tts', status == 200 and bool(wav), f'{status} {seconds:.2f}s')
 
 if wav:
-    status, headers, body, seconds = call('/GetAccuracyFromRecordedAudio', {
+    status, headers, body, seconds = call_resending('/GetAccuracyFromRecordedAudio', {
         'title': SENTENCE, 'base64Audio': 'data:audio/wav;base64,' + wav, 'language': 'en'})
     result = as_json(body)
     accuracy = int(result.get('pronunciation_accuracy', -1)) if status == 200 else -1

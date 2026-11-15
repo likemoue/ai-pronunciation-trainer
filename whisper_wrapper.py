@@ -1,7 +1,7 @@
 """Speech recognition with Whisper base, run by CTranslate2 (faster-whisper).
 
 The weights are those of openai/whisper-base, converted to CTranslate2 by
-Systran (model_pins.FASTER_WHISPER_*) and quantised to int8 when they are
+Systran (model_pins.WHISPER_*) and quantised to int8 when they are
 loaded. Compared with the transformers pipeline the app used before, with
 the same settings (greedy decoding, the language pinned to English, word
 timestamps), a recording is transcribed 2.5 to 5 times faster, in about a

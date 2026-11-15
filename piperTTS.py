@@ -294,8 +294,8 @@ def encode_mp3(wav_bytes) -> bytes:
 
     import audioPreprocessing
     command = [audioPreprocessing.ffmpeg_binary(), '-nostdin', '-hide_banner', '-loglevel', 'error',
-               '-f', 'wav', '-i', 'pipe:0', '-ac', '1', '-codec:a', 'libmp3lame', '-b:a', MP3_BITRATE,
-               '-f', 'mp3', 'pipe:1']
+               '-filter_threads', '1', '-f', 'wav', '-i', 'pipe:0', '-ac', '1', '-codec:a', 'libmp3lame',
+               '-b:a', MP3_BITRATE, '-threads', '1', '-f', 'mp3', 'pipe:1']
     try:
         result = subprocess.run(command, input=wav_bytes, capture_output=True, timeout=_MP3_TIMEOUT_SECONDS,
                                 check=False)

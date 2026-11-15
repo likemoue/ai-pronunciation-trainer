@@ -48,3 +48,46 @@ def test_real_voice_reads_the_longest_practice_sentences():
     sentences = pd.read_csv('databases/data_en.csv', delimiter=';')['sentence'].astype(str).tolist()
     for sentence in sorted(sentences, key=len)[-5:]:
         assert piperTTS.generate_wav_base64(sentence)
+
+
+def _wav(samples, rate=16000):
+    import io
+    import wave
+    import numpy as np
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes((np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes())
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize('kind', ['white noise', 'hum'])
+def test_noise_alone_is_no_speech_not_an_invented_sentence(kind):
+    # The transformers pipeline turned noise into a sentence and scored it.
+    import numpy as np
+    import lambdaSpeechToScore
+    t = np.arange(16000 * 3) / 16000
+    samples = (np.random.default_rng(1).standard_normal(t.size) * 0.05 if kind == 'white noise'
+               else 0.05 * np.sin(2 * np.pi * 50 * t))
+    with pytest.raises(lambdaSpeechToScore.NoSpeechError):
+        lambdaSpeechToScore.score('I have a cat and a dog at home.', _wav(samples), 'en')
+
+
+def test_a_spoken_sentence_has_no_word_added_after_it():
+    # Without Whisper's timestamps, faster-whisper added "you" after the
+    # sentence in half a second of trailing silence.
+    import base64
+    import numpy as np
+    import io
+    import wave
+    import lambdaSpeechToScore
+    import piperTTS
+    sentence = 'Tom ran out of gas.'
+    with wave.open(io.BytesIO(base64.b64decode(piperTTS.generate_wav_base64(sentence))), 'rb') as w:
+        rate = w.getframerate()
+        speech = np.frombuffer(w.readframes(w.getnframes()), dtype='<i2').astype(np.float32) / 32768
+    padded = np.concatenate([np.zeros(rate // 2, np.float32), speech, np.zeros(rate, np.float32)])
+    result = lambdaSpeechToScore.score(sentence, _wav(padded, rate), 'en')
+    assert len(result['real_transcript'].split()) == len(sentence.split()), result['real_transcript']

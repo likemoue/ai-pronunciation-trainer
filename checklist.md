@@ -12,7 +12,8 @@ already checks it on every change.
 - [ ] Record and score a sentence of each level: score, letter colours, per-word IPA and playback, with
       faster-whisper. Auto: smoke test, warm-up at build and start, slow tests in the image. Checked once on the
       parity set (Piper readings of 30 bank sentences, 239 clips): see the PR for the numbers.
-- [ ] Noise or silence gives "We couldn't recognise any speech", not an invented sentence. Auto: `tests/test_api.py`.
+- [ ] Noise or silence gives "We couldn't recognise any speech", not an invented sentence. Auto: `tests/test_api.py`
+      (silence), the slow tests in the image (noise and hum through the real model; no word after a sentence).
 - [ ] A class at once (30-40 recordings within a few seconds): every learner gets a score; anyone the server turns
       away sees "The server is busy - sending your recording again in N s" and gets a score without recording again.
       Auto, in part: `tests/test_queue.py` (503 with Retry-After, places given back). Check once with the load test
@@ -21,11 +22,12 @@ already checks it on every change.
 - [ ] Listen to a bank sentence: an MP3 from `/tts/en/<key>.mp3`, from Cloudflare's cache the second time
       (`cf-cache-status: HIT`). Your own text and single words still use `/getAudioFromText`. Auto: `tests/test_bank_audio.py`.
 - [ ] The result chime plays (good, okay, needs work) with no sound file downloaded.
-- [ ] Fonts come from the app (Network tab: no request to Google), the IPA symbols render in Noto Sans.
-      Auto: `tests/test_static.py`.
+- [ ] Fonts come from the app (Network tab: no request to Google), the IPA symbols render in Noto Sans, θ included.
+      Auto: `tests/test_static.py` (every IPA symbol of the bank is in a served subset).
 - [ ] Phone browsers (Chrome Android, Safari iOS, Zalo in-app browser): record at 32 kbps and score once each.
 
 ### Operations
+- [ ] A deploy and the canary during a class at work: the smoke test sends busy recordings again and passes.
 - [ ] After a deploy, a page opened before it keeps working: its old `?v=` assets are answered with `no-cache`, the
       new page gets the new version. Auto: `tests/test_static.py`.
 - [ ] `docker logs`: `scored` lines carry `queue_ahead`, `lock_wait_ms`, `asr_ms`; `busy` outcomes are rare outside a

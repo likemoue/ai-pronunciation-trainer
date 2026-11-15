@@ -24,8 +24,8 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 
 | Package | Version | Licence |
 |---|---|---|
-| faster-whisper | 1.2.1 | MIT |
-| ctranslate2 | 4.8.5 | MIT; its wheel ships GCC's OpenMP runtime (`ctranslate2.libs/libgomp`, GPL-3.0-or-later with the GCC Runtime Library Exception) |
+| faster-whisper | 1.2.1 | MIT; it ships the Silero VAD v6 model (`faster_whisper/assets/silero_vad_v6.onnx`, MIT), which the app does not use |
+| ctranslate2 | 4.8.5 | MIT. Its library (`ctranslate2.libs/libctranslate2*.so`) has built in the Intel oneAPI Math Kernel Library (Intel Simplified Software License: redistributable, not open source), oneDNN 3.1.1 (Apache-2.0) and NVIDIA's CUDA runtime (the CUDA Toolkit licence's redistributable part; unused, the server has no GPU); the wheel also ships GCC's OpenMP runtime (`libgomp`, GPL-3.0-or-later with the GCC Runtime Library Exception) |
 | av (PyAV, imported by faster-whisper, not used to decode) | 19.0.2 | BSD-3-Clause; its wheel ships FFmpeg 9.0.2's libraries (`av.libs`), built with x264 and x265 and so under GPL-2.0-or-later, and the libraries they use (GnuTLS, Opus, dav1d, libvpx, SVT-AV1, libwebp, libxcb and others, under LGPL, BSD and MIT licences) |
 | huggingface-hub | 2.4.0 | Apache-2.0 |
 | tokenizers | 0.23.3 | Apache-2.0 |
@@ -88,7 +88,7 @@ and onnxruntime (MIT), whose `LICENSE` and `ThirdPartyNotices.txt` are in `site-
 | Debian 13 packages in the base image | Various free licences; see `/usr/share/doc/*/copyright` in the image |
 | FFmpeg 7.1.5 (Debian package `ffmpeg`, built with `--enable-gpl`) and the libraries it pulls in | GPL-2.0-or-later as built; see `/usr/share/doc/ffmpeg/copyright` |
 | Caddy 2.11.9 (the proxy container on the server, not in the app image) | Apache-2.0 |
-| Fonts Inter and Noto Sans (latin and latin-ext subsets, as Google Fonts serves them), in `static/fonts` and served by the app | SIL Open Font License 1.1 (`static/fonts/OFL-Inter.txt`, `OFL-NotoSans.txt`) |
+| Fonts Inter (latin and latin-ext subsets) and Noto Sans (latin, latin-ext and greek, for the IPA's θ), as Google Fonts serves them, in `static/fonts` and served by the app | SIL Open Font License 1.1 (`static/fonts/OFL-Inter.txt`, `OFL-NotoSans.txt`) |
 
 The GPL-licensed parts (piper-tts, eSpeak NG, FFmpeg, and the FFmpeg libraries inside PyAV) run in the same image as the AGPL-3.0 app. GPLv3 section 13
 and AGPLv3 section 13 allow combining the two; each part keeps its own licence. The source of every Python package
