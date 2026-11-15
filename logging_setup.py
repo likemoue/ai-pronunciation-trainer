@@ -8,8 +8,8 @@
 The app's own loggers live under the 'aipt' namespace and log from LOG_LEVEL
 (default INFO). Libraries that log through the root logger log errors only:
 Piper warns once for every phoneme its voice lacks, so a crafted text would
-otherwise write hundreds of lines per request. transformers keeps its own
-handler and level.
+otherwise write hundreds of lines per request, and faster-whisper logs every
+transcription at INFO.
 
 Logging has to be configured before the model code is imported: epitran calls
 logging.basicConfig(level=CRITICAL) on import, which does nothing once the

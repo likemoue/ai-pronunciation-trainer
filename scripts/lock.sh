@@ -9,10 +9,8 @@
 # Only releases uploaded before a cut-off date are considered. --upgrade sets it
 # to 7 days ago (or to LOCK_DATE, e.g. LOCK_DATE=2026-11-07); otherwise the date
 # in requirements.lock's header is reused, so the same inputs always resolve to
-# the same pins. torch comes from the PyTorch CPU index, everything else from
-# PyPI; installs need both indexes:
-#   pip install --require-hashes -r requirements.lock \
-#       --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cpu
+# the same pins. Everything comes from PyPI:
+#   pip install --require-hashes -r requirements.lock
 #
 # A security fix younger than 7 days: add --exclude-newer-package NAME=DATE to
 # the uv command below for that package only, and say why in the commit.
@@ -37,7 +35,7 @@ compile() {  # compile <input> <output> [extra uv args...]
     shift 2
     uv pip compile "$input" -o "$output" --quiet \
         --generate-hashes --python-version 3.12 --python-platform x86_64-manylinux_2_39 \
-        --torch-backend cpu --emit-index-annotation \
+        --emit-index-annotation \
         --exclude-newer "$cutoff" "$@"
 }
 

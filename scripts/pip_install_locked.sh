@@ -8,8 +8,7 @@
 # pinned in the first lock file is installed first, with its hashes, and the
 # packages are built with it.
 #
-# Indexes come from PIP_INDEX_URL and PIP_EXTRA_INDEX_URL: requirements.lock
-# needs https://pypi.org/simple and https://download.pytorch.org/whl/cpu (torch).
+# The index comes from PIP_INDEX_URL (https://pypi.org/simple).
 set -euo pipefail
 
 python=$1

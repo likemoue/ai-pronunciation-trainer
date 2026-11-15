@@ -18,10 +18,10 @@ pytestmark = requires_ffmpeg
 @pytest.mark.parametrize('fmt', ['webm', 'ogg', 'mp4', 'wav'])
 def test_browser_formats_decode_to_16k_mono(fmt):
     signal = audioPreprocessing.decode_audio(make_audio(fmt, seconds=1.0, rate=48000))
-    assert signal.dim() == 2 and signal.shape[0] == 1
-    assert str(signal.dtype) == 'torch.float32'
+    assert signal.ndim == 2 and signal.shape[0] == 1
+    assert str(signal.dtype) == 'float32'
     assert abs(signal.shape[1] - 16000) < 1600  # codec padding varies a little
-    assert float(signal.abs().max()) > 0.1
+    assert float(abs(signal).max()) > 0.1
 
 
 def test_stereo_44k_is_downmixed_and_resampled():

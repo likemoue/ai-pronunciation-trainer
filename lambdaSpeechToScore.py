@@ -6,6 +6,9 @@ import WordMatching as wm
 import pronunciationTrainer
 import base64
 import time
+
+import numpy as np
+
 import audioPreprocessing
 import logging_setup
 
@@ -96,19 +99,14 @@ def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
         stats['audio_s'] = round(signal.shape[-1] / 16000, 2)
         # A muted or disconnected microphone produces (near) digital silence. Do not
         # send it to Whisper, which would hallucinate text for it.
-        if signal.numel() == 0 or float(signal.abs().max()) < SILENCE_PEAK_THRESHOLD:
+        if signal.size == 0 or float(np.abs(signal).max()) < SILENCE_PEAK_THRESHOLD:
             raise NoSpeechError()
 
         trainer = _get_trainer(language)
         waiting = time.perf_counter()
         with _inference_lock:
             stats['lock_wait_ms'] = round((time.perf_counter() - waiting) * 1000)
-            try:
-                result = trainer.processAudioForGivenText(signal, real_text)
-            except Exception:
-                if not trainer.asr_model.getTranscript().strip():
-                    raise NoSpeechError() from None
-                raise
+            result = trainer.processAudioForGivenText(signal, real_text)
         stats.update({f'{name}_ms': value for name, value in result.get('timings_ms', {}).items()})
         if not result['recording_transcript'].strip():
             raise NoSpeechError()

@@ -24,11 +24,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Top-level modules the app imports -> the requirement in requirements.in that provides them.
 THIRD_PARTY = {
     'flask': 'flask', 'werkzeug': 'flask', 'gunicorn': 'gunicorn', 'numpy': 'numpy', 'pandas': 'pandas',
-    'torch': 'torch', 'transformers': 'transformers',
+    'faster_whisper': 'faster-whisper',
     'piper': 'piper-tts', 'onnxruntime': 'onnxruntime', 'eng_to_ipa': 'eng-to-ipa', 'dtwalign': 'dtwalign',
 }
 # Imported only when German is enabled, which the English image does not install.
 OPTIONAL = {'epitran'}
+# In requirements.in without being imported: the build backend for eng-to-ipa's sdist,
+# which scripts/pip_install_locked.sh installs from the lock first.
+BUILD_ONLY = {'setuptools'}
 
 
 def read(path):
@@ -67,7 +70,7 @@ def test_every_third_party_import_is_declared_in_requirements_in():
 
 def test_requirements_in_lists_nothing_the_app_does_not_import():
     used = {THIRD_PARTY[name] for name in app_imports() - OPTIONAL}
-    assert requirement_names(read('requirements.in')) <= used
+    assert requirement_names(read('requirements.in')) <= used | BUILD_ONLY
 
 
 @pytest.mark.parametrize('lock', ['requirements.lock', 'requirements-dev.lock'])
@@ -78,7 +81,8 @@ def test_lock_pins_every_package_with_hashes(lock):
     assert pinned and len(pinned) == len(re.findall(r'^[A-Za-z0-9_.-]+==', text, re.M))
     if lock == 'requirements.lock':
         assert requirement_names(read('requirements.in')) <= pinned
-        assert re.search(r'^torch==[0-9.]+\+cpu ', text, re.M), 'torch must be the CPU build'
+        # faster-whisper replaced transformers in phase 2; torch (most of the image) went with it.
+        assert not re.search(r'^(torch|transformers|nvidia-[a-z0-9-]+)==', text, re.M)
     assert '--exclude-newer 20' in text.splitlines()[1], 'the lock records its cut-off date'
 
 
@@ -139,10 +143,10 @@ def test_the_dockerfile_and_dockerignore_let_in_the_same_files():
     assert not glob.glob(os.path.join(ROOT, '*', '__init__.py'))
 
 
-def test_dockerfile_installs_the_lock_with_hashes_and_both_indexes():
+def test_dockerfile_installs_the_lock_with_hashes_from_pypi():
     dockerfile = read('Dockerfile')
     assert 'bash /tmp/pip_install_locked.sh /opt/venv/bin/python /tmp/requirements.lock' in dockerfile
-    assert 'PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu' in dockerfile
+    assert 'PIP_INDEX_URL=https://pypi.org/simple' in dockerfile and 'PIP_EXTRA_INDEX_URL' not in dockerfile
     assert 'WARMUP_STRICT=1' in dockerfile
     # The models come from a stage that does not depend on the packages.
     assert re.search(r'^FROM \$\{PYTHON_IMAGE\} AS models$', dockerfile, re.M)
@@ -155,7 +159,7 @@ def test_the_build_backend_is_installed_from_the_lock_with_its_hashes():
 
 
 def test_whisper_files_are_pinned_by_sha256():
-    assert 'model.safetensors' in model_pins.WHISPER_FILES
+    assert set(model_pins.WHISPER_FILES) == {'config.json', 'model.bin', 'tokenizer.json', 'vocabulary.txt'}
     assert all(re.fullmatch(r'[0-9a-f]{64}', digest) for digest in model_pins.WHISPER_FILES.values())
 
 

@@ -16,11 +16,9 @@ ARG PYTHON_IMAGE=python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65
 FROM ${PYTHON_IMAGE} AS deps
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_INDEX_URL=https://pypi.org/simple \
-    PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
+    PIP_INDEX_URL=https://pypi.org/simple
 COPY requirements.lock scripts/pip_install_locked.sh /tmp/
 # Every file is checked against its sha256 in the lock, the build backend too.
-# torch is the CPU build from the PyTorch index; everything else comes from PyPI.
 RUN python -m venv --without-pip /opt/venv \
     && bash /tmp/pip_install_locked.sh /opt/venv/bin/python /tmp/requirements.lock
 
@@ -31,7 +29,7 @@ COPY model_pins.py /tmp/build/
 COPY scripts/download_models.py /tmp/build/scripts/
 # The English voice to bake in (model_pins.PIPER_VOICES); empty means the default.
 ARG PIPER_VOICE_EN=
-RUN PIPER_VOICE_EN="${PIPER_VOICE_EN}" WHISPER_DIR=/models/whisper-base PIPER_MODEL_DIR=/models/piper \
+RUN PIPER_VOICE_EN="${PIPER_VOICE_EN}" WHISPER_DIR=/models/faster-whisper-base PIPER_MODEL_DIR=/models/piper \
     python /tmp/build/scripts/download_models.py
 
 # ------------------------------------------------------------------ runtime
@@ -75,7 +73,7 @@ ENV HF_HUB_OFFLINE=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
     HF_HUB_DISABLE_PROGRESS_BARS=1 \
     ORT_DISABLE_TELEMETRY=1 \
-    WHISPER_MODEL=/models/whisper-base \
+    WHISPER_MODEL=/models/faster-whisper-base \
     PIPER_MODEL_DIR=/models/piper \
     PIPER_VOICE_EN=${PIPER_VOICE_EN} \
     OMP_NUM_THREADS=5 \
