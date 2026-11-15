@@ -104,12 +104,23 @@ def test_noise_alone_is_no_speech_not_an_invented_sentence(kind, seed, upload):
         lambdaSpeechToScore.score('I have a cat and a dog at home.', audio, 'en')
 
 
+def _frozen_speech(clip, after):
+    """A reading of the evaluation set (Piper never says a text the same way
+    twice, and a fresh synthesis was once heard as \"Turn on the light and turn
+    on the light.\"), with `after` more seconds of silence: (samples, rate)."""
+    import numpy as np
+    import audioPreprocessing
+    with open(os.path.join(ROOT, 'evaluation', 'clips', clip + '.webm'), 'rb') as f:
+        samples = audioPreprocessing.decode_audio(f.read(), 16000)[0]
+    return np.concatenate([samples, np.zeros(int(16000 * after), np.float32)]), 16000
+
+
 def test_a_spoken_sentence_has_no_word_added_after_it():
     # Without Whisper's timestamps, faster-whisper added "you" after the
     # sentence in half a second of trailing silence.
     import lambdaSpeechToScore
     sentence = 'Tom ran out of gas.'
-    samples, rate = _piper_speech(sentence, after=1.0)
+    samples, rate = _frozen_speech('bank-s05-clean', after=0.4)  # 0.6 s of silence ends the clip already
     result = lambdaSpeechToScore.score(sentence, _wav(samples, rate), 'en')
     assert len(result['real_transcript'].split()) == len(sentence.split()), result['real_transcript']
 

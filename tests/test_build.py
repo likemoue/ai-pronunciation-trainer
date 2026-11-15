@@ -25,7 +25,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 THIRD_PARTY = {
     'flask': 'flask', 'werkzeug': 'flask', 'gunicorn': 'gunicorn', 'numpy': 'numpy', 'pandas': 'pandas',
     'faster_whisper': 'faster-whisper',
-    'piper': 'piper-tts', 'onnxruntime': 'onnxruntime', 'eng_to_ipa': 'eng-to-ipa', 'dtwalign': 'dtwalign',
+    'piper': 'piper-tts', 'onnxruntime': 'onnxruntime', 'eng_to_ipa': 'eng-to-ipa',
 }
 # Imported only when German is enabled, which the English image does not install.
 OPTIONAL = {'epitran'}

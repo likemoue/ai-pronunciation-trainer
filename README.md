@@ -31,20 +31,36 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
    memory and time (`audioPreprocessing.py`), single-threaded and at most 4 at a time per worker.
 3. [Whisper base](https://huggingface.co/openai/whisper-base), run by
    [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2, int8 on CPU), transcribes it with a
-   timestamp for every word. Silence gives no words, nor does a window that Whisper rates as probably not
-   speech: synthetic noise gave none in 56 of 56 test recordings, as WAV and as the page's WebM/Opus. Noise
-   recorded through Chrome, whose noise suppression shapes it, still gave words in about one of six recordings
-   of 5-8 s. The transformers pipeline invented a sentence for every noise recording. A short phrase spoken very
-   softly, next to a tap on the phone far louder than the voice, can be rated as not speech too: the learner is
-   asked to speak louder.
-4. The transcript is aligned with the sentence word by word (dynamic time warping, `WordMatching.py`), and
-   every word pair is compared letter by letter. The score is the share of letters that match.
+   timestamp for every word. Before it, the recording is scaled by a level a single loud click cannot set (the
+   99.5th percentile of its samples), so a soft phrase after a much louder tap on Record is heard, and Silero
+   VAD keeps recordings without speech from Whisper. Silence gives no words, nor does a window that Whisper
+   rates as probably not speech. On the evaluation set, 10 of 11 recordings of noise are refused as no speech,
+   among them white noise recorded by the page, which Whisper alone heard as "I'm sorry."; noise recorded
+   through Chrome's capture path, whose noise suppression shapes it, can still give words.
+4. Both the sentence and the transcript are read as their words are said ("2:30" as "two thirty", "3-day" as
+   "three day", "OK" and "okay" alike, and homophones and British or American spellings counted as the same word
+   by the CMU dictionary), then aligned word by word (an edit-distance alignment, `WordMatching.py`: a word left
+   out or added costs its own place only). Every word pair is compared letter by letter, aligned the same way.
+   The score is the share of letters that match. A word heard with one of Vietnamese learners' typical mistakes
+   (an ending -s, -es, -d or -ed left out, th said as t, d, s or f, sh as s) is never labelled Correct, however
+   many of its letters match ("book" for "books").
 5. The reference IPA comes from the CMU Pronouncing Dictionary through `eng_to_ipa`, with the dictionary held in
    memory (`RuleBasedModels.CmuIpa`, exactly eng_to_ipa's output).
 
 The score measures how well the speech was *recognised* as the sentence, not how each sound was pronounced:
-Whisper is good at guessing the intended word, so a mispronounced sound can still score well. Scoring by
-phoneme, with a model of its own, is planned.
+Whisper is good at guessing the intended word, so a mispronounced sound can still score well (it wrote "think"
+for 12 of 14 readings of "think" said as "tink" in the evaluation set). Scoring by phoneme, with a model of its
+own, is planned.
+
+### Evaluating the scoring
+
+[`evaluation/`](evaluation/README.md) holds 441 synthetic recordings (the app's own Piper voice; no learner's
+voice) whose truth is known word by word: bank sentences read clean, slowly, fast, under noise and by a higher
+voice; Vietnamese learners' typical mistakes made in the phonemes (θ→t, ð→d, ʃ→s, dropped final stops, plural
+-s and past -ed); words left out, repeated or added; numbers and spellings Whisper writes otherwise; soft speech
+after a loud tap; and noise, some of it recorded by Chrome as the page records. `python -m evaluation.harness`
+scores them as the server does and reports how often the labels are right
+([evaluation/report.md](evaluation/report.md)); every change to the scoring is judged by it.
 
 ## How it fits together
 
@@ -139,7 +155,7 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 | `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` | `120` / `120` | Worker heartbeat timeout; time to finish the requests a stopping worker has accepted |
 | `OMP_NUM_THREADS` | `5` (image) | Threads per worker for numerical libraries; the default of `WHISPER_CPU_THREADS` |
 | `GOMP_SPINCOUNT` | `10000` (image) | How long an idle GNU OpenMP thread (CTranslate2's) spins before it sleeps; the default of 300,000 made the two colours of a deploy slow each other down |
-| `OPENBLAS_NUM_THREADS` | `1` (image) | numpy's and scipy's OpenBLAS run on the calling thread; their helper threads spun after each matrix product |
+| `OPENBLAS_NUM_THREADS` | `1` (image) | numpy's OpenBLAS runs on the calling thread; its helper threads spun after each matrix product |
 | `LOG_LEVEL` | `INFO` | Level of the app's own logs (libraries log errors only) |
 | `OPEN_BROWSER` | `1`, `0` (image) | `python webApp.py` opens a browser tab |
 | `ENABLED_LANGUAGES` | `en` | Languages the API accepts |
@@ -150,6 +166,8 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 | `WHISPER_CPU_THREADS` | `OMP_NUM_THREADS`, else `4` | CTranslate2 threads per worker; workers × threads should not exceed the CPUs |
 | `WHISPER_COMPUTE_TYPE` | `int8` | CTranslate2 compute type (`int8`, `float32`, …) |
 | `WHISPER_MAX_NEW_TOKENS` | `160` | Longest transcript Whisper may produce (stops hallucinations on noise) |
+| `VAD_THRESHOLD` | `0.5` | Silero VAD's speech probability for a 32 ms window to count as speech, in [0, 1); a recording without `VAD_MIN_WINDOWS` such windows in a row is "no speech" without Whisper. `0` turns the gate off; keep it on, since the recording level (`preprocessAudio`) was chosen with it: without it, silent takes with a tap at each end were heard as "I'm sorry." |
+| `VAD_MIN_WINDOWS` | `3` | Windows of speech in a row (96 ms) the gate needs; one let long white noise through |
 | `PIPER_VOICE_EN` | `en_US-ljspeech-medium` | English voice, one of `model_pins.PIPER_VOICES`; the image holds the one it was built with (build argument `PIPER_VOICE_EN`) |
 | `PIPER_MODEL_DIR` | `models/piper`; `/models/piper` (image) | Where the voices are |
 | `PIPER_THREADS` | `2` | ONNX Runtime threads for speech synthesis |
@@ -253,11 +271,15 @@ refactoring) and changes made for this edition from 2026-11-12 on. The main chan
 - Static files cached by content version, fonts served by the app, bank sentences read aloud as cacheable MP3s.
 - Reproducible builds (lock files with hashes, pinned models and images), tests, CI, a canary, and deploys
   without downtime behind Caddy.
+- An evaluation harness for the scoring, with a set of synthetic recordings labelled word by word; scoring
+  judged by it: edit-distance alignment (without dtwalign), words read as they are said, a robust recording
+  level, Silero VAD before Whisper, and learners' typical mistakes never labelled Correct.
 
 The source code of the running version is linked from the page footer, as section 13 of the AGPL requires.
 
 ## Licences
 
 The code is under the [GNU AGPL v3](LICENSE). The sentences come from Tatoeba (CC BY 2.0 FR), the voice is
-trained on the public-domain LJ Speech recordings, and Whisper's weights are under MIT. Every component
+trained on the public-domain LJ Speech recordings, and Whisper's weights are under MIT. The evaluation set's
+recordings are that voice reading bank sentences (Tatoeba, CC BY 2.0 FR) and sentences written for the set. Every component
 that ships in the image or the page is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

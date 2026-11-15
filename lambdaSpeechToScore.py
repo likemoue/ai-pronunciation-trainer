@@ -115,10 +115,10 @@ _trainer_cache_lock = threading.Lock()
 _inference_lock = threading.Lock()
 # Languages whose pipeline has made a full pass (words heard and aligned) in
 # this process, under _inference_lock. The first full pass pays Whisper's first
-# forward pass and the word alignment's JIT compilation, about ten times a
-# normal pass. The warm-up usually pays it, but on a worker that restarts while
-# learners are recording, a learner's recording can reach the model first.
-# Whoever pays it, its time stays out of the queue's estimate.
+# forward pass, several times a normal pass. The warm-up usually pays it, but
+# on a worker that restarts while learners are recording, a learner's
+# recording can reach the model first. Whoever pays it, its time stays out of
+# the queue's estimate.
 _warm_languages = set()
 
 
@@ -131,8 +131,8 @@ def _get_trainer(language):
 
 def warm_up(language, strict=None) -> bool:
     """Load the trainer, then score one short spoken sentence so first-call
-    costs (Whisper's first forward pass, JIT compilation in the word alignment,
-    the IPA dictionary) are paid at start-up instead of by the first user.
+    costs (Whisper's first forward pass, the IPA dictionary) are paid at
+    start-up instead of by the first user.
 
     The sentence is synthesised with Piper. Real speech keeps Whisper on its
     normal path; noise would make it decode the maximum number of tokens.
@@ -260,13 +260,7 @@ def _build_response(result) -> dict:
 
     is_letter_correct_all_words = ''
     for idx, word_real in enumerate(words_real):
-
-        mapped_letters, mapped_letters_indices = wm.get_best_mapped_words(
-            mapped_words[idx], word_real)
-
-        is_letter_correct = wm.getWhichLettersWereTranscribedCorrectly(
-            word_real, mapped_letters)
-
+        is_letter_correct = wm.letters_correct(word_real, mapped_words[idx])
         is_letter_correct_all_words += ''.join([str(is_correct)
                                                 for is_correct in is_letter_correct]) + ' '
 

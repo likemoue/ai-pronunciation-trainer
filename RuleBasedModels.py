@@ -60,9 +60,16 @@ class CmuIpa:
         self._entries = {word: tuple(variants) for word, variants in entries.items()}
         # Bounded: transcripts can contain any word. 20,000 entries are a few MB.
         self.convert = functools.lru_cache(maxsize=20000)(self._convert)
+        self.sounds = functools.lru_cache(maxsize=20000)(self._sounds)
 
     def __len__(self):
         return len(self._entries)
+
+    def _sounds(self, word: str) -> frozenset:
+        """The word's pronunciations in the dictionary without their stress
+        marks ('ow k ey' for both "ok" and "okay"); empty for an unknown word."""
+        return frozenset(''.join(ch for ch in phonemes if not ch.isdigit())
+                         for phonemes in self._entries.get(word.lower(), ()))
 
     def _get_cmu(self, tokens):
         # eng_to_ipa.transcribe.get_cmu, with the rows looked up in memory: each
@@ -104,3 +111,11 @@ class EngPhonemConverter(ModelInterfaces.ITextToPhonemModel):
         phonem_representation = self._ipa.convert(sentence)
         phonem_representation = phonem_representation.replace('*','')
         return phonem_representation
+
+    def same_sound(self, a: str, b: str) -> bool:
+        """True when the dictionary says the two words alike: homophones
+        ("two", "too"), and spellings of one word ("OK" and "okay", "Mr" and
+        "mister", "colour" and "color"). Whisper writes either for the same
+        sound, so neither says how the word was pronounced."""
+        sounds = self._ipa.sounds(a)
+        return bool(sounds) and not sounds.isdisjoint(self._ipa.sounds(b))

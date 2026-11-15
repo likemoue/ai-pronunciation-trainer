@@ -74,10 +74,10 @@ ARG PIPER_VOICE_EN=
 # both colours score at once during a deploy, the spinning threads of one took
 # the CPUs from the other, and recordings took ten times longer. 10,000 rounds
 # keep the same speed for one colour. The setting reaches GNU OpenMP only.
-# OPENBLAS_NUM_THREADS: numpy's and scipy's OpenBLAS each started 4 helper
-# threads per worker (they read OMP_NUM_THREADS), and numpy's spun for about
-# 0.1 s after each small matrix product of the pipeline, about a tenth of a
-# recording's CPU. One thread does those products in under a millisecond.
+# OPENBLAS_NUM_THREADS: numpy's OpenBLAS started 4 helper threads per worker
+# (it reads OMP_NUM_THREADS), and they spun for about 0.1 s after each small
+# matrix product of the pipeline, about a tenth of a recording's CPU. One
+# thread does those products in under a millisecond.
 ENV HF_HUB_OFFLINE=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
     HF_HUB_DISABLE_PROGRESS_BARS=1 \
@@ -92,8 +92,7 @@ ENV HF_HUB_OFFLINE=1 \
     ENABLED_LANGUAGES=en \
     PRELOAD_LANGUAGES=en \
     WEB_CONCURRENCY=2 \
-    READY_DIR=/tmp/aipt-ready \
-    MPLCONFIGDIR=/tmp/matplotlib
+    READY_DIR=/tmp/aipt-ready
 
 USER app
 # Score one spoken sentence with the models and packages as installed, so a

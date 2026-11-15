@@ -35,7 +35,10 @@ trimmed to English. `README.md` describes it for readers; this file is the short
      Whisper rates as probably not speech is skipped however sure it is of its words (`log_prob_threshold=None`):
      noise as the page sends it was transcribed. `hallucination_silence_threshold` stays off: it dropped a single
      word said before a pause.
-  3. `pronunciationTrainer.py`: word alignment with DTW in `WordMatching.py`; reference IPA from `eng_to_ipa`, with the
+  3. `pronunciationTrainer.py`: both sides read as said (`WordMatching.canonical`: numbers, times, hyphens, spellings;
+     `same_sound`: homophones by the CMU dictionary), then words and letters aligned by edit distance (Needleman-Wunsch,
+     pure Python since phase 3: dtwalign and its numba, scipy and matplotlib are gone); a word heard with a typical
+     mistake (`WordMatching.known_mistake`: ending, th, sh) is at best Almost; reference IPA from `eng_to_ipa`, with the
      CMU dictionary in memory (`RuleBasedModels.CmuIpa`; `tests/test_ipa.py` holds it to eng_to_ipa's output on the bank).
 - `piperTTS.py`: the reference voice (Piper, `en_US-ljspeech-medium`, public domain). Voice files are pinned by sha256
   in `model_pins.py`. A text over 900 phonemes is refused, and pieces over 300 phonemes are synthesised in smaller parts.
@@ -59,6 +62,11 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   count the markers of live workers.
 - Logs (`logging_setup.py`): one JSON object per line, with the request id (`rid`, Cloudflare's Ray ID). App loggers come
   from `logging_setup.get_logger(__name__)` (namespace `aipt`) and log from INFO; `print` is not used.
+- `evaluation/` (not in the image): the scoring evaluation harness of phase 3, `evaluation/README.md`. 441 synthetic
+  recordings (Piper's voice; learners' mistakes made in the phonemes, noise, soft speech, Chrome-recorded noise) with
+  the truth for every word, a harness that scores them as the server does, and the text simulation over the bank.
+  `evaluation/report.md` is the report of `harness.REPORT['run']`; `tests/test_evaluation.py` fails when the code no
+  longer gives that run's labels from what Whisper heard. A change to the scoring brings its own run and report.
 
 ## Commands
 
@@ -70,6 +78,11 @@ python -m pytest -q -m slow     # real Whisper and Piper
 OPEN_BROWSER=0 python webApp.py   # local server on :3000
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciation-trainer .
 scripts/lock.sh [--upgrade | --check]   # requirements*.lock from requirements*.in (needs uv)
+
+# Scoring evaluation (evaluation/README.md): a full run belongs in the image (see there).
+python -m evaluation.harness rescore evaluation/runs/phase3-6-review.json --out evaluation/runs/<name>.json --every 1
+python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-6-review.json
+python -m evaluation.harness report --committed   # evaluation/report.md from harness.REPORT
 ```
 
 The Docker build runs a strict warm-up and fails if the image cannot score a spoken sentence. The runtime stage's
@@ -141,10 +154,10 @@ and a burst can turn a few away from one worker while the other has room;
 a Caddy reload can fail a request at that instant: one sent on an idle keep-alive connection, or, rarely, a new
 connection that Caddy resets; nothing on the VM limits requests per client: Caddy holds request bodies in up to 1 GB (it
 held about 110 uploads of 4.9 MB at once), and beyond that the kernel can kill it, which cuts every request
-through port 3000 until docker has restarted it; and a short phrase spoken very softly, next to a tap on the phone far
-louder than the voice, is refused as no speech, because `preprocessAudio` scales a recording by its peak (phase 3:
-scale by a robust level instead). On the server, white noise recorded by the page in Chromium was transcribed as
-"I'm sorry." (4 of 4) instead of "no speech" (phase 3: voice activity detection). The VM (Proxmox VM 209)
+through port 3000 until docker has restarted it. Noise recorded through Chrome's capture path (its noise suppression
+on) can still be transcribed as a sentence (1 of 3 in the evaluation set); since phase 3, Silero VAD keeps the rest of
+the noise from Whisper, which turned white noise recorded by the page into "I'm sorry.", and recordings are scaled by
+a robust level, so a soft phrase after a much louder tap on the phone is heard (15 of 15, refused before). The VM (Proxmox VM 209)
 runs with `cpu: host` since 2026-11-15, on a Xeon E5-2670 v2 (Ivy Bridge): AVX, but no AVX2, FMA or AVX-512
 (`x86-64-v3` needs AVX2 and would not start). Whisper takes about 1.8 s per recording there, against 0.6-0.8 s on a
 dev machine with AVX2, and a class of 40 at once waits up to 40 s; int8 stays faster than float32 on it (4.7 s
@@ -178,6 +191,9 @@ The full plan is in the maintainer's Claude plan file. Status:
   bounded queue that answers 503 with Retry-After and a client that sends again, 24 threads per worker, static
   files cached by content version, fonts served by the app, bank sentences as cacheable MP3s (rendered on first
   request, then kept by Cloudflare), 32 kbps recordings, `scripts/load_test.py`.
-- **Phase 3, scoring accuracy:** build the evaluation harness first, then Levenshtein alignment, text normalisation, VAD and IPA comparison.
+- **Phase 3, scoring accuracy** (PR #10, branch `phase3/scoring`): the evaluation harness (`evaluation/`), then, each
+  judged by its report: edit-distance alignment (dtwalign gone, the image 2.06 GB), words read as said (numbers,
+  spellings, homophones), a robust level and Silero VAD, and typical mistakes never Correct. Against phase 2: labels
+  right 89.5% -> 92.9%, learners' mistakes flagged 49% -> 62%, red letters on words said right 10.2% -> 5.3%.
 - **Phase 4, frontend:** UX, mobile, accessibility, and in-app browsers such as Zalo.
 - **Phases 5-7** (learning features, phoneme-level scoring, school platform): only when chosen.

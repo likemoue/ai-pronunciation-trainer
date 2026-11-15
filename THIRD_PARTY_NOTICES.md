@@ -11,6 +11,7 @@ Versions are those of `requirements.lock` and the image built from it (Debian 13
 |---|---|---|
 | Whisper base, converted for CTranslate2: [Systran/faster-whisper-base](https://huggingface.co/Systran/faster-whisper-base) at commit `ebe41f7` (the weights of [openai/whisper-base](https://huggingface.co/openai/whisper-base)) | `/models/faster-whisper-base` in the image | MIT (the conversion's model card; OpenAI released Whisper's code and weights under MIT) |
 | Piper voice `en_US-ljspeech-medium`, [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices) v1.0.0 | `/models/piper` in the image | Voice collection MIT; trained on the [LJ Speech dataset](https://keithito.com/LJ-Speech-Dataset/), public domain |
+| [Silero VAD](https://github.com/snakers4/silero-vad) v6, bundled with `faster-whisper`: tells whether a recording holds speech before Whisper hears it | `faster_whisper/assets/silero_vad_v6.onnx` | MIT (Silero Team; the wheel ships no copy of the licence text) |
 | Practice sentences, [Tatoeba](https://tatoeba.org) | `databases/data_en.csv` | CC BY 2.0 FR, credited in the page footer |
 | CMU Pronouncing Dictionary, bundled with `eng_to_ipa` | `eng_to_ipa/resources` | BSD-style licence of Carnegie Mellon University |
 | eSpeak NG data and library, bundled with `piper-tts` | `piper/espeak-ng-data`, `piper/espeakbridge.so` | GPL-3.0-or-later |
@@ -24,7 +25,7 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 
 | Package | Version | Licence |
 |---|---|---|
-| faster-whisper | 1.2.1 | MIT; it ships the Silero VAD v6 model (`faster_whisper/assets/silero_vad_v6.onnx`, MIT), which the app does not use |
+| faster-whisper | 1.2.1 | MIT; it ships the Silero VAD v6 model (see Models and data) |
 | ctranslate2 | 4.8.5 | MIT. Its library (`ctranslate2.libs/libctranslate2*.so`) has built in the Intel oneAPI Math Kernel Library (Intel Simplified Software License: redistributable, not open source), oneDNN 3.1.1 (Apache-2.0) and NVIDIA's CUDA runtime (the CUDA Toolkit licence's redistributable part; unused, the server has no GPU); the wheel also ships GCC's OpenMP runtime (`libgomp`, GPL-3.0-or-later with the GCC Runtime Library Exception) |
 | av (PyAV, imported by faster-whisper, not used to decode) | 19.0.2 | BSD-3-Clause; its wheel ships FFmpeg 9.0.2's libraries (`av.libs`), built with x264 and x265 and so under GPL-2.0-or-later, and the libraries they use (GnuTLS, Opus, dav1d, libvpx, SVT-AV1, libwebp, libxcb and others, under LGPL, BSD and MIT licences) |
 | huggingface-hub | 2.4.0 | Apache-2.0 |
@@ -48,19 +49,6 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 | python-dateutil | 4.0.0 | BSD-3-Clause (and Apache-2.0 for parts) |
 | tzdata | 2026.6 | Apache-2.0 |
 | eng-to-ipa | 0.0.2 | MIT ([mphilli/English-to-IPA](https://github.com/mphilli/English-to-IPA)) |
-| dtwalign | 0.1.1 | MIT |
-| scipy | 1.18.1 | BSD-3-Clause |
-| numba | 0.68.1 | BSD-2-Clause |
-| llvmlite | 0.50.0 | BSD-2-Clause, and Apache-2.0 WITH LLVM-exception for LLVM |
-| matplotlib | 3.11.2 | Matplotlib licence (PSF-based) |
-| seaborn | 0.13.2 | BSD-3-Clause |
-| contourpy | 1.4.0 | BSD-3-Clause |
-| cycler | 0.12.1 | BSD-3-Clause |
-| fonttools | 4.68.0 | MIT |
-| kiwisolver | 1.5.1 | BSD-3-Clause |
-| pillow | 13.0.0 | MIT-CMU |
-| pyparsing | 3.3.3 | MIT |
-| networkx | 3.7 | BSD-3-Clause |
 | setuptools | 84.2.1 | MIT |
 | filelock | 4.2.9 | MIT |
 | fsspec | 2026.9.0 | BSD-3-Clause |
