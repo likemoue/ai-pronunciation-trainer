@@ -82,7 +82,8 @@ scored with `run --only <prefix>` and joined to a run with `merge`.
 
 Outside the image, the harness runs with the app's requirements, ffmpeg (`FFMPEG_BINARY`) and the models
 (`WHISPER_MODEL`, `PIPER_MODEL_DIR`, downloaded on first use otherwise). Whisper's int8 kernels depend on the CPU
-(the production VM has no AVX), so compare runs made on the same machine.
+(the production VM has AVX but no AVX2; the runs here were made with AVX-512), so compare runs made on the same
+machine.
 
 ## Judging a change
 
