@@ -288,6 +288,106 @@ def test_memory_is_returned_to_the_system_after_post_requests():
     assert calls == [0]
 
 
+def test_numpy_starts_no_helper_thread_for_its_blas():
+    # The image runs OpenBLAS on one thread (OPENBLAS_NUM_THREADS=1 beside
+    # OMP_NUM_THREADS=5 in the Dockerfile): its helper threads spun for about
+    # 0.1 s after each matrix product, taking CPU from the other colour during
+    # a deploy.
+    if not os.path.isdir('/proc/self/task'):
+        pytest.skip('counts the threads in /proc')
+    code = ('import os, numpy; numpy.ones((200, 200)) @ numpy.ones((200, 200)); '
+            'print(len(os.listdir("/proc/self/task")))')
+    env = dict(os.environ, OMP_NUM_THREADS='5', OPENBLAS_NUM_THREADS='1')
+    threads = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, check=True)
+    assert threads.stdout.strip() == '1'
+
+
+def test_closing_a_connection_holds_the_worker_only_briefly():
+    # gthread closes each connection on the worker's main thread and lingers
+    # there until the peer closes: a client that read a large answer slowly
+    # through Caddy stalled the whole worker 2 s per connection.
+    pytest.importorskip('fcntl')  # gunicorn only runs on POSIX
+    pytest.importorskip('gunicorn.glogging')
+    import inspect
+    import socket
+    import time
+    import gunicorn.util
+    from gunicorn.workers import gthread
+    original = gunicorn.util.close_graceful
+    try:
+        settings = runpy.run_path(os.path.join(ROOT, 'gunicorn.conf.py'))
+        assert 0 < settings['CLOSE_LINGER_SECONDS'] <= 0.5
+        assert gunicorn.util.close_graceful.func is getattr(original, 'func', original)
+        assert gunicorn.util.close_graceful.keywords == {
+            'timeout': settings['CLOSE_LINGER_SECONDS'], 'max_drain': settings['CLOSE_DRAIN_BYTES']}
+        # gthread looks the function up at each close, so the shorter linger reaches it.
+        assert 'util.close_graceful(' in inspect.getsource(gthread)
+        ours, peer = socket.socketpair()
+        start = time.monotonic()
+        gunicorn.util.close_graceful(ours)  # the peer never closes its side
+        assert time.monotonic() - start < 1.0
+        peer.close()
+    finally:
+        gunicorn.util.close_graceful = original
+
+
+class _CountedSocket:
+    """A socket that counts the bytes read from it."""
+
+    def __init__(self, sock):
+        self.sock, self.received = sock, 0
+
+    def recv(self, size):
+        data = self.sock.recv(size)
+        self.received += len(data)
+        return data
+
+    def __getattr__(self, name):
+        return getattr(self.sock, name)
+
+
+def test_closing_a_connection_drops_a_body_the_app_did_not_read():
+    # The app refuses some requests without reading their body (413, 415, 404).
+    # gunicorn reset a connection that still held more than 64 KB of it, and
+    # Caddy then answered 502 instead of the app's answer, about once in 600.
+    pytest.importorskip('fcntl')  # gunicorn only runs on POSIX
+    pytest.importorskip('gunicorn.glogging')
+    import gunicorn.util
+    original = gunicorn.util.close_graceful
+    body = b'x' * (512 * 1024)
+    try:
+        runpy.run_path(os.path.join(ROOT, 'gunicorn.conf.py'))
+        with socket.create_server(('127.0.0.1', 0)) as listener:
+            client = socket.create_connection(listener.getsockname())
+            ours, _ = listener.accept()
+            errors = []
+
+            def send():  # the body, at loopback speed as Caddy sends it
+                try:
+                    client.sendall(body)
+                    client.shutdown(socket.SHUT_WR)
+                except OSError as error:  # the connection was reset
+                    errors.append(error)
+
+            sender = threading.Thread(target=send, daemon=True)
+            sender.start()
+            ours.recv(1, socket.MSG_PEEK)  # the body is on its way
+            counted = _CountedSocket(ours)
+            gunicorn.util.close_graceful(counted)
+            sender.join(5)
+            try:
+                # Everything was read and dropped before the close. (The client
+                # alone does not show a reset reliably: when gunicorn's FIN
+                # arrives first, it reads a clean end of the stream.)
+                assert counted.received == len(body)
+                assert not errors
+                assert client.recv(1) == b''
+            finally:
+                client.close()
+    finally:
+        gunicorn.util.close_graceful = original
+
+
 # ------------------------------------------------------------------ deploy script
 
 def test_smoke_test_scores_the_warm_up_sentence():

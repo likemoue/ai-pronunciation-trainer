@@ -16,6 +16,12 @@
     const CUSTOM_MAX_WORDS = 60;
     // Cloudflare gives up after 125 s (error 524), so stop waiting before that.
     const SCORE_TIMEOUT_MS = 100000;
+    // A busy server answers 503 with Retry-After; the recording is sent again
+    // by itself this many times, a little after the time the server gave.
+    const BUSY_RETRIES = 3;
+    // Opus at 32 kbps is plenty for speech recognition and a quarter of the
+    // browsers' default: a 30 s recording is about 120 KB.
+    const RECORDING_BITS_PER_SECOND = 32000;
     const CATEGORY_MULTIPLIER = { 0: 1.3, 1: 1, 2: 1.3, 3: 1.6, custom: 1 };
     const CATEGORY_TEXT = ['Correct', 'Almost', 'Needs work'];
 
@@ -79,6 +85,7 @@
         sentenceCategory: 1,
         text: '',
         ipa: '',
+        ttsUrl: '', // the bank sentence's MP3, if it is one
         loading: false,
         result: null,
         selectedWord: -1,
@@ -88,7 +95,6 @@
     };
 
     let audioCtx = null;
-    let feedbackSounds = null;
     let serverTts = true;
     const ttsCache = new Map();
     let activePlayback = null; // { stop(), button }
@@ -125,10 +131,26 @@
             const err = new Error((data && data.error) || `Server error (${res.status})`);
             err.status = res.status;
             err.code = (data && data.code) || '';
+            const retryAfter = Number(res.headers.get('Retry-After') || (data && data.retry_after));
+            err.retryAfter = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 60) : 0;
             throw err;
         }
         return data;
     }
+
+    const sleep = (ms, signal) => new Promise((resolve, reject) => {
+        if (signal && signal.aborted) {
+            reject(new DOMException('Aborted', 'AbortError'));
+            return;
+        }
+        const timer = setTimeout(resolve, ms);
+        if (signal) {
+            signal.addEventListener('abort', () => {
+                clearTimeout(timer);
+                reject(new DOMException('Aborted', 'AbortError'));
+            }, { once: true });
+        }
+    });
 
     function getAudioContext() {
         if (!audioCtx) {
@@ -198,10 +220,11 @@
         updateControls();
     }
 
-    function setSentence(text, ipa, category) {
+    function setSentence(text, ipa, category, ttsUrl) {
         stopPlayback();
         state.text = normalizeText(text);
         state.ipa = ipa || '';
+        state.ttsUrl = ttsUrl || '';
         state.sentenceCategory = category;
         state.result = null;
         state.selectedWord = -1;
@@ -222,7 +245,7 @@
         setStatus('Loading a new sentence…');
         try {
             const data = await postJSON(API.sample, { category: String(state.category), language: LANGUAGE });
-            setSentence(data.real_transcript[0], data.ipa_transcript, state.category);
+            setSentence(data.real_transcript[0], data.ipa_transcript, state.category, data.tts_url);
             setStatus('Listen first, then tap the microphone and read the sentence aloud.');
         } catch (err) {
             console.error(err);
@@ -396,9 +419,16 @@
                 let url = ttsCache.get(clean);
                 if (!url) {
                     if (button) button.classList.add('is-playing');
-                    const data = await postJSON(API.tts, { value: clean, language: LANGUAGE });
-                    const bytes = Uint8Array.from(atob(data.wavBase64), (c) => c.charCodeAt(0));
-                    url = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+                    // A bank sentence has its own MP3 that browsers and Cloudflare
+                    // cache; any other text (a single word, your own text) is read
+                    // on request.
+                    let blob = clean === state.text && state.ttsUrl ? await fetchAudio(state.ttsUrl) : null;
+                    if (!blob) {
+                        const data = await postJSON(API.tts, { value: clean, language: LANGUAGE });
+                        const bytes = Uint8Array.from(atob(data.wavBase64), (c) => c.charCodeAt(0));
+                        blob = new Blob([bytes], { type: 'audio/wav' });
+                    }
+                    url = URL.createObjectURL(blob);
                     ttsCache.set(clean, url);
                     if (ttsCache.size > 40) {
                         const [oldKey, oldUrl] = ttsCache.entries().next().value;
@@ -423,6 +453,16 @@
             }
         }
         speakWithBrowser(clean, slow, button);
+    }
+
+    async function fetchAudio(url) {
+        try {
+            const res = await fetch(url);
+            return res.ok ? await res.blob() : null;
+        } catch (err) {
+            console.warn('Could not fetch the recording of the sentence.', err);
+            return null;
+        }
     }
 
     let browserVoice = null;
@@ -481,34 +521,37 @@
         playBuffer(state.recordingBuffer, els.wdPlayYours, start, end - start);
     }
 
-    async function loadFeedbackSounds() {
-        if (feedbackSounds) return feedbackSounds;
-        const ctx = getAudioContext();
-        const load = async (name) => {
-            const res = await fetch(`/static/${name}`);
-            return ctx.decodeAudioData(await res.arrayBuffer());
-        };
-        try {
-            const [good, okay, bad] = await Promise.all([load('ASR_good.wav'), load('ASR_okay.wav'), load('ASR_bad.wav')]);
-            feedbackSounds = { good, okay, bad };
-        } catch (err) {
-            console.warn('Could not load feedback sounds', err);
-            feedbackSounds = {};
-        }
-        return feedbackSounds;
-    }
+    // The result chime is synthesised, so the page downloads no sound file:
+    // [frequency in Hz, start in s, length in s] for each note.
+    const FEEDBACK_NOTES = {
+        good: [[784, 0, 0.14], [1047, 0.12, 0.28]], // G5 then C6, rising
+        okay: [[659, 0, 0.24]], // E5
+        bad: [[392, 0, 0.16], [330, 0.14, 0.3]], // G4 then E4, falling
+    };
 
-    async function playFeedbackSound(accuracy) {
-        const sounds = await loadFeedbackSounds();
-        const buffer = accuracy >= 70 ? sounds.good : accuracy >= 30 ? sounds.okay : sounds.bad;
-        if (!buffer) return;
-        const ctx = getAudioContext();
-        const source = ctx.createBufferSource();
-        const gain = ctx.createGain();
-        gain.gain.value = 0.5;
-        source.buffer = buffer;
-        source.connect(gain).connect(ctx.destination);
-        source.start();
+    function playFeedbackSound(accuracy) {
+        const notes = FEEDBACK_NOTES[accuracy >= 70 ? 'good' : accuracy >= 30 ? 'okay' : 'bad'];
+        let ctx;
+        try {
+            ctx = getAudioContext();
+        } catch (err) {
+            console.warn('No audio for the feedback sound', err);
+            return;
+        }
+        const now = ctx.currentTime + 0.02;
+        notes.forEach(([frequency, start, length]) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = frequency;
+            // A soft bell: a quick rise, then an exponential fade.
+            gain.gain.setValueAtTime(0.0001, now + start);
+            gain.gain.exponentialRampToValueAtTime(0.18, now + start + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + start + length);
+            osc.connect(gain).connect(ctx.destination);
+            osc.start(now + start);
+            osc.stop(now + start + length + 0.02);
+        });
     }
 
     // ---------------------------------------------------------------- recorder
@@ -660,8 +703,10 @@
         rec.source.connect(rec.analyser);
 
         const mimeType = pickMimeType();
+        const options = { audioBitsPerSecond: RECORDING_BITS_PER_SECOND };
+        if (mimeType) options.mimeType = mimeType;
         try {
-            rec.recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+            rec.recorder = new MediaRecorder(stream, options);
         } catch (_) {
             rec.recorder = new MediaRecorder(stream);
         }
@@ -734,35 +779,43 @@
             return;
         }
 
+        // Closing the popup aborts everything (closeModal); each attempt also has
+        // its own time limit, which the waits between attempts do not use up.
         const abort = new AbortController();
         rec.abort = abort;
-        const timeout = setTimeout(() => abort.abort(), SCORE_TIMEOUT_MS);
-        rec.slowTimer = setTimeout(() => {
-            if (rec.phase === 'processing') {
-                els.recHint.textContent = 'Still working – the first check after a server restart can take up to a minute.';
-            }
-        }, 8000);
 
         try {
             const [base64Audio, buffer] = await Promise.all([
                 blobToDataUrl(blob),
                 blob.arrayBuffer().then((ab) => getAudioContext().decodeAudioData(ab)).catch(() => null),
             ]);
-            const data = await postJSON(API.score, {
-                title: state.text,
-                base64Audio,
-                language: LANGUAGE,
-            }, { signal: abort.signal });
+            const body = { title: state.text, base64Audio, language: LANGUAGE };
+            let data;
+            for (let attempt = 0; ; attempt += 1) {
+                try {
+                    data = await sendRecording(body, abort.signal);
+                    break;
+                } catch (err) {
+                    const busy = err.status === 503 || err.status === 429;
+                    if (!busy || attempt >= BUSY_RETRIES || abort.signal.aborted) throw err;
+                    await waitForBusyServer(err.retryAfter || 3, abort.signal);
+                }
+            }
 
             if (!data || data.pronunciation_accuracy === undefined) {
                 throw Object.assign(new Error('empty'), { status: 422 });
             }
+            // An answer for a popup that was closed in the meantime belongs to
+            // no take any more: it must not close a newer one.
+            if (abort.signal.aborted) return;
             state.recordingBuffer = buffer;
             closeModal();
             renderResult(data);
             updateControls();
         } catch (err) {
-            if (err.name === 'AbortError' && rec.phase === 'idle') return; // closed by user
+            // Only closeModal aborts this controller: the learner closed the
+            // popup, and the popup may already show a newer take.
+            if (abort.signal.aborted) return;
             console.error(err);
             let message = 'Could not check your recording. Please try again.';
             if (err.name === 'AbortError') message = 'The server took too long to answer. Please try again.';
@@ -773,10 +826,52 @@
             else if (err.status === 400 && err.message) message = err.message;
             setModalPhase('error', message);
         } finally {
-            clearTimeout(timeout);
-            clearTimeout(rec.slowTimer);
+            // closeModal cleared the timer of a closed popup; rec.slowTimer may
+            // belong to a newer take by now.
+            if (!abort.signal.aborted) clearTimeout(rec.slowTimer);
             if (rec.abort === abort) rec.abort = null;
         }
+    }
+
+    // One attempt to score the recording, given up after SCORE_TIMEOUT_MS (an
+    // AbortError) or when the popup is closed (the outer signal).
+    async function sendRecording(body, outer) {
+        // The popup can be closed while the recording is still being read, before
+        // the first attempt; an aborted signal never fires 'abort' again.
+        if (outer.aborted) throw new DOMException('The popup was closed.', 'AbortError');
+        const attempt = new AbortController();
+        const stop = () => attempt.abort();
+        outer.addEventListener('abort', stop, { once: true });
+        const timeout = setTimeout(stop, SCORE_TIMEOUT_MS);
+        clearTimeout(rec.slowTimer);
+        rec.slowTimer = setTimeout(() => {
+            if (rec.phase === 'processing') {
+                els.recHint.textContent = 'Still working – the first check after a server restart can take up to a minute.';
+            }
+        }, 8000);
+        try {
+            return await postJSON(API.score, body, { signal: attempt.signal });
+        } finally {
+            clearTimeout(timeout);
+            clearTimeout(rec.slowTimer);
+            outer.removeEventListener('abort', stop);
+        }
+    }
+
+    // Wait the time a busy server asked for, plus up to 2 s so that a class
+    // that was turned away together does not come back together, counting
+    // down in the popup. The recording is kept and sent again afterwards.
+    async function waitForBusyServer(seconds, signal) {
+        const until = performance.now() + (seconds + Math.random() * 2) * 1000;
+        els.recHint.textContent = 'Many people are practising right now.';
+        for (;;) {
+            const left = Math.ceil((until - performance.now()) / 1000);
+            if (left <= 0) break;
+            els.waveOverlayText.textContent = `The server is busy – sending your recording again in ${left} s…`;
+            await sleep(Math.min(1000, until - performance.now()), signal);
+        }
+        els.waveOverlayText.textContent = 'Analysing your pronunciation…';
+        els.recHint.textContent = 'This usually takes a few seconds.';
     }
 
     const blobToDataUrl = (blob) => new Promise((resolve, reject) => {

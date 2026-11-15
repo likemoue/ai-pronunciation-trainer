@@ -31,9 +31,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # requirements.lock: torch from the PyTorch CPU index, everything else from PyPI.
+  # requirements.lock: every package from PyPI.
   PIP_INDEX_URL: https://pypi.org/simple
-  PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
   SHELLCHECK_IMAGE: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
   ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
   TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
@@ -69,10 +68,8 @@ jobs:
       - name: workflows
         run: docker run --rm -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color
       - name: pip-audit
-        # torch is audited as the PyPI release its CPU build is made from.
         run: |
-          sed 's/+cpu//' requirements.lock > /tmp/requirements-audit.lock
-          .venv/bin/pip-audit --progress-spinner off --disable-pip --require-hashes -r /tmp/requirements-audit.lock
+          .venv/bin/pip-audit --progress-spinner off --disable-pip --require-hashes -r requirements.lock
           .venv/bin/pip-audit --progress-spinner off --disable-pip --require-hashes -r requirements-dev.lock
 
   test:

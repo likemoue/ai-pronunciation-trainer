@@ -47,6 +47,11 @@ _lock = threading.Lock()
 # espeak-ng, which Piper uses to phonemise text, is not thread-safe, and the
 # warm-up thread or another gthread thread can synthesise while a request does.
 _synth_lock = threading.Lock()
+# Texts this worker is synthesising or waiting to synthesise. Each holds a
+# gunicorn thread, so more than this are turned away with BusyError (the
+# browser then reads the text with its own voice) rather than queued.
+_SYNTH_QUEUE_LIMIT = int(os.environ.get('PIPER_QUEUE_LIMIT', '2'))
+_synth_pending = 0
 logger = logging_setup.get_logger(__name__)
 _onnxruntime = None
 _ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*m')
@@ -89,6 +94,10 @@ def import_onnxruntime():
 
 class TextTooLongError(ValueError):
     """The text would take far longer to say than its length suggests."""
+
+
+class BusyError(RuntimeError):
+    """This worker is already synthesising as many texts as it takes."""
 
 
 # The Docker image keeps the voices in PIPER_MODEL_DIR (Dockerfile); a
@@ -235,14 +244,85 @@ def _split_dense_piece(model, piece, phonemes):
             for smaller in _split_dense_piece(model, part, _phoneme_count(model, part))]
 
 
-def generate_wav_base64(text, language='en'):
-    global _cache_bytes
-    key = f'{language}:{hashlib.md5(text.encode()).hexdigest()}'
+def _cached(key):
     with _lock:
         if key in _cache:
             _cache.move_to_end(key)
             return _cache[key]
+    return None
 
+
+def _remember(key, value):
+    """Bounded LRU: users can submit arbitrary text, so the cache must not grow forever."""
+    global _cache_bytes
+    with _lock:
+        if key not in _cache:
+            _cache[key] = value
+            _cache_bytes += len(value)
+        _cache.move_to_end(key)
+        while _cache_bytes > _CACHE_MAX_BYTES and len(_cache) > 1:
+            _, evicted = _cache.popitem(last=False)
+            _cache_bytes -= len(evicted)
+    return value
+
+
+def generate_wav_base64(text, language='en'):
+    key = f'{language}:wav:{hashlib.md5(text.encode()).hexdigest()}'
+    cached = _cached(key)
+    if cached is not None:
+        return cached
+    return _remember(key, base64.b64encode(_synthesize_limited(text, language)).decode('utf-8'))
+
+
+def generate_mp3(text, language='en'):
+    """The text read aloud as MP3, mono at MP3_BITRATE: about a tenth of the
+    size of the WAV (served to browsers for bank sentences, webApp.py)."""
+    key = f'{language}:mp3:{hashlib.md5(text.encode()).hexdigest()}'
+    cached = _cached(key)
+    if cached is not None:
+        return cached
+    return _remember(key, encode_mp3(_synthesize_limited(text, language)))
+
+
+MP3_BITRATE = os.environ.get('PIPER_MP3_BITRATE', '48k')
+# Encoding a few seconds of speech takes ffmpeg well under a second.
+_MP3_TIMEOUT_SECONDS = 15
+
+
+def encode_mp3(wav_bytes) -> bytes:
+    import subprocess
+
+    import audioPreprocessing
+    command = [audioPreprocessing.ffmpeg_binary(), '-nostdin', '-hide_banner', '-loglevel', 'error',
+               '-filter_threads', '1', '-f', 'wav', '-i', 'pipe:0', '-ac', '1', '-codec:a', 'libmp3lame',
+               '-b:a', MP3_BITRATE, '-threads', '1', '-f', 'mp3', 'pipe:1']
+    try:
+        result = subprocess.run(command, input=wav_bytes, capture_output=True, timeout=_MP3_TIMEOUT_SECONDS,
+                                check=False)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError('Encoding MP3 took too long.') from None
+    if result.returncode != 0 or not result.stdout:
+        detail = result.stderr.decode('utf-8', 'replace').strip()[-300:]
+        raise RuntimeError(f'Could not encode MP3: {detail or result.returncode}')
+    return result.stdout
+
+
+def _synthesize_limited(text, language):
+    """Synthesise unless this worker already has _SYNTH_QUEUE_LIMIT texts in
+    hand (BusyError). Returns the WAV file's bytes."""
+    global _synth_pending
+    with _lock:
+        if _synth_pending >= _SYNTH_QUEUE_LIMIT:
+            raise BusyError(f'{_synth_pending} texts are being synthesised')
+        _synth_pending += 1
+    try:
+        return _synthesize_wav(text, language)
+    finally:
+        with _lock:
+            _synth_pending -= 1
+
+
+def _synthesize_wav(text, language):
     model = _load_model(language)
     pieces = split_for_synthesis(text)
     wav_buffer = io.BytesIO()
@@ -264,18 +344,7 @@ def generate_wav_base64(text, language='en'):
                 wav_file.setsampwidth(2)
                 wav_file.setframerate(16000)
                 raise ValueError('The text produced no audio.')
-    result = base64.b64encode(wav_buffer.getvalue()).decode('utf-8')
-
-    # Bounded LRU: users can submit arbitrary text, so the cache must not grow forever.
-    with _lock:
-        if key not in _cache:
-            _cache[key] = result
-            _cache_bytes += len(result)
-        _cache.move_to_end(key)
-        while _cache_bytes > _CACHE_MAX_BYTES and len(_cache) > 1:
-            _, evicted = _cache.popitem(last=False)
-            _cache_bytes -= len(evicted)
-    return result
+    return wav_buffer.getvalue()
 
 
 def is_linux():

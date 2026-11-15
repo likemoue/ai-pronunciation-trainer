@@ -16,11 +16,9 @@ ARG PYTHON_IMAGE=python:3.12.16-slim-trixie@sha256:5e2bdb1b0d542d5039cffb8181c65
 FROM ${PYTHON_IMAGE} AS deps
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_INDEX_URL=https://pypi.org/simple \
-    PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
+    PIP_INDEX_URL=https://pypi.org/simple
 COPY requirements.lock scripts/pip_install_locked.sh /tmp/
 # Every file is checked against its sha256 in the lock, the build backend too.
-# torch is the CPU build from the PyTorch index; everything else comes from PyPI.
 RUN python -m venv --without-pip /opt/venv \
     && bash /tmp/pip_install_locked.sh /opt/venv/bin/python /tmp/requirements.lock
 
@@ -31,7 +29,7 @@ COPY model_pins.py /tmp/build/
 COPY scripts/download_models.py /tmp/build/scripts/
 # The English voice to bake in (model_pins.PIPER_VOICES); empty means the default.
 ARG PIPER_VOICE_EN=
-RUN PIPER_VOICE_EN="${PIPER_VOICE_EN}" WHISPER_DIR=/models/whisper-base PIPER_MODEL_DIR=/models/piper \
+RUN PIPER_VOICE_EN="${PIPER_VOICE_EN}" WHISPER_DIR=/models/faster-whisper-base PIPER_MODEL_DIR=/models/piper \
     python /tmp/build/scripts/download_models.py
 
 # ------------------------------------------------------------------ runtime
@@ -71,14 +69,25 @@ COPY static/ static/
 COPY templates/ templates/
 
 ARG PIPER_VOICE_EN=
+# GOMP_SPINCOUNT: CTranslate2's OpenMP threads (GNU libgomp, 5 per worker) wait
+# for their next task by spinning on a CPU, by default for 300,000 rounds. When
+# both colours score at once during a deploy, the spinning threads of one took
+# the CPUs from the other, and recordings took ten times longer. 10,000 rounds
+# keep the same speed for one colour. The setting reaches GNU OpenMP only.
+# OPENBLAS_NUM_THREADS: numpy's and scipy's OpenBLAS each started 4 helper
+# threads per worker (they read OMP_NUM_THREADS), and numpy's spun for about
+# 0.1 s after each small matrix product of the pipeline, about a tenth of a
+# recording's CPU. One thread does those products in under a millisecond.
 ENV HF_HUB_OFFLINE=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
     HF_HUB_DISABLE_PROGRESS_BARS=1 \
     ORT_DISABLE_TELEMETRY=1 \
-    WHISPER_MODEL=/models/whisper-base \
+    WHISPER_MODEL=/models/faster-whisper-base \
     PIPER_MODEL_DIR=/models/piper \
     PIPER_VOICE_EN=${PIPER_VOICE_EN} \
     OMP_NUM_THREADS=5 \
+    GOMP_SPINCOUNT=10000 \
+    OPENBLAS_NUM_THREADS=1 \
     OPEN_BROWSER=0 \
     ENABLED_LANGUAGES=en \
     PRELOAD_LANGUAGES=en \

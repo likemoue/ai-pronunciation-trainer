@@ -1,17 +1,39 @@
 
-import pandas as pd
+import hashlib
 import json
-import RuleBasedModels
 import random
+import re
 import threading
+
+import pandas as pd
+
+import RuleBasedModels
 import language_registry
+import piperTTS
 import validation
+
+
+AUDIO_KEY = re.compile(r'[0-9a-f]{16}')
+
+
+def recording_id(language: str) -> str:
+    """What a bank sentence's recording is made with: the voice and the MP3
+    bitrate. A change to either gives every sentence a new URL."""
+    return f'{piperTTS.VOICE_CONFIGS.get(language, "")} mp3 {piperTTS.MP3_BITRATE}'
+
+
+def audio_key(sentence: str, recording: str) -> str:
+    """The name of a bank sentence's recording (/tts/<language>/<key>.mp3). It
+    depends on the sentence and on how it is recorded (recording_id) only, so
+    the URL stays the same from one release to the next while neither changes,
+    and browsers and Cloudflare can keep the file for good."""
+    return hashlib.sha256('\n'.join((recording, sentence)).encode('utf-8')).hexdigest()[:16]
 
 
 class SentenceBank:
     """Practice sentences of one language, pre-sorted by difficulty category."""
 
-    def __init__(self, sentences):
+    def __init__(self, sentences, recording=''):
         # Normalise once at load time with the same rules as custom text, so the
         # sentence the browser shows is exactly the one the scorer receives back.
         self.sentences = [validation.normalize_text(str(s)) for s in sentences]
@@ -21,12 +43,16 @@ class SentenceBank:
             self.by_category[category] = []
         for idx, sentence in enumerate(self.sentences):
             self.by_category[getSentenceCategory(sentence)].append(idx)
+        self.recording = recording
+        self.keys = [audio_key(sentence, recording) for sentence in self.sentences]
+        self.by_key = dict(zip(self.keys, self.sentences, strict=True))
 
-    def pick(self, category: int) -> str:
+    def pick(self, category: int) -> int:
+        """The index of a random sentence of the category."""
         indices = self.by_category.get(category)
         if not indices:
             raise ValueError(f'No sentences in category {category}.')
-        return self.sentences[random.choice(indices)]
+        return random.choice(indices)
 
     def __len__(self):
         return len(self.sentences)
@@ -45,17 +71,30 @@ def _ensure_initialized(language):
         config = language_registry.get(language)
         df = pd.read_csv(config.csv_path, delimiter=';')
         _ipa_converter_cache[language] = RuleBasedModels.get_phonem_converter(language)
-        _database_cache[language] = SentenceBank(df['sentence'].tolist())
+        _database_cache[language] = SentenceBank(df['sentence'].tolist(),
+                                                 recording=recording_id(language))
 
 
 def sample(category: int, language: str) -> dict:
     """Pick a random practice sentence. category: 0 = any, 1 = easy, 2 = medium, 3 = hard."""
     category = validation.category(category)
     _ensure_initialized(language)
-    sentence = _database_cache[language].pick(category)
+    bank = _database_cache[language]
+    index = bank.pick(category)
+    sentence = bank.sentences[index]
     return {'real_transcript': [sentence],
             'ipa_transcript': _ipa_converter_cache[language].convertToPhonem(sentence),
-            'transcript_translation': ''}
+            'transcript_translation': '',
+            # The reference voice for this sentence, as a cacheable MP3 (webApp.py).
+            'tts_url': f'/tts/{language}/{bank.keys[index]}.mp3'}
+
+
+def sentence_for_audio_key(language: str, key: str):
+    """The bank sentence whose recording is named key, or None."""
+    if not AUDIO_KEY.fullmatch(key or ''):
+        return None
+    _ensure_initialized(language)
+    return _database_cache[language].by_key.get(key)
 
 
 def lambda_handler(event, context):

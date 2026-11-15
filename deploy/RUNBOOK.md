@@ -310,14 +310,19 @@ curl -s http://127.0.0.1:3000/readyz                       # 200 once every work
 Every line of the app's log is a JSON object (`docker logs ai-pronunciation-trainer-blue 2>&1 | jq -R 'fromjson? // .'`
 also shows any line that is not):
 * gunicorn's access log: `rid`, `m`, `path`, `status`, `bytes`, `ms`, `pid`; no client IP, query string or body;
-* one `scored` line per recording, with `decode_ms`, `lock_wait_ms`, `asr_ms`, `match_ms`, `total_ms`,
-  `audio_s`, `words`, `accuracy` and `outcome` (`ok`, `no_speech`, `too_long`, `bad_audio`, `error`), but never
-  the text or the audio;
+* one `scored` line per recording, with `queue_ahead` (recordings already on that worker), `decode_ms`,
+  `lock_wait_ms`, `asr_ms`, `match_ms`, `total_ms`, `audio_s`, `words`, `accuracy` and `outcome` (`ok`,
+  `no_speech`, `too_long`, `bad_audio`, `busy` with `retry_after_s`, `client_gone`, `error`), but never the text
+  or the audio. `busy` means the worker held as many recordings as it takes and answered 503 with Retry-After
+  (the page sends the recording again); many of them outside a class burst mean the server is too slow for its
+  load. `client_gone` means the learner gave up while the recording waited, and it was not scored;
 * app warnings and errors with the request id (`rid`), and tracebacks in `exc`;
 * gunicorn's own messages (worker start and exit).
 
-Libraries that log through Python's root logger, and transformers, log errors only, and transformers shows no
-progress bars. ONNX Runtime writes its own messages to stderr and reports errors only; what it says while it is
+Libraries that log through Python's root logger log errors only (faster-whisper would log every transcription
+at INFO). The smoke test (deploy.sh's checks and the canary) sends a recording or a text again after a 503 busy
+answer, as the page does, so a class at work neither fails a deploy nor sets off the canary; it prints
+`busy (503), sending it again in N s` when that happens. ONNX Runtime writes its own messages to stderr and reports errors only; what it says while it is
 imported (on some virtual machines, a warning that the display is not a PCI device) is logged as a JSON line from
 `aipt.piperTTS`. The proxy keeps no access log; it logs its own warnings and errors. Errors that the proxy answers
 itself (a body over 5 MB, a colour that does not answer) are JSON like the app's (`request_entity_too_large`,

@@ -5,8 +5,12 @@
 import logging_setup
 logging_setup.configure()
 
+import hashlib  # noqa: E402
+import mimetypes  # noqa: E402
 import os  # noqa: E402
 import re  # noqa: E402
+import select  # noqa: E402
+import socket  # noqa: E402
 import threading  # noqa: E402
 import time  # noqa: E402
 import uuid  # noqa: E402
@@ -25,6 +29,9 @@ import validation  # noqa: E402
 
 logger = logging_setup.get_logger(__name__)
 _STARTED_AT = time.time()
+# The slim image has no /etc/mime.types, and Python's own table may not know
+# the font format: without this the fonts go out as application/octet-stream.
+mimetypes.add_type('font/woff2', '.woff2')
 
 app = Flask(__name__)
 # Largest request body accepted. A 30 s browser recording is well under 1 MB,
@@ -33,15 +40,15 @@ app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_REQUEST_BYTES', str(4
 
 rootPath = ''
 
-_STATIC_ASSETS = ('static/css/style.css', 'static/javascript/app.js')
+_STATIC_ASSETS = ('css/style.css', 'javascript/app.js')
 
-# The page loads its own script and stylesheet, Google Fonts, and the
-# Cloudflare Web Analytics beacon that the CDN injects.
+# The page loads its own script, stylesheet and fonts, and the Cloudflare Web
+# Analytics beacon that the CDN injects.
 CONTENT_SECURITY_POLICY = '; '.join([
     "default-src 'self'",
     "script-src 'self' https://static.cloudflareinsights.com",
-    "style-src 'self' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self'",
+    "font-src 'self'",
     "img-src 'self' data:",
     "media-src 'self' blob: data:",
     "connect-src 'self' https://cloudflareinsights.com",
@@ -60,18 +67,69 @@ SECURITY_HEADERS = {
 
 
 def _asset_version() -> str:
-    """Cache-busting token that changes whenever the CSS/JS bundle changes."""
-    base = os.path.dirname(os.path.abspath(__file__))
-    mtimes = [os.path.getmtime(os.path.join(base, path))
-              for path in _STATIC_ASSETS if os.path.exists(os.path.join(base, path))]
-    return str(int(max(mtimes))) if mtimes else '1'
+    """Cache-busting token for the stylesheet and the script: a hash of their
+    content, so the same files give the same token in every build and colour,
+    and a change to either gives a new one."""
+    digest = hashlib.sha256()
+    for path in _STATIC_ASSETS:
+        with open(os.path.join(app.static_folder, path), 'rb') as f:
+            digest.update(f.read())
+    return digest.hexdigest()[:12]
 
 
 ASSET_VERSION = _asset_version()
+# The page asks for /static/<asset>?v=ASSET_VERSION, and for the fonts, whose
+# names change with their content. Browsers and Cloudflare may keep those for a
+# year. Anything else under /static (an asset with an old or no version, during
+# a deploy or from a cached page) must be checked with the server each time.
+_IMMUTABLE = 'public, max-age=31536000, immutable'
+
+
+def _cache_control(response):
+    endpoint = request.endpoint
+    if endpoint == 'static':
+        filename = (request.view_args or {}).get('filename', '')
+        versioned = filename in _STATIC_ASSETS and request.args.get('v') == ASSET_VERSION
+        if response.status_code in (200, 304) and (versioned or filename.startswith('fonts/')):
+            return _IMMUTABLE
+        return 'no-cache'
+    if endpoint == 'main':
+        return 'no-cache'  # the page names the current asset versions
+    # The API answers with a learner's text and scores: never stored by a cache.
+    return response.headers.get('Cache-Control') or 'no-store'
 
 
 def _error(message, status, code='error'):
     return {"error": message, "code": code}, status
+
+
+def _busy(message, retry_after, code='busy'):
+    """503 with Retry-After: the client keeps what it sent and tries again."""
+    body, status = _error(message, 503, code)
+    body['retry_after'] = retry_after
+    return body, status, {'Retry-After': str(retry_after)}
+
+
+def _client_gone_check():
+    """A function that tells whether the client of this request has closed its
+    connection, or None outside gunicorn. Caddy closes its connection to the
+    app when the browser gives up on a request (the learner closed the popup,
+    or the page's own timeout), so a recording that waited can be skipped."""
+    sock = request.environ.get('gunicorn.socket')
+    if sock is None or not hasattr(select, 'poll'):
+        return None
+
+    def gone() -> bool:
+        try:
+            poller = select.poll()
+            poller.register(sock, select.POLLIN)
+            if not poller.poll(0):
+                return False  # nothing to read: the connection is open and idle
+            # Readable with nothing to read means the other side closed it.
+            return sock.recv(1, socket.MSG_PEEK) == b''
+        except OSError:
+            return True
+    return gone
 
 
 # A Ray ID is 16 hex digits and the code of the Cloudflare data centre.
@@ -93,6 +151,7 @@ def _add_headers(response):
     for name, value in SECURITY_HEADERS.items():
         response.headers.setdefault(name, value)
     response.headers['X-Request-ID'] = g.get('request_id', '')
+    response.headers['Cache-Control'] = _cache_control(response)
     return response
 
 
@@ -168,6 +227,9 @@ def getAudioFromText():
         return _error('Server-side TTS is not available.', 503, 'tts_unavailable')
     try:
         wav_b64 = piperTTS.generate_wav_base64(text, language=language)
+    except piperTTS.BusyError:
+        # Temporary: the browser reads this text with its own voice.
+        return _busy('The server is busy reading other texts aloud.', 2, 'tts_busy')
     except piperTTS.TextTooLongError as e:
         logger.warning('TTS text refused: %s', e)
         return _error('This text is too long to read aloud.', 400, 'text_too_long')
@@ -176,6 +238,32 @@ def getAudioFromText():
         # Temporary: the browser falls back to its own voice for this text only.
         return _error('Could not generate audio.', 503, 'tts_failed')
     return {"wavBase64": wav_b64}
+
+
+@app.route(rootPath+'/tts/<language>/<key>.mp3')
+def bankSentenceAudio(language, key):
+    """The reference voice reading a bank sentence, as MP3. The URL names the
+    sentence and the voice (lambdaGetSample.audio_key), so the file never
+    changes: browsers and Cloudflare keep it, and most learners who get the
+    same sentence never reach the server. Other texts go through
+    /getAudioFromText."""
+    if not language_registry.is_enabled(language):
+        abort(404)
+    sentence = lambdaGetSample.sentence_for_audio_key(language, key)
+    if sentence is None:
+        abort(404)
+    if not (piperTTS.is_available() and language in piperTTS.VOICE_CONFIGS):
+        return _error('Server-side TTS is not available.', 503, 'tts_unavailable')
+    try:
+        mp3 = piperTTS.generate_mp3(sentence, language=language)
+    except piperTTS.BusyError:
+        return _busy('The server is busy reading other texts aloud.', 2, 'tts_busy')
+    except Exception:
+        logger.exception('TTS failed')
+        return _error('Could not generate audio.', 503, 'tts_failed')
+    response = app.response_class(mp3, mimetype='audio/mpeg')
+    response.headers['Cache-Control'] = _IMMUTABLE
+    return response
 
 
 @app.route(rootPath+'/getSample', methods=['POST'])
@@ -201,7 +289,12 @@ def GetAccuracyFromRecordedAudio():
     audio = validation.audio_bytes(body.get('base64Audio'))
 
     try:
-        return lambdaSpeechToScore.score(title, audio, language)
+        return lambdaSpeechToScore.score(title, audio, language, client_gone=_client_gone_check())
+    except lambdaSpeechToScore.ServerBusyError as e:
+        return _busy('The server is busy. Your recording will be sent again in a moment.', e.retry_after)
+    except lambdaSpeechToScore.ClientGoneError:
+        # Nobody reads this answer; 499 marks it in the access log, as nginx does.
+        return _error('The client closed the connection.', 499, 'client_gone')
     except lambdaSpeechToScore.NoSpeechError:
         return _error("We couldn't recognise any speech.", 422, 'no_speech')
     except audioPreprocessing.AudioTooLongError:

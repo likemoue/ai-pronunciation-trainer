@@ -22,24 +22,19 @@ DOWNLOAD_TIMEOUT = 60
 DOWNLOAD_ATTEMPTS = 3
 RETRY_DELAY = 10
 
-# Whisper base at a fixed commit of https://huggingface.co/openai/whisper-base.
-WHISPER_REPO = 'openai/whisper-base'
-WHISPER_REVISION = 'e37978b90ca9030d5170a5c07aadb050351a65bb'
+# Whisper base (the weights of openai/whisper-base) converted to CTranslate2
+# for faster-whisper, at a fixed commit of
+# https://huggingface.co/Systran/faster-whisper-base (MIT, as Whisper). The
+# weights are float16; whisper_wrapper.py quantises them to int8 when it loads them.
+WHISPER_REPO = 'Systran/faster-whisper-base'
+WHISPER_REVISION = 'ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66'
 WHISPER_URL = 'https://huggingface.co/{repo}/resolve/{revision}/{file}'
-# The files transformers loads, with their sha256 at that commit (the weights
-# only as safetensors; the repository also has them as .bin, .h5 and .msgpack).
+# Every file faster-whisper loads, with its sha256 at that commit.
 WHISPER_FILES = {
-    'added_tokens.json': '9715fd2243b6f06a5858b5e32950d2853f73dd5bc201aafcf76f5082a2d8acd1',
-    'config.json': 'a153c53883a6799b6f056b4a8d1a515c9926d03994682ba88a7616618d7da0c1',
-    'generation_config.json': '444b3f636d2fff89dd9ecf549e2a085b61f7ff0fa0246d4628bac6a3b8cc9ba4',
-    'merges.txt': '2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6',
-    'model.safetensors': '07cadb9f25677c8d50df603e66a98fbd842cce45047139baeb16e6219a1e807b',
-    'normalizer.json': 'bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd',
-    'preprocessor_config.json': '9b5cd03a36fbb8a627c64d98a5b5b126ead95a77720723944487311f0110b666',
-    'special_tokens_map.json': 'e67ae3a0aaa99abcd9f187138e12db1f65c16a14761c50ef10eef2c174a7a691',
-    'tokenizer.json': '27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566',
-    'tokenizer_config.json': '2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce',
-    'vocab.json': '8f680bba319e01a653d2e8a5dbc17a9157179e0576e6ce74ce0c06356c6e24f9',
+    'config.json': '56a6d8110d311f19c8f0471e562832c7527f146b567275bfca59fcf7c184da9a',
+    'model.bin': 'd01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9',
+    'tokenizer.json': 'fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab',
+    'vocabulary.txt': '34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913',
 }
 
 PIPER_VOICE_URL = 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/{path}/{file}?download=true'

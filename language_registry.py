@@ -10,6 +10,7 @@ class LanguageConfig:
     phonem_type: str
     phonem_args: dict
     csv_path: str
+    # Whisper's code for the language (faster-whisper takes codes, not names).
     asr_language: str
 
 
@@ -21,7 +22,7 @@ _REGISTRY = {
         phonem_type='epitran',
         phonem_args={'language_code': 'deu-Latn'},
         csv_path='./databases/data_de.csv',
-        asr_language='german',
+        asr_language='de',
     ),
     'en': LanguageConfig(
         asr_use_whisper=True,
@@ -30,7 +31,7 @@ _REGISTRY = {
         phonem_type='eng_to_ipa',
         phonem_args={},
         csv_path='./databases/data_en.csv',
-        asr_language='english',
+        asr_language='en',
     ),
 }
 

@@ -24,7 +24,6 @@ import threading
 from typing import NamedTuple
 
 import numpy as np
-import torch
 
 
 class AudioDecodeError(ValueError):
@@ -50,9 +49,14 @@ _CODEC_WHITELIST = 'opus,aac,pcm_s16le,pcm_f32le'
 # frames). A 30 s recording needs a few MB.
 _MAX_ALLOC_BYTES = 64 * 1024 * 1024
 _STDERR_LINES = 20
+# ffmpeg processes one worker runs at once. A recording decodes in about 0.1 s
+# and then waits for the model anyway, so a burst loses nothing by queueing
+# here, while 20 decodes at once per worker, each with its own threads, came
+# close to the colour's --pids-limit of 512 (deploy/deploy.sh).
+_DECODE_SLOTS = threading.BoundedSemaphore(int(os.environ.get('AUDIO_DECODE_CONCURRENCY', '4')))
 
 
-def _ffmpeg_binary() -> str:
+def ffmpeg_binary() -> str:
     return os.environ.get('FFMPEG_BINARY') or shutil.which('ffmpeg') or 'ffmpeg'
 
 
@@ -148,8 +152,8 @@ def _close_quietly(stream):
         pass
 
 
-def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
-    """Return the recording as a float32 tensor of shape [1, samples] at target_rate."""
+def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> np.ndarray:
+    """Return the recording as float32 samples of shape [1, samples] at target_rate."""
     if not raw_bytes:
         raise AudioDecodeError('Empty recording.')
 
@@ -168,8 +172,12 @@ def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
             source, protocols, stdin_bytes = 'pipe:0', 'pipe', raw_bytes
 
         command = [
-            _ffmpeg_binary(), '-nostdin', '-hide_banner', '-loglevel', 'error',
+            ffmpeg_binary(), '-nostdin', '-hide_banner', '-loglevel', 'error',
             '-max_alloc', str(_MAX_ALLOC_BYTES),
+            # One thread for the filters and one for the decoder, instead of
+            # one per CPU each: a class's recordings are decoded side by side,
+            # and every thread counts against the colour's --pids-limit.
+            '-filter_threads', '1', '-threads', '1',
             # A recording has one audio stream. A 41 KB WebM with 128 Opus
             # tracks of 255 channels each took 6.6 GB without this.
             '-max_streams', '1',
@@ -182,7 +190,8 @@ def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
             '-ac', '1', '-ar', str(target_rate),
             '-f', 'f32le', 'pipe:1',
         ]
-        result = _run_ffmpeg(command, stdin_bytes, max_output_bytes)
+        with _DECODE_SLOTS:
+            result = _run_ffmpeg(command, stdin_bytes, max_output_bytes)
     finally:
         if tmp_path:
             try:
@@ -208,4 +217,4 @@ def decode_audio(raw_bytes: bytes, target_rate: int = 16000) -> torch.Tensor:
     if samples.size == 0:
         raise AudioDecodeError('The recording contains no audio.')
 
-    return torch.from_numpy(samples.copy()).unsqueeze(0)
+    return samples.copy().reshape(1, -1)

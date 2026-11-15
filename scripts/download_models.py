@@ -6,7 +6,7 @@ Standard library only, so the Docker stage that runs it does not depend on
 requirements.lock.
 
 * Whisper: the files of WHISPER_REVISION go to WHISPER_DIR (default
-  /models/whisper-base).
+  /models/faster-whisper-base).
 * Piper: the voice named by PIPER_VOICE_EN (default model_pins.DEFAULT_ENGLISH_VOICE)
   goes to PIPER_MODEL_DIR (default /models/piper).
 
@@ -21,7 +21,7 @@ import model_pins  # noqa: E402
 
 
 def main():
-    whisper_dir = os.environ.get('WHISPER_DIR', '/models/whisper-base')
+    whisper_dir = os.environ.get('WHISPER_DIR', '/models/faster-whisper-base')
     model_pins.download_whisper(whisper_dir)
     for name in sorted(model_pins.WHISPER_FILES):
         print(f'{model_pins.WHISPER_REPO}@{model_pins.WHISPER_REVISION[:7]}: {name} ok')
