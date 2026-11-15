@@ -197,9 +197,18 @@ class PronunciationTrainer:
     def getPronunciationCategoryFromAccuracy(self, accuracy) -> int:
         return np.argmin(abs(self.categories_thresholds-accuracy))
 
+    # The recording is scaled by a level that one loud click cannot set: the
+    # 99.5th percentile of its samples is brought to 1/1.5 of full scale, and
+    # the few samples above (a tap on Record, the loudest syllables) are
+    # clipped. Scaled by its peak, a short phrase spoken softly after a tap
+    # 30-50 dB louder stayed too quiet for Whisper and was refused as no
+    # speech (evaluation/report.md, soft_tap).
+    LEVEL_PERCENTILE = 99.5
+    LEVEL_HEADROOM = 1.5
+
     def preprocessAudio(self, audio: np.ndarray) -> np.ndarray:
         audio = audio-np.mean(audio)
-        peak = np.max(np.abs(audio))
-        if peak > 0:
-            audio = audio/peak
-        return audio
+        level = np.percentile(np.abs(audio), self.LEVEL_PERCENTILE) if audio.size else 0.0
+        if level > 0:
+            audio = np.clip(audio / (level * self.LEVEL_HEADROOM), -1.0, 1.0)
+        return audio.astype(np.float32, copy=False)

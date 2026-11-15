@@ -31,12 +31,12 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
    memory and time (`audioPreprocessing.py`), single-threaded and at most 4 at a time per worker.
 3. [Whisper base](https://huggingface.co/openai/whisper-base), run by
    [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2, int8 on CPU), transcribes it with a
-   timestamp for every word. Silence gives no words, nor does a window that Whisper rates as probably not
-   speech: synthetic noise gave none in 56 of 56 test recordings, as WAV and as the page's WebM/Opus. Noise
-   recorded through Chrome, whose noise suppression shapes it, still gave words in about one of six recordings
-   of 5-8 s. The transformers pipeline invented a sentence for every noise recording. A short phrase spoken very
-   softly, next to a tap on the phone far louder than the voice, can be rated as not speech too: the learner is
-   asked to speak louder.
+   timestamp for every word. Before it, the recording is scaled by a level a single loud click cannot set (the
+   99.5th percentile of its samples), so a soft phrase after a much louder tap on Record is heard, and Silero
+   VAD keeps recordings without speech from Whisper. Silence gives no words, nor does a window that Whisper
+   rates as probably not speech. On the evaluation set, 10 of 11 recordings of noise are refused as no speech,
+   among them white noise recorded by the page, which Whisper alone heard as "I'm sorry."; noise recorded
+   through Chrome's capture path, whose noise suppression shapes it, can still give words.
 4. Both the sentence and the transcript are read as their words are said ("2:30" as "two thirty", "3-day" as
    "three day", "OK" and "okay" alike, and homophones and British or American spellings counted as the same word
    by the CMU dictionary), then aligned word by word (an edit-distance alignment, `WordMatching.py`: a word left

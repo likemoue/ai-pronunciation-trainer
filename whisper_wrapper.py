@@ -7,7 +7,8 @@ the same settings (greedy decoding, the language pinned to English, word
 timestamps), a recording is transcribed about twice as fast, in a fraction
 of the memory, and noise usually gives an empty transcript instead of an
 invented sentence: a window that Whisper rates as probably not speech is
-dropped.
+dropped. Since phase 3, a recording in which Silero VAD hears no speech at all
+is not sent to Whisper (has_speech).
 """
 import os
 import re
@@ -84,6 +85,13 @@ class WhisperASRModel(IASRModel):
         # phrase until the window ends. 160 tokens comfortably cover a
         # 300-character practice text.
         self.max_new_tokens = _int_env('WHISPER_MAX_NEW_TOKENS', 160)
+        # Silero VAD (faster-whisper's, MIT) before Whisper: a recording in which
+        # no 32 ms window is speech with probability VAD_THRESHOLD or more is
+        # not sent to Whisper at all, which invented "I'm sorry." for white
+        # noise recorded by the page. On the evaluation set every recording of
+        # speech has a window above 0.87 and 10 of 11 of noise none above 0.32
+        # (scaled by preprocessAudio's level). 0 turns the gate off.
+        self.vad_threshold = float(os.environ.get('VAD_THRESHOLD', '0.5'))
         self.sample_rate = 16000
         self._transcript = ''
         self._word_locations = []
@@ -94,6 +102,8 @@ class WhisperASRModel(IASRModel):
         self._transcript = ''
         self._word_locations = []
         samples = np.ascontiguousarray(np.asarray(audio, dtype=np.float32).reshape(-1))
+        if not self.has_speech(samples):
+            return
         segments, _ = self.model.transcribe(
             samples, language=self.language, task='transcribe',
             # Greedy decoding without temperature fallback, as the transformers
@@ -113,16 +123,25 @@ class WhisperASRModel(IASRModel):
             # noise recorded by the page (WebM/Opus) came back as "I'm going to
             # get a little bit of a". In the tests, noise was rated 0.65-0.80,
             # and sentences of three words or more at a normal level 0.46 at
-            # most. A short phrase spoken very softly can go above 0.6 (up to
-            # 0.66) and is refused as no speech, which asks the learner to
-            # speak louder: the recording is scaled by its peak
-            # (preprocessAudio), so a tap on the phone far louder than the
-            # voice makes the voice quieter still.
+            # most. A short phrase spoken very softly could go above 0.6 (up
+            # to 0.66) while recordings were scaled by their peak, which a tap
+            # on the phone far louder than the voice set; preprocessAudio now
+            # scales by a level such a tap cannot set.
             no_speech_threshold=0.6, log_prob_threshold=None,
             max_new_tokens=self.max_new_tokens)
         self._transcript, self._word_locations = words_and_locations(
             [(word.word, word.start, word.end) for segment in segments for word in (segment.words or [])],
             self.sample_rate)
+
+    def has_speech(self, samples) -> bool:
+        """Whether Silero VAD hears speech anywhere in the recording (always
+        True with the gate off). Its model runs on one thread, in about 30 ms
+        for a 10 s recording on the development machine."""
+        if self.vad_threshold <= 0:
+            return True
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+        options = VadOptions(threshold=self.vad_threshold, min_speech_duration_ms=0, speech_pad_ms=0)
+        return bool(get_speech_timestamps(samples, options, sampling_rate=self.sample_rate))
 
     def getTranscript(self) -> str:
         return self._transcript

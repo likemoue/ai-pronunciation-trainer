@@ -153,10 +153,10 @@ and a burst can turn a few away from one worker while the other has room;
 a Caddy reload can fail a request at that instant: one sent on an idle keep-alive connection, or, rarely, a new
 connection that Caddy resets; nothing on the VM limits requests per client: Caddy holds request bodies in up to 1 GB (it
 held about 110 uploads of 4.9 MB at once), and beyond that the kernel can kill it, which cuts every request
-through port 3000 until docker has restarted it; and a short phrase spoken very softly, next to a tap on the phone far
-louder than the voice, is refused as no speech, because `preprocessAudio` scales a recording by its peak (phase 3:
-scale by a robust level instead). On the server, white noise recorded by the page in Chromium was transcribed as
-"I'm sorry." (4 of 4) instead of "no speech" (phase 3: voice activity detection). The VM (Proxmox VM 209)
+through port 3000 until docker has restarted it. Noise recorded through Chrome's capture path (its noise suppression
+on) can still be transcribed as a sentence (1 of 3 in the evaluation set); since phase 3, Silero VAD keeps the rest of
+the noise from Whisper, which turned white noise recorded by the page into "I'm sorry.", and recordings are scaled by
+a robust level, so a soft phrase after a much louder tap on the phone is heard (15 of 15, refused before). The VM (Proxmox VM 209)
 runs with `cpu: host` since 2026-11-15, on a Xeon E5-2670 v2 (Ivy Bridge): AVX, but no AVX2, FMA or AVX-512
 (`x86-64-v3` needs AVX2 and would not start). Whisper takes about 1.8 s per recording there, against 0.6-0.8 s on a
 dev machine with AVX2, and a class of 40 at once waits up to 40 s; int8 stays faster than float32 on it (4.7 s

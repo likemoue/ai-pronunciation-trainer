@@ -23,12 +23,13 @@ def word(text, start, end):
     return SimpleNamespace(word=text, start=start, end=end, probability=0.9)
 
 
-def wrapper_with(segments, max_new_tokens=160):
+def wrapper_with(segments, max_new_tokens=160, vad_threshold=0.0):
     model = whisper_wrapper.WhisperASRModel.__new__(whisper_wrapper.WhisperASRModel)
     model.model = FakeWhisperModel(segments)
     model.language = 'en'
     model.max_new_tokens = max_new_tokens
     model.sample_rate = 16000
+    model.vad_threshold = vad_threshold
     return model
 
 
@@ -101,3 +102,73 @@ def test_decoding_is_greedy_english_with_word_timestamps():
     assert kwargs['condition_on_previous_text'] is False
     assert kwargs['max_new_tokens'] == 99
     assert 'vad_filter' not in kwargs or kwargs['vad_filter'] is False
+
+
+@pytest.fixture(scope='module')
+def spoken_sentence():
+    """A Piper reading from the evaluation set, decoded as an upload."""
+    import os
+    import audioPreprocessing
+    from conftest import ROOT, ffmpeg_binary
+    if not ffmpeg_binary():
+        pytest.skip('ffmpeg is not installed')
+    with open(os.path.join(ROOT, 'evaluation', 'clips', 'learner-01-clean.webm'), 'rb') as f:
+        return audioPreprocessing.decode_audio(f.read(), 16000)
+
+
+@pytest.mark.parametrize('kind', ['silence', 'white noise', 'hum'])
+def test_no_speech_is_not_sent_to_whisper(kind):
+    pytest.importorskip('faster_whisper')
+    import pronunciationTrainer
+    t = np.arange(16000 * 3) / 16000
+    audio = {'silence': np.zeros(t.size), 'white noise': np.random.default_rng(1).uniform(-0.1, 0.1, t.size),
+             'hum': 0.05 * np.sin(2 * np.pi * 50 * t)}[kind].reshape(1, -1)
+    # As the trainer sends it: scaled by preprocessAudio.
+    audio = pronunciationTrainer.PronunciationTrainer(None, None).preprocessAudio(audio)
+    model = wrapper_with([SimpleNamespace(text=' Thank you.', words=[word(' Thank', 0.0, 0.3), word(' you.', 0.3, 0.6)])],
+                         vad_threshold=0.5)
+    model.processAudio(audio)
+    assert model.model.calls == []
+    assert model.getTranscript() == '' and model.getWordLocations() == []
+
+
+def test_speech_is_sent_to_whisper_whole(spoken_sentence):
+    pytest.importorskip('faster_whisper')
+    import pronunciationTrainer
+    audio = pronunciationTrainer.PronunciationTrainer(None, None).preprocessAudio(spoken_sentence)
+    model = wrapper_with([SimpleNamespace(text=' Who', words=[word(' Who', 0.4, 0.6)])], vad_threshold=0.5)
+    model.processAudio(audio)
+    samples, _ = model.model.calls[0]
+    assert samples.size == audio.size  # not cut to the speech
+    assert model.getTranscript() == 'Who'
+
+
+def test_the_gate_can_be_turned_off():
+    model = wrapper_with([], vad_threshold=0)
+    model.processAudio(np.zeros((1, 16000), dtype=np.float32))
+    assert len(model.model.calls) == 1
+
+
+def test_a_tap_far_louder_than_a_soft_voice_does_not_set_its_level():
+    # A soft "Yes." 3 s into a 6 s recording, after a tap on Record 50 dB
+    # louder. Scaled by its peak, the voice stayed at 0.003 of full scale.
+    import pronunciationTrainer
+    rate = 16000
+    audio = np.zeros(rate * 6)
+    audio[rate * 3:rate * 4] = 0.002 * np.sin(2 * np.pi * 220 * np.arange(rate) / rate)
+    tap = np.random.default_rng(0).standard_normal(480) * np.exp(-np.arange(480) / 64)
+    audio[2400:2880] += 0.7 * tap / np.abs(tap).max()
+    out = pronunciationTrainer.PronunciationTrainer(None, None).preprocessAudio(audio.reshape(1, -1))
+    assert out.dtype == np.float32 and out.shape == (1, rate * 6)
+    assert np.abs(out[0, rate * 3:rate * 4]).max() > 0.5
+    assert np.abs(out).max() <= 1.0
+
+
+def test_a_recording_without_a_tap_keeps_its_shape():
+    import pronunciationTrainer
+    t = np.arange(16000) / 16000
+    audio = (0.3 * np.sin(2 * np.pi * 220 * t) + 0.05).reshape(1, -1)
+    out = pronunciationTrainer.PronunciationTrainer(None, None).preprocessAudio(audio)
+    assert abs(float(out.mean())) < 1e-3  # the offset is removed
+    assert 0.6 < np.abs(out).max() <= 1.0
+    assert np.corrcoef(out[0], audio[0])[0, 1] > 0.99
