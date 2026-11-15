@@ -91,3 +91,21 @@ def test_a_spoken_sentence_has_no_word_added_after_it():
     padded = np.concatenate([np.zeros(rate // 2, np.float32), speech, np.zeros(rate, np.float32)])
     result = lambdaSpeechToScore.score(sentence, _wav(padded, rate), 'en')
     assert len(result['real_transcript'].split()) == len(sentence.split()), result['real_transcript']
+
+
+def test_a_single_word_followed_by_a_pause_is_scored():
+    # Learners often wait before they press Stop. Whisper's
+    # hallucination_silence_threshold dropped such a word as invented.
+    import base64
+    import io
+    import wave
+    import numpy as np
+    import lambdaSpeechToScore
+    import piperTTS
+    word = 'computer'
+    with wave.open(io.BytesIO(base64.b64decode(piperTTS.generate_wav_base64(word))), 'rb') as w:
+        rate = w.getframerate()
+        speech = np.frombuffer(w.readframes(w.getnframes()), dtype='<i2').astype(np.float32) / 32768
+    padded = np.concatenate([np.zeros(rate // 2, np.float32), speech, np.zeros(rate * 3, np.float32)])
+    result = lambdaSpeechToScore.score(word, _wav(padded, rate), 'en')
+    assert int(result['pronunciation_accuracy']) >= 60, result['real_transcript']

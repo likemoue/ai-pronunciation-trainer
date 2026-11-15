@@ -4,12 +4,13 @@ The weights are those of openai/whisper-base, converted to CTranslate2 by
 Systran (model_pins.WHISPER_*) and quantised to int8 when they are
 loaded. Compared with the transformers pipeline the app used before, with
 the same settings (greedy decoding, the language pinned to English, word
-timestamps), a recording is transcribed 2.5 to 5 times faster, in about a
-tenth of the memory, and noise gives an empty transcript instead of an
+timestamps), a recording is transcribed about twice as fast, in a fraction
+of the memory, and noise usually gives an empty transcript instead of an
 invented sentence: a window that Whisper rates as probably not speech, with
 little confidence in its words, is dropped.
 """
 import os
+import re
 from typing import Optional
 
 import numpy as np
@@ -30,6 +31,32 @@ def _int_env(name, default):
     return int(value) if value else default
 
 
+def words_and_locations(words, sample_rate=16000):
+    """The transcript and one location per word of it, from Whisper's timed
+    words [(text, start s, end s)].
+
+    The transcript is Whisper's text as it wrote it, its words being what the
+    trainer gets from transcript.split(). Whisper's word list is cut
+    differently: "well-known", "o'clock" or "2:30" come as two timed words, the
+    second without a space before it. Each word of the transcript gets the
+    span of the timed words it is made of, so the two lists line up one to one
+    (the trainer indexes both the same way).
+    """
+    text = ''
+    spans = []  # (first char, end char, start s, end s) of each timed word
+    for word, start, end in words:
+        spans.append((len(text), len(text) + len(word), start, end))
+        text += word
+    transcript_words, locations = [], []
+    for match in re.finditer(r'\S+', text):
+        times = [(start, end) for first, last, start, end in spans if first < match.end() and last > match.start()]
+        start, end = min(t[0] for t in times), max(t[1] for t in times)
+        transcript_words.append(match.group())
+        locations.append({'word': match.group(), 'start_ts': start * sample_rate, 'end_ts': end * sample_rate,
+                          'tag': 'processed'})
+    return ' '.join(transcript_words), locations
+
+
 class WhisperASRModel(IASRModel):
     def __init__(self, model_dir: Optional[str] = None, language: Optional[str] = None):
         # Imported here: the first import of onnxruntime must be piperTTS's
@@ -39,7 +66,9 @@ class WhisperASRModel(IASRModel):
         from faster_whisper import WhisperModel
 
         model_dir = model_dir or os.environ.get('WHISPER_MODEL') or DEFAULT_MODEL_DIR
-        if not os.path.isfile(os.path.join(model_dir, 'model.bin')):
+        # Any file missing (a first download that was interrupted) is fetched;
+        # the files already there are checked against their sha256.
+        if not all(os.path.isfile(os.path.join(model_dir, name)) for name in model_pins.WHISPER_FILES):
             for name in model_pins.download_whisper(model_dir):
                 logger.info('Downloaded Whisper file %s', name)
         # Each gunicorn worker scores one recording at a time (lambdaSpeechToScore),
@@ -75,20 +104,13 @@ class WhisperASRModel(IASRModel):
             # Without them it added a word ("you", "Thank you.") after the
             # sentence in 52 of 124 test recordings that end in half a second
             # of silence; with them, in none, and it ran three times faster.
-            # The silence threshold also drops what Whisper invents in a long
-            # pause, as it did for one recording of noise alone.
-            without_timestamps=False, word_timestamps=True, hallucination_silence_threshold=2.0,
+            # (hallucination_silence_threshold is not used: it also dropped a
+            # single real word followed by a pause.)
+            without_timestamps=False, word_timestamps=True,
             max_new_tokens=self.max_new_tokens)
-        # The transcript is built from the timed words, so its words and the
-        # word locations always line up one to one: the trainer indexes both
-        # the same way. Whisper attaches punctuation to the word before it.
-        timed = [(text, word.start, word.end) for segment in segments for word in (segment.words or [])
-                 for text in word.word.split()]
-        self._transcript = ' '.join(text for text, _, _ in timed)
-        self._word_locations = [{'word': text,
-                                 'start_ts': start * self.sample_rate,
-                                 'end_ts': end * self.sample_rate,
-                                 'tag': 'processed'} for text, start, end in timed]
+        self._transcript, self._word_locations = words_and_locations(
+            [(word.word, word.start, word.end) for segment in segments for word in (segment.words or [])],
+            self.sample_rate)
 
     def getTranscript(self) -> str:
         return self._transcript

@@ -57,6 +57,29 @@ def test_a_word_with_a_space_inside_becomes_two_words():
     assert [w['word'] for w in model.getWordLocations()] == ['New', 'York']
 
 
+@pytest.mark.parametrize('pieces,transcript', [
+    ([' It', ' is', ' well', '-known.'], 'It is well-known.'),
+    ([' at', ' five', ' o', "'clock."], "at five o'clock."),
+    ([' at', ' 2', ':30', ' today.'], 'at 2:30 today.'),
+    ([' Mr', '.', ' Smith'], 'Mr. Smith'),
+])
+def test_words_whisper_cuts_in_two_stay_one_word(pieces, transcript):
+    # Whisper times "well-known" as " well" and "-known"; joining its words
+    # with spaces scored a correct reading as two wrong words.
+    words = [(piece, n * 0.5, n * 0.5 + 0.4) for n, piece in enumerate(pieces)]
+    text, locations = whisper_wrapper.words_and_locations(words)
+    assert text == transcript
+    assert [loc['word'] for loc in locations] == transcript.split()
+    joined = next(loc for loc in locations if loc['word'] == transcript.split()[-1 if len(pieces) == 3 else 2])
+    assert joined['end_ts'] > joined['start_ts']
+
+
+def test_a_joined_word_spans_all_its_pieces():
+    text, locations = whisper_wrapper.words_and_locations([(' well', 1.0, 1.3), ('-known', 1.3, 1.9)])
+    assert text == 'well-known'
+    assert locations == [{'word': 'well-known', 'start_ts': 16000.0, 'end_ts': 1.9 * 16000, 'tag': 'processed'}]
+
+
 def test_no_speech_gives_an_empty_transcript():
     model = wrapper_with([])
     model.processAudio(np.zeros((1, 16000), dtype=np.float32))
@@ -73,7 +96,8 @@ def test_decoding_is_greedy_english_with_word_timestamps():
     assert kwargs['language'] == 'en' and kwargs['task'] == 'transcribe'
     assert kwargs['beam_size'] == 1 and kwargs['temperature'] == 0.0
     assert kwargs['word_timestamps'] is True and kwargs['without_timestamps'] is False
-    assert kwargs['hallucination_silence_threshold'] == 2.0
+    # It dropped a single real word followed by a pause.
+    assert 'hallucination_silence_threshold' not in kwargs
     assert kwargs['condition_on_previous_text'] is False
     assert kwargs['max_new_tokens'] == 99
     assert 'vad_filter' not in kwargs or kwargs['vad_filter'] is False

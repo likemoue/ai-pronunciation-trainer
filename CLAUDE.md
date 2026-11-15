@@ -29,7 +29,8 @@ trimmed to English. `README.md` describes it for readers; this file is the short
      single-threaded, at most `AUDIO_DECODE_CONCURRENCY` (4) per worker at once (every thread counts against the
      colour's `--pids-limit 512`). It returns numpy float32 `[1, samples]`; torch is gone since phase 2.
   2. Whisper base on faster-whisper (`whisper_wrapper.py`, CTranslate2 int8, greedy, English pinned), model files
-     pinned in `model_pins.py`. The transcript is built from the timed words, so the two always line up.
+     pinned in `model_pins.py`. The transcript is Whisper's text; each of its words gets the span of the timed
+     words it is made of (Whisper times "well-known" or "2:30" as two), so the two lists always line up.
   3. `pronunciationTrainer.py`: word alignment with DTW in `WordMatching.py`; reference IPA from `eng_to_ipa`, with the
      CMU dictionary in memory (`RuleBasedModels.CmuIpa`; `tests/test_ipa.py` holds it to eng_to_ipa's output on the bank).
 - `piperTTS.py`: the reference voice (Piper, `en_US-ljspeech-medium`, public domain). Voice files are pinned by sha256

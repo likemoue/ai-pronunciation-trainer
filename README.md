@@ -31,7 +31,8 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
    memory and time (`audioPreprocessing.py`), single-threaded and at most 4 at a time per worker.
 3. [Whisper base](https://huggingface.co/openai/whisper-base), run by
    [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2, int8 on CPU), transcribes it with a
-   timestamp for every word. Noise or silence gives no words at all.
+   timestamp for every word. Silence gives no words, and so did three of four noise recordings in the tests
+   (the transformers pipeline invented a sentence for each).
 4. The transcript is aligned with the sentence word by word (dynamic time warping, `WordMatching.py`), and
    every word pair is compared letter by letter. The score is the share of letters that match.
 5. The reference IPA comes from the CMU Pronouncing Dictionary through `eng_to_ipa`, with the dictionary held in
