@@ -145,10 +145,11 @@ through port 3000 until docker has restarted it; and a short phrase spoken very 
 louder than the voice, is refused as no speech, because `preprocessAudio` scales a recording by its peak (phase 3:
 scale by a robust level instead). On the server, white noise recorded by the page in Chromium was transcribed as
 "I'm sorry." (4 of 4) instead of "no speech" (phase 3: voice activity detection). The VM's virtual CPU
-(`QEMU Virtual CPU version 2.5+`) offers no AVX, so Whisper takes about 2.2 s per recording there instead of
-0.6-0.8 s, and a class of 40 at once waits up to 46 s (54 s during a deploy); a CPU type with AVX2 in Proxmox
-(`host` or `x86-64-v3`) would need the VM restarted. Cloudflare turns the app's `no-cache` for an old `?v=` asset
-into `max-age=14400` (the zone's browser cache TTL).
+(`QEMU Virtual CPU version 2.5+`, Proxmox `cpu: x86-64-v2-AES`) offers no AVX, so Whisper takes about 2.2 s per
+recording there instead of 0.6-0.8 s, and a class of 40 at once waits up to 46 s (54 s during a deploy). The host,
+a Xeon E5-2670 v2 (Ivy Bridge), has AVX but no AVX2 or FMA: `cpu: host` would add AVX only (`x86-64-v3` needs AVX2
+and would not start), and needs the VM stopped and started; measure int8 against float32 on that CPU first.
+Cloudflare turns the app's `no-cache` for an old `?v=` asset into `max-age=14400` (the zone's browser cache TTL).
 
 ## Conventions
 
