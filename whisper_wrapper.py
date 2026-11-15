@@ -111,8 +111,13 @@ class WhisperASRModel(IASRModel):
             # (no_speech_prob > 0.6) is skipped however sure it is of the words
             # it would write. By default a confident enough invention is kept:
             # noise recorded by the page (WebM/Opus) came back as "I'm going to
-            # get a little bit of a". Spoken windows, even at 0 dB SNR or with
-            # learners' errors, stay far below 0.6.
+            # get a little bit of a". In the tests, noise was rated 0.65-0.80,
+            # and sentences of three words or more at a normal level 0.46 at
+            # most. A short phrase spoken very softly can go above 0.6 (up to
+            # 0.66) and is refused as no speech, which asks the learner to
+            # speak louder: the recording is scaled by its peak
+            # (preprocessAudio), so a tap on the phone far louder than the
+            # voice makes the voice quieter still.
             no_speech_threshold=0.6, log_prob_threshold=None,
             max_new_tokens=self.max_new_tokens)
         self._transcript, self._word_locations = words_and_locations(

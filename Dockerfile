@@ -73,7 +73,11 @@ ARG PIPER_VOICE_EN=
 # for their next task by spinning on a CPU, by default for 300,000 rounds. When
 # both colours score at once during a deploy, the spinning threads of one took
 # the CPUs from the other, and recordings took ten times longer. 10,000 rounds
-# keep the same speed for one colour.
+# keep the same speed for one colour. The setting reaches GNU OpenMP only.
+# OPENBLAS_NUM_THREADS: numpy's and scipy's OpenBLAS each started 4 helper
+# threads per worker (they read OMP_NUM_THREADS), and numpy's spun for about
+# 0.1 s after each small matrix product of the pipeline, about a tenth of a
+# recording's CPU. One thread does those products in under a millisecond.
 ENV HF_HUB_OFFLINE=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
     HF_HUB_DISABLE_PROGRESS_BARS=1 \
@@ -83,6 +87,7 @@ ENV HF_HUB_OFFLINE=1 \
     PIPER_VOICE_EN=${PIPER_VOICE_EN} \
     OMP_NUM_THREADS=5 \
     GOMP_SPINCOUNT=10000 \
+    OPENBLAS_NUM_THREADS=1 \
     OPEN_BROWSER=0 \
     ENABLED_LANGUAGES=en \
     PRELOAD_LANGUAGES=en \

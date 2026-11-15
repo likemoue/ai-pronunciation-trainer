@@ -137,9 +137,11 @@ runs only outside the image.
 Known limits: more recordings at once than the two workers take (40) are answered 503 and sent again by the page,
 and a burst can turn a few away from one worker while the other has room;
 a Caddy reload can fail a request at that instant: one sent on an idle keep-alive connection, or, rarely, a new
-connection that Caddy resets; and nothing on the VM limits requests per client: Caddy holds request bodies in up to 1 GB (it
+connection that Caddy resets; nothing on the VM limits requests per client: Caddy holds request bodies in up to 1 GB (it
 held about 110 uploads of 4.9 MB at once), and beyond that the kernel can kill it, which cuts every request
-through port 3000 until docker has restarted it.
+through port 3000 until docker has restarted it; and a short phrase spoken very softly, next to a tap on the phone far
+louder than the voice, is refused as no speech, because `preprocessAudio` scales a recording by its peak (phase 3:
+scale by a robust level instead).
 
 ## Conventions
 

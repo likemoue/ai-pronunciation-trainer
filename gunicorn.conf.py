@@ -49,18 +49,25 @@ graceful_timeout = int(os.environ.get('GUNICORN_GRACEFUL_TIMEOUT', '120'))
 keepalive = 0
 
 # gunicorn closes a connection with a lingering close on the worker's main
-# thread: it sends FIN, then waits up to 2 s for the client to close its side,
-# draining any request body the app did not read so that the kernel does not
-# reset the connection. Caddy closes once it has passed the whole response
-# on, so a client that read a large answer slowly held the main thread for up
-# to 2 s per connection: the worker accepted nothing and finished no other
-# request meanwhile. Caddy sends a body at loopback speed, so 0.2 s is enough
-# to drain it. The workers are forked from the process that reads this file,
-# and gthread calls util.close_graceful at each close.
+# thread: it sends FIN, then waits for the client to close its side, reading
+# and dropping any request body the app did not read (one it refused with 413,
+# 415 or 404), so that the kernel does not reset the connection under the
+# answer. By default it waits up to 2 s and drops up to 64 KB:
+# - Caddy closes once it has passed the whole response on, so a client that
+#   read a large answer slowly held the main thread for up to 2 s per
+#   connection: the worker accepted nothing and finished no other request
+#   meanwhile.
+# - A larger unread body was reset after 64 KB, and Caddy then answered 502
+#   instead of the app's answer, about once in 600.
+# Caddy sends a body at loopback speed, so 0.2 s is enough to drop any body it
+# lets through (up to 5 MB, deploy/deploy.sh). The workers are forked from the
+# process that reads this file, and gthread calls util.close_graceful at each
+# close.
 CLOSE_LINGER_SECONDS = 0.2
+CLOSE_DRAIN_BYTES = 6 * 1024 * 1024
 _gunicorn_util.close_graceful = functools.partial(
     getattr(_gunicorn_util.close_graceful, 'func', _gunicorn_util.close_graceful),
-    timeout=CLOSE_LINGER_SECONDS)
+    timeout=CLOSE_LINGER_SECONDS, max_drain=CLOSE_DRAIN_BYTES)
 # Worker heartbeat files on tmpfs rather than the container's overlay filesystem.
 if os.path.isdir('/dev/shm'):
     worker_tmp_dir = '/dev/shm'

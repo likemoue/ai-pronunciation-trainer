@@ -163,17 +163,34 @@ def test_whisper_files_are_pinned_by_sha256():
     assert all(re.fullmatch(r'[0-9a-f]{64}', digest) for digest in model_pins.WHISPER_FILES.values())
 
 
-def test_idle_openmp_threads_do_not_spin_for_long():
+def test_idle_threads_do_not_spin_for_long():
     # Both colours score at once during a deploy; with GNU OpenMP's default
     # spin, each slowed the other down tenfold and recordings timed out.
-    spin = re.search(r'^\s+GOMP_SPINCOUNT=(\d+) \\$', read('Dockerfile'), re.M)
+    dockerfile = read('Dockerfile')
+    spin = re.search(r'^\s+GOMP_SPINCOUNT=(\d+) \\$', dockerfile, re.M)
     assert spin and int(spin.group(1)) <= 100000
-    # The setting only reaches GNU OpenMP, which the Linux wheel of CTranslate2 bundles.
+    # numpy's OpenBLAS does not read it, and its helper threads spun after each
+    # matrix product: one thread does them (tests/test_operations.py checks
+    # that numpy then starts no helper thread).
+    assert re.search(r'^\s+OPENBLAS_NUM_THREADS=1 \\$', dockerfile, re.M)
+    # GOMP_SPINCOUNT only reaches GNU OpenMP, which the Linux wheel of CTranslate2 bundles.
     ctranslate2 = pytest.importorskip('ctranslate2')
     libs = os.path.join(os.path.dirname(os.path.dirname(ctranslate2.__file__)), 'ctranslate2.libs')
     if not sys.platform.startswith('linux'):
         pytest.skip('the Linux wheel is the one the image installs')
     assert any(name.startswith('libgomp') for name in os.listdir(libs)), os.listdir(libs)
+
+
+def test_gunicorn_drops_any_body_caddy_lets_through():
+    # The app refuses some requests without reading their body. gunicorn must
+    # be able to drop all of one when it closes the connection: a reset makes
+    # Caddy answer 502 instead of the app's 413, 415 or 404.
+    caddy = re.search(r'^\s+max_size (\d+)MB$', read('deploy/deploy.sh'), re.M)
+    assert caddy
+    drain = next(node.value for node in ast.parse(read('gunicorn.conf.py')).body
+                 if isinstance(node, ast.Assign) and getattr(node.targets[0], 'id', None) == 'CLOSE_DRAIN_BYTES')
+    drain = eval(compile(ast.Expression(drain), 'gunicorn.conf.py', 'eval'), {'__builtins__': {}})
+    assert drain >= int(caddy.group(1)) * 1024 * 1024
 
 
 def test_no_telemetry_leaves_the_image():
