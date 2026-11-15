@@ -46,6 +46,16 @@ The score measures how well the speech was *recognised* as the sentence, not how
 Whisper is good at guessing the intended word, so a mispronounced sound can still score well. Scoring by
 phoneme, with a model of its own, is planned.
 
+### Evaluating the scoring
+
+[`evaluation/`](evaluation/README.md) holds 435 synthetic recordings (the app's own Piper voice; no learner's
+voice) whose truth is known word by word: bank sentences read clean, slowly, fast, under noise and by a higher
+voice; Vietnamese learners' typical mistakes made in the phonemes (θ→t, ð→d, ʃ→s, dropped final stops, plural
+-s and past -ed); words left out, repeated or added; numbers and spellings Whisper writes otherwise; soft speech
+after a loud tap; and noise, some of it recorded by Chrome as the page records. `python -m evaluation.harness`
+scores them as the server does and reports how often the labels are right
+([evaluation/report.md](evaluation/report.md)); every change to the scoring is judged by it.
+
 ## How it fits together
 
 ```text
@@ -253,11 +263,13 @@ refactoring) and changes made for this edition from 2026-11-12 on. The main chan
 - Static files cached by content version, fonts served by the app, bank sentences read aloud as cacheable MP3s.
 - Reproducible builds (lock files with hashes, pinned models and images), tests, CI, a canary, and deploys
   without downtime behind Caddy.
+- An evaluation harness for the scoring, with a set of synthetic recordings labelled word by word.
 
 The source code of the running version is linked from the page footer, as section 13 of the AGPL requires.
 
 ## Licences
 
 The code is under the [GNU AGPL v3](LICENSE). The sentences come from Tatoeba (CC BY 2.0 FR), the voice is
-trained on the public-domain LJ Speech recordings, and Whisper's weights are under MIT. Every component
+trained on the public-domain LJ Speech recordings, and Whisper's weights are under MIT. The evaluation set's
+recordings are that voice reading bank sentences (Tatoeba, CC BY 2.0 FR) and sentences written for the set. Every component
 that ships in the image or the page is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -59,6 +59,11 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   count the markers of live workers.
 - Logs (`logging_setup.py`): one JSON object per line, with the request id (`rid`, Cloudflare's Ray ID). App loggers come
   from `logging_setup.get_logger(__name__)` (namespace `aipt`) and log from INFO; `print` is not used.
+- `evaluation/` (not in the image): the scoring evaluation harness of phase 3, `evaluation/README.md`. 435 synthetic
+  recordings (Piper's voice; learners' mistakes made in the phonemes, noise, soft speech, Chrome-recorded noise) with
+  the truth for every word, a harness that scores them as the server does, and the text simulation over the bank.
+  `evaluation/report.md` is the report of `harness.REPORT['run']`; `tests/test_evaluation.py` fails when the code no
+  longer gives that run's labels from what Whisper heard. A change to the scoring brings its own run and report.
 
 ## Commands
 
@@ -70,6 +75,11 @@ python -m pytest -q -m slow     # real Whisper and Piper
 OPEN_BROWSER=0 python webApp.py   # local server on :3000
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciation-trainer .
 scripts/lock.sh [--upgrade | --check]   # requirements*.lock from requirements*.in (needs uv)
+
+# Scoring evaluation (evaluation/README.md): a full run belongs in the image (see there).
+python -m evaluation.harness rescore evaluation/runs/phase2-1c4813c.json --out evaluation/runs/<name>.json --every 1
+python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase2-1c4813c.json
+python -m evaluation.harness report --committed   # evaluation/report.md from harness.REPORT
 ```
 
 The Docker build runs a strict warm-up and fails if the image cannot score a spoken sentence. The runtime stage's
@@ -178,6 +188,8 @@ The full plan is in the maintainer's Claude plan file. Status:
   bounded queue that answers 503 with Retry-After and a client that sends again, 24 threads per worker, static
   files cached by content version, fonts served by the app, bank sentences as cacheable MP3s (rendered on first
   request, then kept by Cloudflare), 32 kbps recordings, `scripts/load_test.py`.
-- **Phase 3, scoring accuracy:** build the evaluation harness first, then Levenshtein alignment, text normalisation, VAD and IPA comparison.
+- **Phase 3, scoring accuracy** (branch `phase3/scoring`): the evaluation harness first (`evaluation/`, done: its report
+  went to the user for a decision), then Levenshtein alignment, text normalisation, VAD and IPA comparison, each judged
+  by the harness's report and merged only if it improves.
 - **Phase 4, frontend:** UX, mobile, accessibility, and in-app browsers such as Zalo.
 - **Phases 5-7** (learning features, phoneme-level scoring, school platform): only when chosen.

@@ -6,6 +6,18 @@ release without downtime, except the first deploy with the phase-1 deploy.sh, wh
 `deploy.sh --rollback-legacy` undoes that one, with downtime. "Auto" means a test, a CI job or a deploy step
 already checks it on every change.
 
+## Phase 3: scoring accuracy (2026-11)
+
+### Step 1: the evaluation harness (`evaluation/`)
+Adds no code to the image and changes no learner flow: the page, the API and the scores stay as they are.
+- [x] The harness scores the 435 recordings of `evaluation/clips.json` in the image as the server does, and its
+      report (`evaluation/report.md`) is the report of the committed run. Auto: `tests/test_evaluation.py` (the run
+      is what the code makes of what Whisper heard; the text simulation's digest; the report).
+- [x] The set holds only synthetic voices and sentences fit for a class. Auto: `tests/test_evaluation.py` (the
+      bank's blocklist and removed sentences, every recording decodes as an upload, size limits).
+- [x] CI runs the evaluation tests in the image as well (the set is mounted there, as the tests are).
+- [ ] Each later step of phase 3 brings its own run and report, and is merged only if the report improves.
+
 ## Bank review (2026-11)
 
 - [x] No sentence of the bank is unsuitable for a class: a second review read all 11,028 sentences and removed 357
