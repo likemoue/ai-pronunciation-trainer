@@ -46,7 +46,9 @@ trimmed to English. `README.md` describes it for readers; this file is the short
     words such as "André" or "2:30". Control characters other than whitespace, and lone UTF-16 surrogates, are refused.
   - Audio: up to 35 s, in a request of up to 4 MB.
 - `databases/data_en.csv`: the sentence bank, from Tatoeba (CC BY 2.0 FR, credited in the footer).
-  It is screened for school use, and `tests/test_content.py` fails on blocked topics and on duplicates.
+  It is screened for school use, and `tests/test_content.py` fails on blocked topics and on duplicates. A second
+  review (2026-11) read every sentence; `tests/content_removed_en.tsv` lists the 357 it removed, which must not
+  come back.
 - Frontend: `templates/main.html`, `static/javascript/app.js` and `static/css/style.css`.
   The CSP forbids inline scripts and styles, and the client's `normalizeText` must stay in step with `validation.normalize_text`.
   The page loads nothing from other sites: fonts are in `static/fonts` (OFL), the result chime is synthesised.
@@ -141,7 +143,13 @@ connection that Caddy resets; nothing on the VM limits requests per client: Cadd
 held about 110 uploads of 4.9 MB at once), and beyond that the kernel can kill it, which cuts every request
 through port 3000 until docker has restarted it; and a short phrase spoken very softly, next to a tap on the phone far
 louder than the voice, is refused as no speech, because `preprocessAudio` scales a recording by its peak (phase 3:
-scale by a robust level instead).
+scale by a robust level instead). On the server, white noise recorded by the page in Chromium was transcribed as
+"I'm sorry." (4 of 4) instead of "no speech" (phase 3: voice activity detection). The VM's virtual CPU
+(`QEMU Virtual CPU version 2.5+`, Proxmox `cpu: x86-64-v2-AES`) offers no AVX, so Whisper takes about 2.2 s per
+recording there instead of 0.6-0.8 s, and a class of 40 at once waits up to 46 s (54 s during a deploy). The host,
+a Xeon E5-2670 v2 (Ivy Bridge), has AVX but no AVX2 or FMA: `cpu: host` would add AVX only (`x86-64-v3` needs AVX2
+and would not start), and needs the VM stopped and started; measure int8 against float32 on that CPU first.
+Cloudflare turns the app's `no-cache` for an old `?v=` asset into `max-age=14400` (the zone's browser cache TTL).
 
 ## Conventions
 
@@ -166,7 +174,7 @@ The full plan is in the maintainer's Claude plan file. Status:
 - **Phase 1** (foundation): health endpoints, JSON logs, gthread workers, dependency lock with hashes, pinned models
   and images, multi-stage Dockerfile, CI and canary, blue/green deploys behind Caddy, docs. Deployed 2026-11-15
   (e4a1693). `checklist.md` lists the flows it touches.
-- **Phase 2, performance** (branch `phase2/performance`): IPA lookup in memory, faster-whisper int8 (no torch), a
+- **Phase 2, performance** (deployed 2026-11-15, eec70e3): IPA lookup in memory, faster-whisper int8 (no torch), a
   bounded queue that answers 503 with Retry-After and a client that sends again, 24 threads per worker, static
   files cached by content version, fonts served by the app, bank sentences as cacheable MP3s (rendered on first
   request, then kept by Cloudflare), 32 kbps recordings, `scripts/load_test.py`.

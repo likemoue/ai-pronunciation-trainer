@@ -10,7 +10,7 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
 
 ## Features
 
-- **Practice sentences** from a bank of about 11,000 English sentences from [Tatoeba](https://tatoeba.org),
+- **Practice sentences** from a bank of about 10,700 English sentences from [Tatoeba](https://tatoeba.org),
   screened for school use, in three levels (up to 8 words, 9-20 words, longer).
 - **Your own text**: up to 300 characters or 60 words of English; the server gives its reference IPA.
 - **Recording popup** with a live waveform and timer. It warns when it hears nothing, stops after 30 seconds
@@ -76,7 +76,9 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
   connection after its response (no keep-alive behind Caddy) and waits at most 0.2 s for Caddy to close its
   side. A recording whose client gave up while it waited
   (the popup closed) is not scored: Caddy closes the connection, and the app checks it before it uses the model.
-  With faster-whisper a recording holds the model for about a second.
+  With faster-whisper a recording holds the model for about a second on a CPU with AVX2, and for about 2 s on
+  the production server, whose virtual CPU offers no AVX: there a class of 40 sending at once waits 24 s at the
+  median and 46 s at most.
 - Static files are named by version: the page asks for its stylesheet and script with `?v=` and a hash of their
   content, and browsers and Cloudflare keep those, the fonts and the bank-sentence MP3s for a year. The page itself
   is checked on every load, and API answers are never stored. The page loads nothing from another site: its fonts
