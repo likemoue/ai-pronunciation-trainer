@@ -37,8 +37,9 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
    of 5-8 s. The transformers pipeline invented a sentence for every noise recording. A short phrase spoken very
    softly, next to a tap on the phone far louder than the voice, can be rated as not speech too: the learner is
    asked to speak louder.
-4. The transcript is aligned with the sentence word by word (dynamic time warping, `WordMatching.py`), and
-   every word pair is compared letter by letter. The score is the share of letters that match.
+4. The transcript is aligned with the sentence word by word (an edit-distance alignment, `WordMatching.py`: a
+   word left out or added costs its own place only), and every word pair is compared letter by letter, aligned
+   the same way. The score is the share of letters that match.
 5. The reference IPA comes from the CMU Pronouncing Dictionary through `eng_to_ipa`, with the dictionary held in
    memory (`RuleBasedModels.CmuIpa`, exactly eng_to_ipa's output).
 
@@ -149,7 +150,7 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 | `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` | `120` / `120` | Worker heartbeat timeout; time to finish the requests a stopping worker has accepted |
 | `OMP_NUM_THREADS` | `5` (image) | Threads per worker for numerical libraries; the default of `WHISPER_CPU_THREADS` |
 | `GOMP_SPINCOUNT` | `10000` (image) | How long an idle GNU OpenMP thread (CTranslate2's) spins before it sleeps; the default of 300,000 made the two colours of a deploy slow each other down |
-| `OPENBLAS_NUM_THREADS` | `1` (image) | numpy's and scipy's OpenBLAS run on the calling thread; their helper threads spun after each matrix product |
+| `OPENBLAS_NUM_THREADS` | `1` (image) | numpy's OpenBLAS runs on the calling thread; its helper threads spun after each matrix product |
 | `LOG_LEVEL` | `INFO` | Level of the app's own logs (libraries log errors only) |
 | `OPEN_BROWSER` | `1`, `0` (image) | `python webApp.py` opens a browser tab |
 | `ENABLED_LANGUAGES` | `en` | Languages the API accepts |

@@ -44,8 +44,8 @@ FORMAT = 1
 # tests/test_evaluation.py checks that the run is what this checkout's
 # alignment and scoring make of what Whisper heard, and that report.md is its
 # report. A change to the scoring adds its own run here and points REPORT at it.
-REPORT = {'run': 'runs/phase2-1c4813c.json', 'against': 'runs/phase1-e4a1693.json',
-          'against_name': 'phase 1 (e4a1693)', 'markdown': 'report.md'}
+REPORT = {'run': 'runs/phase3-2-alignment.json', 'against': 'runs/phase2-1c4813c.json',
+          'against_name': 'phase 2 (1c4813c)', 'markdown': 'report.md'}
 
 
 def load_manifest(path=MANIFEST):
@@ -175,8 +175,8 @@ def run_clips(clips, progress=True, warm_up=None):
         with open(os.path.join(HERE, clip['file']), 'rb') as f:
             return f.read()
 
-    # The first full pass pays Whisper's first forward pass and the alignment's
-    # JIT compilation, as a worker's warm-up does.
+    # The first full pass pays Whisper's first forward pass (and, before phase
+    # 3, the alignment's JIT compilation), as a worker's warm-up does.
     if warm_up is None:
         warm_up = next((c for c in clips.values() if c.get('condition') == 'clean'), None)
     if warm_up is not None:
@@ -340,10 +340,15 @@ def render(clips, doc, against=None, against_name='other'):
     head = headline(clips, doc)
     info = doc['pipeline']
     out = ['# Scoring evaluation', '']
-    out.append(f"Pipeline at `{info.get('commit')}`; Python {info.get('python')} on {info.get('platform')} "
-               f"({info.get('cpus')} CPUs{', ' + info['cpu_flags'] if info.get('cpu_flags') else ''}); "
+    machine = (f"Python {info.get('python')} on {info.get('platform')} ({info.get('cpus')} CPUs"
+               f"{', ' + info['cpu_flags'] if info.get('cpu_flags') else ''}); "
                + ', '.join(f'{k} {info[k]}' for k in ('faster_whisper', 'ctranslate2', 'transformers', 'torch')
-                           if k in info) + '.')
+                           if k in info))
+    if info.get('name'):
+        heard = info.get('asr_commit', info.get('commit'))
+        out.append(f"Pipeline: {info['name']}. What Whisper heard comes from a run of `{heard}`: {machine}.")
+    else:
+        out.append(f"Pipeline at `{info.get('commit')}`; {machine}.")
     timing = doc.get('timing')
     if timing:
         added = doc.get('added', [])
@@ -541,11 +546,13 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     p = sub.add_parser('run')
     p.add_argument('--out', required=True)
+    p.add_argument('--name', default='', help='what the run is of, for the report')
     p.add_argument('--only', default='', help='only clips whose id starts with this')
     p.add_argument('--every', type=int, default=1, help='text simulation: every Nth bank sentence (0: none)')
     p = sub.add_parser('rescore')
     p.add_argument('results')
     p.add_argument('--out', required=True)
+    p.add_argument('--name', default='', help='what the run is of, for the report')
     p.add_argument('--every', type=int, default=None, help='text simulation too, every Nth bank sentence')
     p = sub.add_parser('report')
     p.add_argument('results', nargs='?')
@@ -569,7 +576,8 @@ def main(argv=None):
     if args.command == 'run':
         chosen = {k: v for k, v in clips.items() if k.startswith(args.only)}
         results, timing = run_clips(chosen, warm_up=next(c for c in clips.values() if c['condition'] == 'clean'))
-        doc = {'format': FORMAT, 'pipeline': pipeline_info(), 'timing': timing, 'clips': results}
+        doc = {'format': FORMAT, 'pipeline': {**pipeline_info(), **({'name': args.name} if args.name else {})},
+               'timing': timing, 'clips': results}
         if args.every:
             doc['text'] = text_section(every=args.every)
         save(doc, args.out)
@@ -579,9 +587,13 @@ def main(argv=None):
         # Whisper and the machine are those of the old run; the labels are this checkout's.
         pipeline = {**old['pipeline'], 'commit': pipeline_info()['commit'],
                     'asr_commit': old['pipeline'].get('asr_commit', old['pipeline'].get('commit'))}
+        pipeline.pop('name', None)
+        if args.name:
+            pipeline['name'] = args.name
         doc = {'format': FORMAT, 'pipeline': pipeline, 'clips': rescore(clips, old['clips'])}
-        if 'timing' in old:
-            doc['timing'] = old['timing']
+        for key in ('timing', 'added'):  # how long Whisper's run took
+            if key in old:
+                doc[key] = old[key]
         if args.every:
             doc['text'] = text_section(every=args.every)
         elif 'text' in old:

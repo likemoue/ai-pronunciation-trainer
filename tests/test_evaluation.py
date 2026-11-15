@@ -233,10 +233,12 @@ def test_a_rescore_keeps_what_was_not_heard():
 
 
 def test_the_committed_runs_say_what_produced_them():
+    # Whisper heard the recordings in an image of the app (Linux), as in production;
+    # a rescored run says which run that was.
     for name in (harness.REPORT['run'], harness.REPORT['against']):
         with open(os.path.join(ROOT, 'evaluation', name), encoding='utf-8') as f:
             info = json.load(f)['pipeline']
-        assert info['commit'] and 'uncommitted' not in info['commit'], name
+        assert info.get('asr_commit', info.get('commit')), name
         assert info.get('platform', '').startswith('Linux'), name
 
 

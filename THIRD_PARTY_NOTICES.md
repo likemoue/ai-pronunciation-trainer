@@ -48,19 +48,6 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 | python-dateutil | 4.0.0 | BSD-3-Clause (and Apache-2.0 for parts) |
 | tzdata | 2026.6 | Apache-2.0 |
 | eng-to-ipa | 0.0.2 | MIT ([mphilli/English-to-IPA](https://github.com/mphilli/English-to-IPA)) |
-| dtwalign | 0.1.1 | MIT |
-| scipy | 1.18.1 | BSD-3-Clause |
-| numba | 0.68.1 | BSD-2-Clause |
-| llvmlite | 0.50.0 | BSD-2-Clause, and Apache-2.0 WITH LLVM-exception for LLVM |
-| matplotlib | 3.11.2 | Matplotlib licence (PSF-based) |
-| seaborn | 0.13.2 | BSD-3-Clause |
-| contourpy | 1.4.0 | BSD-3-Clause |
-| cycler | 0.12.1 | BSD-3-Clause |
-| fonttools | 4.68.0 | MIT |
-| kiwisolver | 1.5.1 | BSD-3-Clause |
-| pillow | 13.0.0 | MIT-CMU |
-| pyparsing | 3.3.3 | MIT |
-| networkx | 3.7 | BSD-3-Clause |
 | setuptools | 84.2.1 | MIT |
 | filelock | 4.2.9 | MIT |
 | fsspec | 2026.9.0 | BSD-3-Clause |

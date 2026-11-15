@@ -87,8 +87,5 @@ class ScoringModule:
             if spoken == '-':
                 flags.append('0' * len(word_real))
             else:
-                mapped_letters, _ = wm.get_best_mapped_words(spoken, word_real)
-                is_correct = wm.getWhichLettersWereTranscribedCorrectly(
-                    word_real, mapped_letters)
-                flags.append(''.join(str(c) for c in is_correct))
+                flags.append(''.join(str(c) for c in wm.letters_correct(word_real, spoken)))
         return ' '.join(flags)
