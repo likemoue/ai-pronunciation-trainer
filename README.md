@@ -18,20 +18,24 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
 - **Feedback**: a score for the sentence, a colour for every letter, and for each word the reference IPA,
   what was heard, and both sounds to compare (with slow playback).
 - **Reference voice**: [Piper](https://github.com/OHF-voice/piper1-gpl) with the public-domain LJ Speech voice
-  (`en_US-ljspeech-medium`), synthesised on the server. If the server has no voice, the browser's voice is used.
+  (`en_US-ljspeech-medium`), synthesised on the server. Bank sentences come as MP3 files that browsers and
+  Cloudflare cache; if the server has no voice, the browser's voice is used.
 - **Privacy**: recordings and typed text are never stored, and student audio is never sent to third-party
   speech services. Logs hold timings and outcomes, never the text or the audio.
 
 ## How scoring works
 
-1. The browser records with MediaRecorder (Opus in WebM or Ogg; AAC in MP4 on Safari) and sends it as base64.
+1. The browser records with MediaRecorder at 32 kbps (Opus in WebM or Ogg; AAC in MP4 on Safari) and sends it
+   as base64.
 2. One ffmpeg process decodes it to 16 kHz mono, with limits on size, length (35 s), formats, codecs, streams,
    memory and time (`audioPreprocessing.py`).
-3. [Whisper base](https://huggingface.co/openai/whisper-base) (through transformers, on CPU) transcribes it,
-   with a timestamp for every word.
+3. [Whisper base](https://huggingface.co/openai/whisper-base), run by
+   [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2, int8 on CPU), transcribes it with a
+   timestamp for every word. Noise or silence gives no words at all.
 4. The transcript is aligned with the sentence word by word (dynamic time warping, `WordMatching.py`), and
    every word pair is compared letter by letter. The score is the share of letters that match.
-5. The reference IPA comes from the CMU Pronouncing Dictionary (`eng_to_ipa`, `RuleBasedModels.py`).
+5. The reference IPA comes from the CMU Pronouncing Dictionary through `eng_to_ipa`, with the dictionary held in
+   memory (`RuleBasedModels.CmuIpa`, exactly eng_to_ipa's output).
 
 The score measures how well the speech was *recognised* as the sentence, not how each sound was pronounced:
 Whisper is good at guessing the intended word, so a mispronounced sound can still score well. Scoring by
@@ -44,9 +48,10 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
                                                                             │
                          Caddy (ai-pronunciation-trainer-proxy) ────────────┘
                            └─> the live colour: ai-pronunciation-trainer-blue or -green
-                                 gunicorn (gunicorn.conf.py): 2 workers × 4 threads, Flask (webApp.py)
+                                 gunicorn (gunicorn.conf.py): 2 workers × 16 threads, Flask (webApp.py)
                                    ├─ /getSample, /getCustomSample   lambdaGetSample.py, validation.py
-                                   ├─ /getAudioFromText               piperTTS.py (Piper, ONNX Runtime)
+                                   ├─ /tts/<language>/<key>.mp3       piperTTS.py (Piper, ONNX Runtime; ffmpeg)
+                                   ├─ /getAudioFromText               piperTTS.py
                                    └─ /GetAccuracyFromRecordedAudio   lambdaSpeechToScore.py
                                         audioPreprocessing.py → whisper_wrapper.py → pronunciationTrainer.py
 ```
@@ -54,12 +59,19 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
 - Cloudflare gives up on a request after 125 s (error 524). Every step is bounded well below that.
 - Each gunicorn worker loads its own models and then scores a spoken warm-up sentence. It writes a readiness
   marker (`readiness.py`) only if that worked; the Docker `HEALTHCHECK` and `/readyz` count the markers.
-- Scoring is serialised within a worker, and its other threads serve the page, samples and speech meanwhile, as
-  long as fewer than four recordings (the one being scored included) are on that worker. A worker keeps
-  accepting recordings while it scores one, so recordings that arrive together can queue on one worker while the
-  other is idle. Under a burst (a class sending their recordings at once), every thread of a worker can be
-  waiting for its model, and then the page, samples and speech wait too: up to 34 s, measured with 24 recordings
-  sent at once. Phase 2 replaces this with one shared model and a bounded queue.
+- Scoring is serialised within a worker, and every recording waiting for the model holds a thread. So a worker
+  takes at most 12 recordings (`SCORING_QUEUE_LIMIT`), and fewer when those ahead would take over 30 s; the next
+  ones get 503 with `Retry-After` at once, and the page sends the recording again by itself after that time plus
+  up to 2 s, at most 3 times, counting down in the popup. Speech synthesis is bounded the same way (2 texts per
+  worker; the browser's voice reads a text the server turns away). That leaves at least 2 of the 16 threads free
+  for the page, the samples and `/healthz` during a burst. A recording whose client gave up while it waited
+  (the popup closed) is not scored: Caddy closes the connection, and the app checks it before it uses the model.
+  A worker keeps accepting recordings while it scores one, so recordings that arrive together can queue on one
+  worker while the other is idle; with faster-whisper a recording holds the model for about a second.
+- Static files are named by version: the page asks for its stylesheet and script with `?v=` and a hash of their
+  content, and browsers and Cloudflare keep those, the fonts and the bank-sentence MP3s for a year. The page itself
+  is checked on every load, and API answers are never stored. The page loads nothing from another site: its fonts
+  (Inter, Noto Sans) are served by the app, and the result chime is synthesised in the browser.
 - Caddy receives each request in full before the app sees it, so a slow or stalled upload holds no app thread.
   It holds the bodies in up to 1 GB of memory, which held about 110 uploads of 4.9 MB at once in a test. More
   than that at once can make the kernel kill Caddy, which cuts every request in flight until docker has
@@ -79,9 +91,8 @@ docker run -d --name aipt -p 3000:3000 --memory 9g --tmpfs /tmp:rw,nosuid,size=2
 docker ps --filter name=aipt   # (healthy) after about 30-60 s; then open http://localhost:3000
 ```
 
-Unpacked, the image is about 2.9 GB: torch takes 0.8 GB, the other Python packages 1.1 GB, ffmpeg and its
-libraries 0.45 GB, the models 0.35 GB and the base image 0.13 GB (`docker images` shows about 3.9 GB, as it also
-counts the compressed layers). The build downloads Whisper and the Piper voice once, checks every file against its
+The image holds no torch since phase 2 (see the PR for its size). The build downloads Whisper and the Piper
+voice once, checks every file against its
 pinned sha256, and then scores a spoken sentence: it fails if the image cannot score. At run time the app opens no
 connection to the internet: Hugging Face is offline, and the telemetry of Hugging Face and ONNX Runtime is off.
 
@@ -109,22 +120,28 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 |---|---|---|
 | `PORT` | `3000` | Port of `python webApp.py` |
 | `BIND` | `0.0.0.0:3000` | Address gunicorn listens on |
-| `WEB_CONCURRENCY` | `2` (image) | gunicorn workers; each loads its own models (about 0.5 GB) |
-| `GUNICORN_THREADS` | `4` | Threads per worker |
+| `WEB_CONCURRENCY` | `2` (image) | gunicorn workers; each loads its own models |
+| `GUNICORN_THREADS` | `16` | Threads per worker |
+| `SCORING_QUEUE_LIMIT` | `GUNICORN_THREADS` - 4 | Recordings a worker holds (scored or waiting) before it answers 503 |
+| `SCORING_MAX_WAIT_SECONDS` | `30` | A recording that would wait longer than this, from recent scoring times, gets 503 |
 | `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` | `120` / `120` | Worker heartbeat timeout; time to finish the requests a stopping worker has accepted |
-| `OMP_NUM_THREADS` | `5` (image) | Threads per worker for torch (Whisper) |
+| `OMP_NUM_THREADS` | `5` (image) | Threads per worker for numerical libraries; the default of `WHISPER_CPU_THREADS` |
 | `LOG_LEVEL` | `INFO` | Level of the app's own logs (libraries log errors only) |
 | `OPEN_BROWSER` | `1`, `0` (image) | `python webApp.py` opens a browser tab |
 | `ENABLED_LANGUAGES` | `en` | Languages the API accepts |
 | `PRELOAD_LANGUAGES` | `en` | Languages warmed up when a worker starts; empty: none (the worker is ready at once) |
 | `READY_DIR` | `/tmp/aipt-ready` | Readiness markers of the workers |
 | `WARMUP_STRICT` | unset | `1`: a failed warm-up raises (the Docker build sets it) |
-| `WHISPER_MODEL` | `openai/whisper-base` at the commit in `model_pins.py`; `/models/whisper-base` (image) | Whisper checkpoint: a Hugging Face repo id or a directory |
+| `WHISPER_MODEL` | `models/faster-whisper-base` (downloaded on first use); `/models/faster-whisper-base` (image) | Directory of the CTranslate2 Whisper model (`model_pins.py`) |
+| `WHISPER_CPU_THREADS` | `OMP_NUM_THREADS`, else `4` | CTranslate2 threads per worker; workers × threads should not exceed the CPUs |
+| `WHISPER_COMPUTE_TYPE` | `int8` | CTranslate2 compute type (`int8`, `float32`, …) |
 | `WHISPER_MAX_NEW_TOKENS` | `160` | Longest transcript Whisper may produce (stops hallucinations on noise) |
 | `PIPER_VOICE_EN` | `en_US-ljspeech-medium` | English voice, one of `model_pins.PIPER_VOICES`; the image holds the one it was built with (build argument `PIPER_VOICE_EN`) |
 | `PIPER_MODEL_DIR` | `models/piper`; `/models/piper` (image) | Where the voices are |
 | `PIPER_THREADS` | `2` | ONNX Runtime threads for speech synthesis |
 | `PIPER_CACHE_MAX_MB` | `64` | Memory for synthesised audio, reused for repeated texts |
+| `PIPER_QUEUE_LIMIT` | `2` | Texts a worker synthesises or waits to synthesise before it answers 503 |
+| `PIPER_MP3_BITRATE` | `48k` | Bitrate of the bank-sentence MP3s |
 | `PIPER_MAX_PHONEMES` / `PIPER_MAX_PIECE_PHONEMES` | `900` / `300` | Longest text the voice reads; longest piece synthesised at once |
 | `MAX_CUSTOM_TEXT_CHARS` / `MAX_TEXT_WORDS` | `300` / `60` | Longest practice text |
 | `MAX_AUDIO_SECONDS` | `35` | Longest recording |
@@ -141,9 +158,10 @@ The page is `GET /`. The API routes take a JSON object (`Content-Type: applicati
 
 | Route | Request | Response |
 |---|---|---|
-| `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty) |
+| `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty), `tts_url` |
 | `POST /getCustomSample` | `text` | the same, for the user's text |
 | `POST /getAudioFromText` | `value`: the text to read | `wavBase64`: a WAV file |
+| `GET /tts/<language>/<key>.mp3` | | A bank sentence read aloud (MP3); `/getSample` gives the URL as `tts_url`. The key is a hash of the voice and the sentence, so the file never changes and is cached for a year; any other key is 404 |
 | `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
 | `GET /healthz` | | `{"status": "ok", "uptime_s": …}`: the worker answers HTTP |
 | `GET /readyz` | | 200 once every worker has warmed up, else 503: `ready_workers`, `expected_workers` |
@@ -164,8 +182,11 @@ Errors are JSON too: `{"error": "<message for the user>", "code": "<code>"}`, wi
 | `request_entity_too_large` | 413 | A body over 4 MB (over 5 MB, the proxy answers it) |
 | `unsupported_media_type` | 415 | Not `application/json` |
 | `no_speech` | 422 | Silence, or nothing Whisper recognised |
+| `busy` | 503 | The worker holds as many recordings as it takes; `Retry-After` (also `retry_after` in the body) says when to send it again |
+| `tts_busy` | 503 | The worker is synthesising as many texts as it takes; `Retry-After: 2` (the browser reads the text instead) |
 | `tts_failed` | 503 | Speech synthesis failed for this text (the browser reads it instead) |
 | `tts_unavailable` | 503 | The server has no voice (the browser reads every text) |
+| `client_gone` | 499 | Logged only: the client closed the connection before its recording was scored |
 | `scoring_failed` / `server_error` | 500 | A bug; the response has an `X-Request-ID` to look up in the logs |
 | `server_unavailable` | 502-504 | The proxy could not reach the app (a restart) |
 
@@ -175,12 +196,12 @@ Every response from the app carries `X-Request-ID` (Cloudflare's Ray ID when the
 ## Dependencies and builds
 
 - `requirements.in` lists the direct dependencies. `requirements.lock` pins them and everything they pull in,
-  each file by its sha256, for CPython 3.12 on Linux x86_64; torch is the CPU build. `scripts/lock.sh`
+  each file by its sha256, for CPython 3.12 on Linux x86_64, all from PyPI. `scripts/lock.sh`
   regenerates it with [uv](https://docs.astral.sh/uv/) from releases that are at least 7 days old
   (`--upgrade` to move everything forward; `--check` in CI, which fetches every hash again).
   `requirements-dev.lock` adds pytest, ruff and pip-audit. `scripts/pip_install_locked.sh` installs the locks: it
   also builds eng-to-ipa, which has no wheel, with the locked setuptools instead of one pip would fetch unchecked.
-- `model_pins.py` pins the Whisper checkpoint to a commit and every model file by sha256.
+- `model_pins.py` pins the Whisper model to a commit and every model file by sha256.
 - The `Dockerfile` pins its base image by digest. The Python packages and the models are built in stages of their
   own; the image's layers go from what changes least to what changes most: models, Python packages, system
   packages, code. The system packages are upgraded again whenever Debian publishes an update for the base image's
@@ -211,8 +232,10 @@ refactoring) and changes made for this edition from 2026-11-12 on. The main chan
 - Hardened API: JSON only, input limits, safe audio decoding with ffmpeg, bounded speech synthesis, security
   headers, JSON errors.
 - A sentence bank screened for school use; the public-domain LJ Speech voice for Piper.
-- Whisper only (the Silero models and their code were removed); JSON logs with request ids; readiness and
-  version endpoints; gunicorn with threads.
+- Whisper only (the Silero models and their code were removed), run by faster-whisper instead of transformers
+  and torch; JSON logs with request ids; readiness and version endpoints; gunicorn with threads and a bounded
+  queue that answers 503 with Retry-After; the CMU dictionary in memory.
+- Static files cached by content version, fonts served by the app, bank sentences read aloud as cacheable MP3s.
 - Reproducible builds (lock files with hashes, pinned models and images), tests, CI, a canary, and deploys
   without downtime behind Caddy.
 
@@ -221,5 +244,5 @@ The source code of the running version is linked from the page footer, as sectio
 ## Licences
 
 The code is under the [GNU AGPL v3](LICENSE). The sentences come from Tatoeba (CC BY 2.0 FR), the voice is
-trained on the public-domain LJ Speech recordings, and Whisper's weights are under Apache-2.0. Every component
+trained on the public-domain LJ Speech recordings, and Whisper's weights are under MIT. Every component
 that ships in the image or the page is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

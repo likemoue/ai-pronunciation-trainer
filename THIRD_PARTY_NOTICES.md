@@ -9,7 +9,7 @@ Versions are those of `requirements.lock` and the image built from it (Debian 13
 
 | Component | Where | Licence |
 |---|---|---|
-| Whisper base, [openai/whisper-base](https://huggingface.co/openai/whisper-base) at commit `e37978b` | `/models/whisper-base` in the image | Apache-2.0 (model card); the Whisper code is MIT |
+| Whisper base, converted for CTranslate2: [Systran/faster-whisper-base](https://huggingface.co/Systran/faster-whisper-base) at commit `ebe41f7` (the weights of [openai/whisper-base](https://huggingface.co/openai/whisper-base)) | `/models/faster-whisper-base` in the image | MIT (the conversion's model card; OpenAI released Whisper's code and weights under MIT) |
 | Piper voice `en_US-ljspeech-medium`, [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices) v1.0.0 | `/models/piper` in the image | Voice collection MIT; trained on the [LJ Speech dataset](https://keithito.com/LJ-Speech-Dataset/), public domain |
 | Practice sentences, [Tatoeba](https://tatoeba.org) | `databases/data_en.csv` | CC BY 2.0 FR, credited in the page footer |
 | CMU Pronouncing Dictionary, bundled with `eng_to_ipa` | `eng_to_ipa/resources` | BSD-style licence of Carnegie Mellon University |
@@ -17,7 +17,6 @@ Versions are those of `requirements.lock` and the image built from it (Debian 13
 | Hebrew diacritics model Nakdimon (Elazar Gershuni), bundled with `piper-tts`, not used by this edition | `piper/hebrew/nakdimon.onnx` | MIT (`piper/hebrew/LICENSE`) |
 | Arabic diacritics model (a port of libtashkeel), bundled with `piper-tts`, not used | `piper/tashkeel/model.onnx` | Distributed with piper-tts under its licence |
 | g2pW-derived code (Chinese), bundled with `piper-tts`, not used | `piper/g2pw_onnx.py` | Apache-2.0 (`piper_tts-1.8.0.dist-info/licenses/licenses/LICENSE.g2pW-Apache-2.0`) |
-| Feedback sounds `static/ASR_good.wav`, `ASR_okay.wav`, `ASR_bad.wav` | the page | From the upstream repository, which states no separate source or licence; they are distributed with it under its AGPL-3.0 |
 
 The German sentences (`databases/data_de.csv`, upstream) are in the repository but not in the image.
 
@@ -25,11 +24,11 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 
 | Package | Version | Licence |
 |---|---|---|
-| torch (CPU build) | 2.15.0 | BSD-3-Clause, with bundled components under Apache-2.0, BSD and other permissive licences |
-| transformers | 5.22.2 | Apache-2.0 |
+| faster-whisper | 1.2.1 | MIT |
+| ctranslate2 | 4.8.5 | MIT; its wheel ships GCC's OpenMP runtime (`ctranslate2.libs/libgomp`, GPL-3.0-or-later with the GCC Runtime Library Exception) |
+| av (PyAV, imported by faster-whisper, not used to decode) | 19.0.2 | BSD-3-Clause; its wheel ships FFmpeg 9.0.2's libraries (`av.libs`), built with x264 and x265 and so under GPL-2.0-or-later, and the libraries they use (GnuTLS, Opus, dav1d, libvpx, SVT-AV1, libwebp, libxcb and others, under LGPL, BSD and MIT licences) |
 | huggingface-hub | 2.4.0 | Apache-2.0 |
 | tokenizers | 0.23.3 | Apache-2.0 |
-| safetensors | 0.8.0 | Apache-2.0 |
 | hf-xet | 1.8.0 | Apache-2.0 |
 | piper-tts | 1.8.0 | GPL-3.0-or-later |
 | onnxruntime | 1.31.1 | MIT |
@@ -62,14 +61,11 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 | pillow | 13.0.0 | MIT-CMU |
 | pyparsing | 3.3.3 | MIT |
 | networkx | 3.7 | BSD-3-Clause |
-| sympy | 1.14.0 | BSD-3-Clause |
-| mpmath | 1.3.0 | BSD-3-Clause |
 | setuptools | 84.2.1 | MIT |
 | filelock | 4.2.9 | MIT |
 | fsspec | 2026.9.0 | BSD-3-Clause |
 | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause |
 | PyYAML | 6.0.3 | MIT |
-| regex | 2026.11.7 | Apache-2.0 AND CNRI-Python |
 | tqdm | 4.70.1 | MPL-2.0 AND MIT |
 | typing_extensions | 4.16.0 | PSF-2.0 |
 | httpx2, httpcore2 | 2.16.0 | BSD-3-Clause |
@@ -77,13 +73,6 @@ The German sentences (`databases/data_de.csv`, upstream) are in the repository b
 | anyio | 4.16.0 | MIT |
 | idna | 3.20 | BSD-3-Clause |
 | truststore | 0.10.5 | MIT |
-| typer | 0.28.0 | MIT |
-| rich | 15.0.0 | MIT |
-| markdown-it-py | 4.2.0 | MIT |
-| mdurl | 0.1.2 | MIT |
-| Pygments | 2.21.0 | BSD-2-Clause |
-| shellingham | 1.5.4 | ISC |
-| annotated-doc | 0.0.5 | MIT |
 
 Most packages ship their licence text in their `.dist-info` directory in the image
 (`/opt/venv/lib/python3.12/site-packages`). Four do not: eng-to-ipa (MIT, see its repository), flatbuffers
@@ -99,10 +88,9 @@ and onnxruntime (MIT), whose `LICENSE` and `ThirdPartyNotices.txt` are in `site-
 | Debian 13 packages in the base image | Various free licences; see `/usr/share/doc/*/copyright` in the image |
 | FFmpeg 7.1.5 (Debian package `ffmpeg`, built with `--enable-gpl`) and the libraries it pulls in | GPL-2.0-or-later as built; see `/usr/share/doc/ffmpeg/copyright` |
 | Caddy 2.11.9 (the proxy container on the server, not in the app image) | Apache-2.0 |
-| Fonts Inter and Noto Sans, loaded by the page from Google Fonts | SIL Open Font License 1.1 |
+| Fonts Inter and Noto Sans (latin and latin-ext subsets, as Google Fonts serves them), in `static/fonts` and served by the app | SIL Open Font License 1.1 (`static/fonts/OFL-Inter.txt`, `OFL-NotoSans.txt`) |
 
-The GPL-licensed parts (piper-tts, eSpeak NG, FFmpeg) run in the same image as the AGPL-3.0 app. GPLv3 section 13
+The GPL-licensed parts (piper-tts, eSpeak NG, FFmpeg, and the FFmpeg libraries inside PyAV) run in the same image as the AGPL-3.0 app. GPLv3 section 13
 and AGPLv3 section 13 allow combining the two; each part keeps its own licence. The source of every Python package
-is on PyPI, except torch's (<https://github.com/pytorch/pytorch>; its CPU wheels come from download.pytorch.org) and
-onnxruntime's (<https://github.com/microsoft/onnxruntime>; PyPI has only its wheels). Debian publishes the source of
-its packages.
+is on PyPI, except onnxruntime's and ctranslate2's (<https://github.com/microsoft/onnxruntime>,
+<https://github.com/OpenNMT/CTranslate2>; PyPI has only their wheels). Debian publishes the source of its packages.

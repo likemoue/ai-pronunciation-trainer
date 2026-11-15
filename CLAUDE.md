@@ -6,7 +6,7 @@ trimmed to English. `README.md` describes it for readers; this file is the short
 
 ## How it fits together
 
-- `webApp.py`: Flask app, served by gunicorn (`gunicorn.conf.py`: gthread, 2 workers × 4 threads) in Docker.
+- `webApp.py`: Flask app, served by gunicorn (`gunicorn.conf.py`: gthread, 2 workers × 16 threads) in Docker.
   Cloudflare is in front, through a tunnel on VM 202 (172.16.10.20) to VM port 3000, where Caddy forwards to the
   live colour (blue or green). Cloudflare drops requests after 125 s (error 524). With gthread workers, gunicorn's
   `timeout` no longer interrupts a slow request, so every step bounds itself.
@@ -14,14 +14,24 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   - `POST /getSample`: a sentence from the bank, `category` 0 to 3 (random, easy, medium, hard).
   - `POST /getCustomSample`: the user's own text, with its IPA.
   - `POST /getAudioFromText`: Piper TTS, returned as base64 WAV.
+  - `GET /tts/<language>/<key>.mp3`: a bank sentence read aloud, cached for a year (the key hashes voice and sentence;
+    `/getSample` returns it as `tts_url`).
   - `POST /GetAccuracyFromRecordedAudio`: scores a recording.
   - `GET /healthz` (the worker answers), `/readyz` (every worker warmed up), `/version` (`GIT_SHA`, `GIT_DATE`).
 - Scoring pipeline (serialised per worker by `_inference_lock`; one `scored` log line per request with timings):
+  0. `lambdaSpeechToScore.ScoringQueue`: a worker holds at most `GUNICORN_THREADS - 4` recordings (and none that would
+     wait over 30 s); the next ones get 503 `busy` with `Retry-After`, and app.js sends them again (3 times at most).
+     A recording whose client left while it waited is skipped (`client_gone`, from the socket gunicorn hands Flask).
   1. `audioPreprocessing.decode_audio`: one ffmpeg process, bounded by size, allocations, codecs, streams and time.
-  2. Whisper base (`whisper_wrapper.py`, transformers 5), pinned to a commit in `model_pins.py`.
-  3. `pronunciationTrainer.py`: word alignment with DTW in `WordMatching.py`; reference IPA from `eng_to_ipa` in `RuleBasedModels.py`.
+     It returns numpy float32 `[1, samples]`; torch is gone since phase 2.
+  2. Whisper base on faster-whisper (`whisper_wrapper.py`, CTranslate2 int8, greedy, English pinned), model files
+     pinned in `model_pins.py`. The transcript is built from the timed words, so the two always line up.
+  3. `pronunciationTrainer.py`: word alignment with DTW in `WordMatching.py`; reference IPA from `eng_to_ipa`, with the
+     CMU dictionary in memory (`RuleBasedModels.CmuIpa`; `tests/test_ipa.py` holds it to eng_to_ipa's output on the bank).
 - `piperTTS.py`: the reference voice (Piper, `en_US-ljspeech-medium`, public domain). Voice files are pinned by sha256
   in `model_pins.py`. A text over 900 phonemes is refused, and pieces over 300 phonemes are synthesised in smaller parts.
+  At most `PIPER_QUEUE_LIMIT` (2) texts per worker are synthesised or waiting; the next get 503 `tts_busy` and the
+  browser reads them. MP3s (bank sentences) are encoded with ffmpeg.
 - `validation.py`: shared input limits, enforced before any model runs.
   - Text: up to 300 characters or 60 words, and at least 90% A-Z letters. The TTS route also accepts single short
     words such as "André" or "2:30". Control characters other than whitespace, and lone UTF-16 surrogates, are refused.
@@ -30,6 +40,9 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   It is screened for school use, and `tests/test_content.py` fails on blocked topics and on duplicates.
 - Frontend: `templates/main.html`, `static/javascript/app.js` and `static/css/style.css`.
   The CSP forbids inline scripts and styles, and the client's `normalizeText` must stay in step with `validation.normalize_text`.
+  The page loads nothing from other sites: fonts are in `static/fonts` (OFL), the result chime is synthesised.
+  `webApp.ASSET_VERSION` hashes style.css and app.js; only `?v=<current>` (and the fonts, and the bank MP3s) are
+  cached as immutable, the page is `no-cache` and the API `no-store`.
 - Health: each gunicorn worker writes a marker (`readiness.py`) after a warm-up that scores a real spoken sentence; the
   warm-up starts in gunicorn's `post_worker_init`, not on import. `healthcheck.py` (the Docker `HEALTHCHECK`) and `/readyz`
   count the markers of live workers.
@@ -60,9 +73,10 @@ two agree.
 ## Dependencies
 
 - `requirements.in` lists direct dependencies; `requirements.lock` pins everything with hashes (CPython 3.12, Linux
-  x86_64, torch from the PyTorch CPU index). Regenerate with `scripts/lock.sh`; CI fails if the lock does not match.
+  x86_64, all from PyPI). Regenerate with `scripts/lock.sh`; CI fails if the lock does not match. `setuptools` is
+  listed although nothing imports it: it builds eng-to-ipa (no wheel), from the lock.
   Versions: the newest release that is at least 7 days old (uv `--exclude-newer`), unless a security fix needs newer.
-- The image installs `requirements.lock` with `--require-hashes` and both indexes (see the Dockerfile).
+- The image installs `requirements.lock` with `--require-hashes` (see the Dockerfile).
 - `model_pins.py` pins Whisper and the Piper voices; the base image and the Caddy image are pinned by digest.
 
 ## Deploying
@@ -125,13 +139,13 @@ through port 3000 until docker has restarted it.
 - Each roadmap phase is its own branch and PR, with tests. Merge PRs with a merge commit, then deploy with `deploy.sh`.
 - Never store recordings or typed text on the server, and never log them. Student audio is never sent to third-party speech APIs.
 - Configure logging before importing model code: `epitran` calls `logging.basicConfig(level=CRITICAL)` on import.
-  The app logs from INFO. Libraries that log through the root logger, and transformers, log errors only: Piper warns
-  once per missing phoneme, and transformers on every transcription.
+  The app logs from INFO. Libraries that log through the root logger log errors only: Piper warns once per missing
+  phoneme, and faster-whisper logs every transcription at INFO.
 - ONNX Runtime's own logger writes plain text to stderr, and on a VM whose display is not a PCI device (Hyper-V, as
   on GitHub's runners) it warns as soon as it is imported. Its first import must go through
   `piperTTS.import_onnxruntime()`, which logs those lines as JSON and then keeps ONNX Runtime to errors.
   `webApp.start_warm_up` calls it while the worker still has one thread, since it points the process's stderr at a
-  file for that moment.
+  file for that moment. `whisper_wrapper` calls it too before importing faster_whisper, whose VAD would import it.
 - Shell scripts keep LF line endings (`.gitattributes`), and `deploy/deploy.sh` stays executable (mode 100755).
 - Write files that contain backslashes with an editor, not a shell heredoc.
 
@@ -140,10 +154,12 @@ through port 3000 until docker has restarted it.
 The full plan is in the maintainer's Claude plan file. Status:
 - **Phase 0** (hardening, school-safe sentences, public-domain voice): done.
 - **Phase 1** (foundation): health endpoints, JSON logs, gthread workers, dependency lock with hashes, pinned models
-  and images, multi-stage Dockerfile, CI and canary, blue/green deploys behind Caddy, docs. `checklist.md` lists the
-  flows it touches.
-- **Phase 2, performance:** IPA lookup in memory, faster-whisper int8 (drops torch, most of the image), a bounded queue
-  that answers 503 with Retry-After, static caching, pre-rendered TTS for bank sentences.
+  and images, multi-stage Dockerfile, CI and canary, blue/green deploys behind Caddy, docs. Deployed 2026-11-15
+  (e4a1693). `checklist.md` lists the flows it touches.
+- **Phase 2, performance** (branch `phase2/performance`): IPA lookup in memory, faster-whisper int8 (no torch), a
+  bounded queue that answers 503 with Retry-After and a client that sends again, 16 threads per worker, static
+  files cached by content version, fonts served by the app, bank sentences as cacheable MP3s (rendered on first
+  request, then kept by Cloudflare), 32 kbps recordings, `scripts/load_test.py`.
 - **Phase 3, scoring accuracy:** build the evaluation harness first, then Levenshtein alignment, text normalisation, VAD and IPA comparison.
 - **Phase 4, frontend:** UX, mobile, accessibility, and in-app browsers such as Zalo.
 - **Phases 5-7** (learning features, phoneme-level scoring, school platform): only when chosen.
