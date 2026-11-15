@@ -797,7 +797,7 @@
                     break;
                 } catch (err) {
                     const busy = err.status === 503 || err.status === 429;
-                    if (!busy || attempt >= BUSY_RETRIES || rec.phase !== 'processing') throw err;
+                    if (!busy || attempt >= BUSY_RETRIES || abort.signal.aborted) throw err;
                     await waitForBusyServer(err.retryAfter || 3, abort.signal);
                 }
             }
@@ -805,12 +805,17 @@
             if (!data || data.pronunciation_accuracy === undefined) {
                 throw Object.assign(new Error('empty'), { status: 422 });
             }
+            // An answer for a popup that was closed in the meantime belongs to
+            // no take any more: it must not close a newer one.
+            if (abort.signal.aborted) return;
             state.recordingBuffer = buffer;
             closeModal();
             renderResult(data);
             updateControls();
         } catch (err) {
-            if (err.name === 'AbortError' && rec.phase === 'idle') return; // closed by user
+            // Only closeModal aborts this controller: the learner closed the
+            // popup, and the popup may already show a newer take.
+            if (abort.signal.aborted) return;
             console.error(err);
             let message = 'Could not check your recording. Please try again.';
             if (err.name === 'AbortError') message = 'The server took too long to answer. Please try again.';
@@ -821,7 +826,9 @@
             else if (err.status === 400 && err.message) message = err.message;
             setModalPhase('error', message);
         } finally {
-            clearTimeout(rec.slowTimer);
+            // closeModal cleared the timer of a closed popup; rec.slowTimer may
+            // belong to a newer take by now.
+            if (!abort.signal.aborted) clearTimeout(rec.slowTimer);
             if (rec.abort === abort) rec.abort = null;
         }
     }
@@ -829,6 +836,9 @@
     // One attempt to score the recording, given up after SCORE_TIMEOUT_MS (an
     // AbortError) or when the popup is closed (the outer signal).
     async function sendRecording(body, outer) {
+        // The popup can be closed while the recording is still being read, before
+        // the first attempt; an aborted signal never fires 'abort' again.
+        if (outer.aborted) throw new DOMException('The popup was closed.', 'AbortError');
         const attempt = new AbortController();
         const stop = () => attempt.abort();
         outer.addEventListener('abort', stop, { once: true });

@@ -67,8 +67,9 @@ class ScoringQueue:
 
     def release(self, held_seconds=None):
         """Give the place back; held_seconds is how long the recording held the
-        model (None: not timed, as for the warm-up, whose first pass through a
-        cold model takes several times longer than any later one)."""
+        model (None: not timed, as for an upload that could not be decoded, or
+        for a cold pipeline's first pass, which takes several times longer
+        than any later one)."""
         with self._lock:
             self._pending -= 1
             if held_seconds is not None:
@@ -112,6 +113,13 @@ _trainer_cache_lock = threading.Lock()
 # The trainer and the ASR wrapper keep per-call state (transcript, word
 # locations) on the instance, so concurrent requests must not interleave.
 _inference_lock = threading.Lock()
+# Languages whose pipeline has made a full pass (words heard and aligned) in
+# this process, under _inference_lock. The first full pass pays Whisper's first
+# forward pass and the word alignment's JIT compilation, about ten times a
+# normal pass. The warm-up usually pays it, but on a worker that restarts while
+# learners are recording, a learner's recording can reach the model first.
+# Whoever pays it, its time stays out of the queue's estimate.
+_warm_languages = set()
 
 
 def _get_trainer(language):
@@ -166,7 +174,7 @@ def score(real_text: str, audio_bytes: bytes, language: str, client_gone=None, *
     ClientGoneError when client_gone() says, once the model is free, that
     nobody is waiting for the answer any more. The warm-up (warm_up=True) takes
     no place in the queue, since it must run even when learners fill it, and
-    its time, a cold model's first pass, stays out of the queue's estimate."""
+    is not timed; nor is a cold pipeline's first full pass (_warm_languages)."""
     if not real_text.strip():
         raise ValueError('There is no sentence to compare with.')
 
@@ -193,11 +201,15 @@ def score(real_text: str, audio_bytes: bytes, language: str, client_gone=None, *
             stats['lock_wait_ms'] = round((time.perf_counter() - waiting) * 1000)
             if client_gone is not None and client_gone():
                 raise ClientGoneError()
+            warm = language in _warm_languages
             holding = time.perf_counter()
             try:
                 result = trainer.processAudioForGivenText(signal, real_text)
             finally:
-                held_seconds = time.perf_counter() - holding
+                if warm:
+                    held_seconds = time.perf_counter() - holding
+            if result['recording_transcript'].strip():
+                _warm_languages.add(language)
         stats.update({f'{name}_ms': value for name, value in result.get('timings_ms', {}).items()})
         if not result['recording_transcript'].strip():
             raise NoSpeechError()

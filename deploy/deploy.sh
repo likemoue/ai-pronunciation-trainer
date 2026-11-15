@@ -154,8 +154,10 @@ read -r -d '' CADDYFILE <<'EOF' || true
 		lb_try_interval 250ms
 		transport http {
 			response_header_timeout 125s
-			# Close idle connections before gunicorn does (its keepalive is
-			# 5 s), so a request never goes out on one gunicorn is closing.
+			# gunicorn closes each connection after its response
+			# (gunicorn.conf.py). Should it keep them open again, its
+			# keepalive must stay above this, so that a request never goes
+			# out on a connection gunicorn is closing.
 			keepalive 4s
 		}
 	}

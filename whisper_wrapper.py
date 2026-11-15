@@ -6,8 +6,8 @@ loaded. Compared with the transformers pipeline the app used before, with
 the same settings (greedy decoding, the language pinned to English, word
 timestamps), a recording is transcribed about twice as fast, in a fraction
 of the memory, and noise usually gives an empty transcript instead of an
-invented sentence: a window that Whisper rates as probably not speech, with
-little confidence in its words, is dropped.
+invented sentence: a window that Whisper rates as probably not speech is
+dropped.
 """
 import os
 import re
@@ -107,6 +107,13 @@ class WhisperASRModel(IASRModel):
             # (hallucination_silence_threshold is not used: it also dropped a
             # single real word followed by a pause.)
             without_timestamps=False, word_timestamps=True,
+            # A window that Whisper rates as probably not speech
+            # (no_speech_prob > 0.6) is skipped however sure it is of the words
+            # it would write. By default a confident enough invention is kept:
+            # noise recorded by the page (WebM/Opus) came back as "I'm going to
+            # get a little bit of a". Spoken windows, even at 0 dB SNR or with
+            # learners' errors, stay far below 0.6.
+            no_speech_threshold=0.6, log_prob_threshold=None,
             max_new_tokens=self.max_new_tokens)
         self._transcript, self._word_locations = words_and_locations(
             [(word.word, word.start, word.end) for segment in segments for word in (segment.words or [])],

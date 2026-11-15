@@ -31,8 +31,10 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
    memory and time (`audioPreprocessing.py`), single-threaded and at most 4 at a time per worker.
 3. [Whisper base](https://huggingface.co/openai/whisper-base), run by
    [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2, int8 on CPU), transcribes it with a
-   timestamp for every word. Silence gives no words, and so did three of four noise recordings in the tests
-   (the transformers pipeline invented a sentence for each).
+   timestamp for every word. Silence gives no words, nor does a window that Whisper rates as probably not
+   speech: synthetic noise gave none in 56 of 56 test recordings, as WAV and as the page's WebM/Opus. Noise
+   recorded through Chrome, whose noise suppression shapes it, still gave words in about one of six recordings
+   of 5-8 s. The transformers pipeline invented a sentence for every noise recording.
 4. The transcript is aligned with the sentence word by word (dynamic time warping, `WordMatching.py`), and
    every word pair is compared letter by letter. The score is the share of letters that match.
 5. The reference IPA comes from the CMU Pronouncing Dictionary through `eng_to_ipa`, with the dictionary held in
@@ -66,8 +68,11 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
   up to 2 s, at most 3 times, counting down in the popup. Speech synthesis is bounded the same way (2 texts per
   worker; the browser's voice reads a text the server turns away). That leaves at least 2 of the 24 threads free
   for the page, the samples and `/healthz` during a burst. A worker accepts no more connections than it has
-  threads, so in a burst a full worker leaves new connections to the other one, and two workers take a class of
-  40 recordings at once; gunicorn closes each connection after its response (no keep-alive behind Caddy). A recording whose client gave up while it waited
+  threads, so in a burst a full worker leaves new connections to the other one. The two workers have 40 places,
+  but a burst does not always split evenly: in tests with 40 recordings sent at once, up to 4 were turned away
+  by one worker while the other had room, and were sent again after `Retry-After`. gunicorn closes each
+  connection after its response (no keep-alive behind Caddy) and waits at most 0.2 s for Caddy to close its
+  side. A recording whose client gave up while it waited
   (the popup closed) is not scored: Caddy closes the connection, and the app checks it before it uses the model.
   With faster-whisper a recording holds the model for about a second.
 - Static files are named by version: the page asks for its stylesheet and script with `?v=` and a hash of their
@@ -129,6 +134,7 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 | `SCORING_MAX_WAIT_SECONDS` | `30` | A recording that would wait longer than this, from recent scoring times, gets 503 |
 | `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` | `120` / `120` | Worker heartbeat timeout; time to finish the requests a stopping worker has accepted |
 | `OMP_NUM_THREADS` | `5` (image) | Threads per worker for numerical libraries; the default of `WHISPER_CPU_THREADS` |
+| `GOMP_SPINCOUNT` | `10000` (image) | How long an idle OpenMP thread spins before it sleeps; GNU OpenMP's default of 300,000 made the two colours of a deploy slow each other down |
 | `LOG_LEVEL` | `INFO` | Level of the app's own logs (libraries log errors only) |
 | `OPEN_BROWSER` | `1`, `0` (image) | `python webApp.py` opens a browser tab |
 | `ENABLED_LANGUAGES` | `en` | Languages the API accepts |

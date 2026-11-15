@@ -63,49 +63,65 @@ def _wav(samples, rate=16000):
     return buffer.getvalue()
 
 
-@pytest.mark.parametrize('kind', ['white noise', 'hum'])
-def test_noise_alone_is_no_speech_not_an_invented_sentence(kind):
+def _opus(wav):
+    """The upload the page sends: WebM/Opus at 32 kbps (app.js)."""
+    import audioPreprocessing
+    return subprocess.run([audioPreprocessing.ffmpeg_binary(), '-nostdin', '-loglevel', 'error', '-f', 'wav',
+                           '-i', 'pipe:0', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '32k',
+                           '-frame_duration', '60', '-f', 'webm', 'pipe:1'],
+                          input=wav, capture_output=True, check=True, timeout=60).stdout
+
+
+def _piper_speech(text, before=0.5, after=3.0):
+    """Piper reading text, with silence before and after: (samples, rate)."""
+    import base64
+    import io
+    import wave
+    import numpy as np
+    import piperTTS
+    with wave.open(io.BytesIO(base64.b64decode(piperTTS.generate_wav_base64(text))), 'rb') as w:
+        rate = w.getframerate()
+        speech = np.frombuffer(w.readframes(w.getnframes()), dtype='<i2').astype(np.float32) / 32768
+    return np.concatenate([np.zeros(int(rate * before), np.float32), speech,
+                           np.zeros(int(rate * after), np.float32)]), rate
+
+
+@pytest.mark.parametrize('upload', ['wav', 'webm'])
+@pytest.mark.parametrize('kind,seed', [('white noise', 1), ('white noise', 2), ('white noise', 3),
+                                       ('white noise', 4), ('hum', 0)])
+def test_noise_alone_is_no_speech_not_an_invented_sentence(kind, seed, upload):
     # The transformers pipeline turned noise into a sentence and scored it.
+    # faster-whisper keeps by default a window it rates as probably not speech
+    # when it is sure enough of the words, which noise sent as the page sends
+    # it often was: "I'm going to get a little bit of a" (seeds 1-3 in WebM).
     import numpy as np
     import lambdaSpeechToScore
     t = np.arange(16000 * 3) / 16000
-    samples = (np.random.default_rng(1).standard_normal(t.size) * 0.05 if kind == 'white noise'
+    samples = (np.random.default_rng(seed).standard_normal(t.size) * 0.05 if kind == 'white noise'
                else 0.05 * np.sin(2 * np.pi * 50 * t))
+    audio = _wav(samples) if upload == 'wav' else _opus(_wav(samples))
     with pytest.raises(lambdaSpeechToScore.NoSpeechError):
-        lambdaSpeechToScore.score('I have a cat and a dog at home.', _wav(samples), 'en')
+        lambdaSpeechToScore.score('I have a cat and a dog at home.', audio, 'en')
 
 
 def test_a_spoken_sentence_has_no_word_added_after_it():
     # Without Whisper's timestamps, faster-whisper added "you" after the
     # sentence in half a second of trailing silence.
-    import base64
-    import numpy as np
-    import io
-    import wave
     import lambdaSpeechToScore
-    import piperTTS
     sentence = 'Tom ran out of gas.'
-    with wave.open(io.BytesIO(base64.b64decode(piperTTS.generate_wav_base64(sentence))), 'rb') as w:
-        rate = w.getframerate()
-        speech = np.frombuffer(w.readframes(w.getnframes()), dtype='<i2').astype(np.float32) / 32768
-    padded = np.concatenate([np.zeros(rate // 2, np.float32), speech, np.zeros(rate, np.float32)])
-    result = lambdaSpeechToScore.score(sentence, _wav(padded, rate), 'en')
+    samples, rate = _piper_speech(sentence, after=1.0)
+    result = lambdaSpeechToScore.score(sentence, _wav(samples, rate), 'en')
     assert len(result['real_transcript'].split()) == len(sentence.split()), result['real_transcript']
 
 
-def test_a_single_word_followed_by_a_pause_is_scored():
+@pytest.mark.parametrize('word,spoken', [('computer', 'computer'), ('think', 'tink'), ('library', 'libary')])
+def test_a_single_word_followed_by_a_pause_is_scored(word, spoken):
     # Learners often wait before they press Stop. Whisper's
-    # hallucination_silence_threshold dropped such a word as invented.
-    import base64
-    import io
-    import wave
-    import numpy as np
+    # hallucination_silence_threshold dropped such a word as invented, above
+    # all a mispronounced one, of which Whisper is unsure.
     import lambdaSpeechToScore
-    import piperTTS
-    word = 'computer'
-    with wave.open(io.BytesIO(base64.b64decode(piperTTS.generate_wav_base64(word))), 'rb') as w:
-        rate = w.getframerate()
-        speech = np.frombuffer(w.readframes(w.getnframes()), dtype='<i2').astype(np.float32) / 32768
-    padded = np.concatenate([np.zeros(rate // 2, np.float32), speech, np.zeros(rate * 3, np.float32)])
-    result = lambdaSpeechToScore.score(word, _wav(padded, rate), 'en')
-    assert int(result['pronunciation_accuracy']) >= 60, result['real_transcript']
+    samples, rate = _piper_speech(spoken)
+    result = lambdaSpeechToScore.score(word, _opus(_wav(samples, rate)), 'en')
+    assert result['real_transcript'].strip()
+    if spoken == word:
+        assert int(result['pronunciation_accuracy']) >= 60, result['real_transcript']

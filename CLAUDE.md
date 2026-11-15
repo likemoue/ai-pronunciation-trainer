@@ -23,14 +23,18 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   0. `lambdaSpeechToScore.ScoringQueue`: a worker holds at most `GUNICORN_THREADS - 4` recordings (and none that would
      wait over 30 s); the next ones get 503 `busy` with `Retry-After`, and app.js sends them again (3 times at most;
      each attempt has its own 100 s), as does `deploy/smoke_test.py` (deploy.sh and the canary). The warm-up takes no
-     place in the queue and its time stays out of the queue's estimate.
+     place in the queue, and a cold pipeline's first full pass (the warm-up's or a learner's) stays out of the
+     queue's estimate.
      A recording whose client left while it waited is skipped (`client_gone`, from the socket gunicorn hands Flask).
   1. `audioPreprocessing.decode_audio`: one ffmpeg process, bounded by size, allocations, codecs, streams and time,
      single-threaded, at most `AUDIO_DECODE_CONCURRENCY` (4) per worker at once (every thread counts against the
      colour's `--pids-limit 512`). It returns numpy float32 `[1, samples]`; torch is gone since phase 2.
   2. Whisper base on faster-whisper (`whisper_wrapper.py`, CTranslate2 int8, greedy, English pinned), model files
      pinned in `model_pins.py`. The transcript is Whisper's text; each of its words gets the span of the timed
-     words it is made of (Whisper times "well-known" or "2:30" as two), so the two lists always line up.
+     words it is made of (Whisper times "well-known" or "2:30" as two), so the two lists always line up. A window
+     Whisper rates as probably not speech is skipped however sure it is of its words (`log_prob_threshold=None`):
+     noise as the page sends it was transcribed. `hallucination_silence_threshold` stays off: it dropped a single
+     word said before a pause.
   3. `pronunciationTrainer.py`: word alignment with DTW in `WordMatching.py`; reference IPA from `eng_to_ipa`, with the
      CMU dictionary in memory (`RuleBasedModels.CmuIpa`; `tests/test_ipa.py` holds it to eng_to_ipa's output on the bank).
 - `piperTTS.py`: the reference voice (Piper, `en_US-ljspeech-medium`, public domain). Voice files are pinned by sha256
@@ -130,7 +134,8 @@ without network; Trivy). A test that reads other files of the repository belongs
 runs only outside the image.
 `canary.yml` smoke-tests the public site every 15 minutes.
 
-Known limits: more recordings at once than the two workers take (40) are answered 503 and sent again by the page;
+Known limits: more recordings at once than the two workers take (40) are answered 503 and sent again by the page,
+and a burst can turn a few away from one worker while the other has room;
 a Caddy reload can fail a request at that instant: one sent on an idle keep-alive connection, or, rarely, a new
 connection that Caddy resets; and nothing on the VM limits requests per client: Caddy holds request bodies in up to 1 GB (it
 held about 110 uploads of 4.9 MB at once), and beyond that the kernel can kill it, which cuts every request

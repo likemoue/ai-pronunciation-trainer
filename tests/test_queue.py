@@ -53,12 +53,33 @@ def test_the_warm_up_neither_queues_nor_counts(fake_asr, monkeypatch):
     # the queue think every recording takes that long.
     queue = lambdaSpeechToScore.ScoringQueue(limit=1, max_wait=30, initial_seconds=1.0)
     monkeypatch.setattr(lambdaSpeechToScore, '_queue', queue)
+    monkeypatch.setattr(lambdaSpeechToScore, '_warm_languages', set())
     queue.admit()  # a learner's recording holds the only place
     lambdaSpeechToScore.score('Hello world', make_audio('webm', seconds=1.0), 'en', warm_up=True)
     assert queue.pending == 1 and queue.seconds_per_recording == 1.0
     queue.release()
     lambdaSpeechToScore.score('Hello world', make_audio('webm', seconds=1.0), 'en')
     assert queue.pending == 0 and queue.seconds_per_recording != 1.0
+
+
+@requires_ffmpeg
+def test_a_cold_first_pass_does_not_count_whoever_takes_it(fake_asr, monkeypatch):
+    # On a worker that restarts while learners record, a learner's recording
+    # can reach the model before the warm-up and pay its first pass (about
+    # 15 s); timing it turned the next class burst away for 30 s.
+    queue = lambdaSpeechToScore.ScoringQueue(limit=5, max_wait=30, initial_seconds=1.0)
+    monkeypatch.setattr(lambdaSpeechToScore, '_queue', queue)
+    monkeypatch.setattr(lambdaSpeechToScore, '_warm_languages', set())
+    audio = make_audio('webm', seconds=1.0)
+    # Nothing heard: the word alignment did not run, so the model is still cold.
+    fake_asr.transcript = ''
+    with pytest.raises(lambdaSpeechToScore.NoSpeechError):
+        lambdaSpeechToScore.score('Hello world', audio, 'en')
+    fake_asr.transcript = 'Hello world'
+    lambdaSpeechToScore.score('Hello world', audio, 'en')
+    assert queue.seconds_per_recording == 1.0
+    lambdaSpeechToScore.score('Hello world', audio, 'en')
+    assert queue.seconds_per_recording != 1.0 and queue.pending == 0
 
 
 def test_the_queue_learns_how_long_a_recording_takes():

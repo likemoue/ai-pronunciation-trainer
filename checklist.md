@@ -13,7 +13,10 @@ already checks it on every change.
       faster-whisper. Auto: smoke test, warm-up at build and start, slow tests in the image. Checked once on the
       parity set (Piper readings of 30 bank sentences, 239 clips): see the PR for the numbers.
 - [ ] Noise or silence gives "We couldn't recognise any speech", not an invented sentence. Auto: `tests/test_api.py`
-      (silence), the slow tests in the image (noise and hum through the real model; no word after a sentence).
+      (silence), the slow tests in the image (white noise as WAV and as the page's WebM/Opus, and hum, through the
+      real model; no word after a sentence; a single word before a pause is still scored). By hand, on a phone: tap
+      Record and stay silent for 5-8 s. Noise shaped by the browser's noise suppression still gave words in about
+      one recording in six in the tests (phase 3: voice activity detection).
 - [ ] A class at once (30-40 recordings within a few seconds): every learner gets a score; anyone the server turns
       away sees "The server is busy - sending your recording again in N s" and gets a score without recording again.
       Auto, in part: `tests/test_queue.py` (503 with Retry-After, places given back). Check once with the load test
@@ -27,12 +30,16 @@ already checks it on every change.
 - [ ] Phone browsers (Chrome Android, Safari iOS, Zalo in-app browser): record at 32 kbps and score once each.
 
 ### Operations
-- [ ] A deploy and the canary during a class at work: the smoke test sends busy recordings again and passes.
+- [ ] A deploy and the canary during a class at work: the smoke test sends busy recordings again and passes, and
+      the learners' recordings are scored while both colours score for about a minute (simulated with two classes
+      on 10 CPUs: 80 of 80 scored, the slowest in 26 s; without `GOMP_SPINCOUNT`, 18 of 80 failed).
 - [ ] After a deploy, a page opened before it keeps working: its old `?v=` assets are answered with `no-cache`, the
       new page gets the new version. Auto: `tests/test_static.py`.
 - [ ] `docker logs`: `scored` lines carry `queue_ahead`, `lock_wait_ms`, `asr_ms`; `busy` outcomes are rare outside a
       class burst.
-- [ ] Memory per colour after warm-up and a burst (`docker stats`): far below phase 1's 1.1 GiB.
+- [ ] Memory per colour (`docker stats`): about 1.1 GiB after warm-up, and under 2.5 GiB after class bursts (each
+      waiting recording holds its decoded audio); the colour's limit is 9 GiB. Phase 1, measured the same way, used
+      1.5 GiB after warm-up and up to 2.2 GiB after a burst.
 - [ ] The image is far smaller than phase 1's 3.9 GB (no torch); a code-only rebuild reuses the dependency and model
       layers.
 

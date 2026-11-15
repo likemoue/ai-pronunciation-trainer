@@ -288,6 +288,33 @@ def test_memory_is_returned_to_the_system_after_post_requests():
     assert calls == [0]
 
 
+def test_closing_a_connection_holds_the_worker_only_briefly():
+    # gthread closes each connection on the worker's main thread and lingers
+    # there until the peer closes: a client that read a large answer slowly
+    # through Caddy stalled the whole worker 2 s per connection.
+    pytest.importorskip('fcntl')  # gunicorn only runs on POSIX
+    pytest.importorskip('gunicorn.glogging')
+    import inspect
+    import socket
+    import time
+    import gunicorn.util
+    from gunicorn.workers import gthread
+    original = gunicorn.util.close_graceful
+    try:
+        settings = runpy.run_path(os.path.join(ROOT, 'gunicorn.conf.py'))
+        assert 0 < settings['CLOSE_LINGER_SECONDS'] <= 0.5
+        assert gunicorn.util.close_graceful.func is getattr(original, 'func', original)
+        # gthread looks the function up at each close, so the shorter linger reaches it.
+        assert 'util.close_graceful(' in inspect.getsource(gthread)
+        ours, peer = socket.socketpair()
+        start = time.monotonic()
+        gunicorn.util.close_graceful(ours)  # the peer never closes its side
+        assert time.monotonic() - start < 1.0
+        peer.close()
+    finally:
+        gunicorn.util.close_graceful = original
+
+
 # ------------------------------------------------------------------ deploy script
 
 def test_smoke_test_scores_the_warm_up_sentence():

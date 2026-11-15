@@ -163,6 +163,19 @@ def test_whisper_files_are_pinned_by_sha256():
     assert all(re.fullmatch(r'[0-9a-f]{64}', digest) for digest in model_pins.WHISPER_FILES.values())
 
 
+def test_idle_openmp_threads_do_not_spin_for_long():
+    # Both colours score at once during a deploy; with GNU OpenMP's default
+    # spin, each slowed the other down tenfold and recordings timed out.
+    spin = re.search(r'^\s+GOMP_SPINCOUNT=(\d+) \\$', read('Dockerfile'), re.M)
+    assert spin and int(spin.group(1)) <= 100000
+    # The setting only reaches GNU OpenMP, which the Linux wheel of CTranslate2 bundles.
+    ctranslate2 = pytest.importorskip('ctranslate2')
+    libs = os.path.join(os.path.dirname(os.path.dirname(ctranslate2.__file__)), 'ctranslate2.libs')
+    if not sys.platform.startswith('linux'):
+        pytest.skip('the Linux wheel is the one the image installs')
+    assert any(name.startswith('libgomp') for name in os.listdir(libs)), os.listdir(libs)
+
+
 def test_no_telemetry_leaves_the_image():
     dockerfile = read('Dockerfile')
     for setting in ('HF_HUB_OFFLINE=1', 'HF_HUB_DISABLE_TELEMETRY=1', 'ORT_DISABLE_TELEMETRY=1'):

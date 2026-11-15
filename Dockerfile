@@ -69,6 +69,11 @@ COPY static/ static/
 COPY templates/ templates/
 
 ARG PIPER_VOICE_EN=
+# GOMP_SPINCOUNT: CTranslate2's OpenMP threads (GNU libgomp, 5 per worker) wait
+# for their next task by spinning on a CPU, by default for 300,000 rounds. When
+# both colours score at once during a deploy, the spinning threads of one took
+# the CPUs from the other, and recordings took ten times longer. 10,000 rounds
+# keep the same speed for one colour.
 ENV HF_HUB_OFFLINE=1 \
     HF_HUB_DISABLE_TELEMETRY=1 \
     HF_HUB_DISABLE_PROGRESS_BARS=1 \
@@ -77,6 +82,7 @@ ENV HF_HUB_OFFLINE=1 \
     PIPER_MODEL_DIR=/models/piper \
     PIPER_VOICE_EN=${PIPER_VOICE_EN} \
     OMP_NUM_THREADS=5 \
+    GOMP_SPINCOUNT=10000 \
     OPEN_BROWSER=0 \
     ENABLED_LANGUAGES=en \
     PRELOAD_LANGUAGES=en \
