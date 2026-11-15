@@ -12,10 +12,12 @@ bind = os.environ.get('BIND', '0.0.0.0:3000')
 workers = int(os.environ.get('WEB_CONCURRENCY', '2'))
 # Threads let a worker serve the page, samples and TTS while one thread scores.
 # Scoring is serialised per worker by a lock in lambdaSpeechToScore, and Piper
-# synthesis by one in piperTTS. A recording that waits for the lock keeps its
-# thread, so once a worker holds 4 recordings, every later request (the page
-# and /healthz too) waits behind them: up to 34 s, measured with 24 recordings
-# sent at once. Phase 2's bounded queue removes this.
+# synthesis by one in piperTTS, and every recording or text waiting for its
+# lock keeps its thread. So each worker takes at most SCORING_QUEUE_LIMIT
+# recordings (12) and PIPER_QUEUE_LIMIT texts to synthesise (2) at a time and
+# answers the next ones at once with 503 and Retry-After; the browser sends
+# the recording again by itself, or reads the text with its own voice. Of the
+# 16 threads, at least 2 are always free for the page, samples and /healthz.
 # With threads, `timeout` only restarts a worker whose main loop hangs; a slow
 # request is not interrupted. Every request is bounded on its own: decoding by
 # AUDIO_DECODE_TIMEOUT, recordings by MAX_AUDIO_SECONDS, Whisper by
@@ -25,7 +27,7 @@ workers = int(os.environ.get('WEB_CONCURRENCY', '2'))
 # it and drops clients that take over 60 s to send one; the colours listen on
 # 127.0.0.1 only, so every request goes through it.
 worker_class = 'gthread'
-threads = int(os.environ.get('GUNICORN_THREADS', '4'))
+threads = int(os.environ.get('GUNICORN_THREADS', '16'))
 timeout = int(os.environ.get('GUNICORN_TIMEOUT', '120'))
 # Time a stopping worker has to finish the requests it has accepted, including
 # recordings queued behind the one being scored. Cloudflare gives up on a
@@ -36,7 +38,7 @@ keepalive = 5
 # Worker heartbeat files on tmpfs rather than the container's overlay filesystem.
 if os.path.isdir('/dev/shm'):
     worker_tmp_dir = '/dev/shm'
-# Each worker loads its own models after the fork (torch/OpenMP is not fork-safe).
+# Each worker loads its own models after the fork (OpenMP thread pools are not fork-safe).
 preload_app = False
 
 accesslog = '-'

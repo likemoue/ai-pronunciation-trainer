@@ -1,5 +1,6 @@
 
 import json
+import math
 import os
 import threading
 import WordMatching as wm
@@ -17,6 +18,77 @@ logger = logging_setup.get_logger(__name__)
 
 class NoSpeechError(Exception):
     """The recording contained no recognisable speech."""
+
+
+class ServerBusyError(Exception):
+    """This worker holds as many recordings as it takes; try again later."""
+
+    def __init__(self, retry_after: int):
+        super().__init__(f'The server is busy; try again in {retry_after} s.')
+        self.retry_after = retry_after
+
+
+class ClientGoneError(Exception):
+    """The client closed its connection while its recording waited."""
+
+
+class ScoringQueue:
+    """Admission control for the recordings of one worker.
+
+    A worker scores one recording at a time (_inference_lock), and each
+    recording waiting for it holds a gunicorn thread. A recording is turned
+    away, before it is decoded, when the worker already holds `limit` of them
+    or when those ahead of it would take more than `max_wait` seconds, judged
+    from how long a recording has held the model recently. So
+    GUNICORN_THREADS - limit threads stay free for the page, the samples and
+    the reference voice, and no recording waits anywhere near Cloudflare's
+    125 s. The client tries again after Retry-After.
+    """
+
+    def __init__(self, limit: int, max_wait: float, initial_seconds: float = 2.0):
+        self.limit = limit
+        self.max_wait = max_wait
+        self._lock = threading.Lock()
+        self._pending = 0
+        self._seconds = initial_seconds
+
+    def admit(self) -> int:
+        """Take a place, or raise ServerBusyError. Returns the number of
+        recordings ahead of this one."""
+        with self._lock:
+            ahead = self._pending
+            if ahead >= self.limit or ahead * self._seconds > self.max_wait:
+                # Roughly when the recordings held now will have been scored.
+                raise ServerBusyError(max(1, min(30, math.ceil(ahead * self._seconds))))
+            self._pending += 1
+            return ahead
+
+    def release(self, held_seconds=None):
+        """Give the place back; held_seconds is how long the recording held the model."""
+        with self._lock:
+            self._pending -= 1
+            if held_seconds is not None:
+                self._seconds += 0.2 * (held_seconds - self._seconds)
+
+    @property
+    def pending(self) -> int:
+        return self._pending
+
+    @property
+    def seconds_per_recording(self) -> float:
+        return self._seconds
+
+
+def _queue_limit(environ) -> int:
+    """SCORING_QUEUE_LIMIT, else 4 fewer than the worker's gunicorn threads
+    (gunicorn.conf.py), which leaves 2 for speech synthesis and 2 for the rest."""
+    if environ.get('SCORING_QUEUE_LIMIT'):
+        return max(1, int(environ['SCORING_QUEUE_LIMIT']))
+    return max(1, int(environ.get('GUNICORN_THREADS', '16')) - 4)
+
+
+_queue = ScoringQueue(limit=_queue_limit(os.environ),
+                      max_wait=float(os.environ.get('SCORING_MAX_WAIT_SECONDS', '30')))
 
 
 SILENCE_PEAK_THRESHOLD = 0.003
@@ -83,17 +155,23 @@ def warm_up(language, strict=None) -> bool:
         return False
 
 
-def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
+def score(real_text: str, audio_bytes: bytes, language: str, client_gone=None) -> dict:
     """Score one recording of real_text. Raises NoSpeechError when nothing was
-    said, and audioPreprocessing.AudioDecodeError / AudioTooLongError for
-    unusable uploads."""
+    said, audioPreprocessing.AudioDecodeError / AudioTooLongError for unusable
+    uploads, ServerBusyError when this worker holds too many recordings, and
+    ClientGoneError when client_gone() says, once the model is free, that
+    nobody is waiting for the answer any more."""
     if not real_text.strip():
         raise ValueError('There is no sentence to compare with.')
 
     started = time.perf_counter()
     stats = {'event': 'score', 'language': language, 'upload_kb': round(len(audio_bytes) / 1024, 1),
              'words': len(real_text.split())}
+    admitted = False
+    held_seconds = None
     try:
+        stats['queue_ahead'] = _queue.admit()
+        admitted = True
         signal = audioPreprocessing.decode_audio(audio_bytes, target_rate=16000)
         stats['decode_ms'] = round((time.perf_counter() - started) * 1000)
         stats['audio_s'] = round(signal.shape[-1] / 16000, 2)
@@ -106,7 +184,13 @@ def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
         waiting = time.perf_counter()
         with _inference_lock:
             stats['lock_wait_ms'] = round((time.perf_counter() - waiting) * 1000)
-            result = trainer.processAudioForGivenText(signal, real_text)
+            if client_gone is not None and client_gone():
+                raise ClientGoneError()
+            holding = time.perf_counter()
+            try:
+                result = trainer.processAudioForGivenText(signal, real_text)
+            finally:
+                held_seconds = time.perf_counter() - holding
         stats.update({f'{name}_ms': value for name, value in result.get('timings_ms', {}).items()})
         if not result['recording_transcript'].strip():
             raise NoSpeechError()
@@ -114,6 +198,13 @@ def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
         stats['accuracy'] = int(response['pronunciation_accuracy'])
         stats['outcome'] = 'ok'
         return response
+    except ServerBusyError as e:
+        stats['outcome'] = 'busy'
+        stats['retry_after_s'] = e.retry_after
+        raise
+    except ClientGoneError:
+        stats['outcome'] = 'client_gone'
+        raise
     except NoSpeechError:
         stats['outcome'] = 'no_speech'
         raise
@@ -127,6 +218,8 @@ def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
         stats['outcome'] = 'error'
         raise
     finally:
+        if admitted:
+            _queue.release(held_seconds)
         stats['total_ms'] = round((time.perf_counter() - started) * 1000)
         logger.info('scored', extra={'fields': stats})
 

@@ -228,6 +228,8 @@ def test_synthesis_runs_one_text_at_a_time(fake_voice, monkeypatch):
             state['active'] -= 1
 
     monkeypatch.setattr(fake_voice, 'synthesize_wav', slow_synthesize)
+    # Let all four wait for the voice instead of turning the last two away.
+    monkeypatch.setattr(piperTTS, '_SYNTH_QUEUE_LIMIT', 4)
     threads = [threading.Thread(target=piperTTS.generate_wav_base64, args=(f'sentence number {i}',))
                for i in range(4)]
     for thread in threads:
@@ -236,3 +238,4 @@ def test_synthesis_runs_one_text_at_a_time(fake_voice, monkeypatch):
         thread.join(10)
     assert len(fake_voice.synthesized) == 4
     assert state['peak'] == 1
+    assert piperTTS._synth_pending == 0
