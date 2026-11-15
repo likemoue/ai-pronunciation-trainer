@@ -18,8 +18,11 @@ already checks it on every change.
 
 Deployed 2026-11-15 (eec70e3) and walked through the same evening (the boxes below), on the public site in the
 built-in browser with a stand-in microphone that plays the server's own voice, and on the server through port 3000.
-The server's virtual CPU offers no AVX (`QEMU Virtual CPU version 2.5+`: SSE4.2 at most), so Whisper takes about
-2.2 s per recording there, against 0.6-0.8 s on the machine the PR was measured on.
+That evening the server's virtual CPU offered no AVX (`QEMU Virtual CPU version 2.5+`: SSE4.2 at most), so Whisper
+took about 2.2 s per recording there, against 0.6-0.8 s on the machine the PR was measured on; the numbers below are
+from that CPU. Later the same evening the VM was switched to `cpu: host` (AVX, no AVX2): 1.8 s per recording, and
+40 recordings at once 20.6 s at the median, 34.1 s at the 90th percentile and 40.4 s at most (3 sent again). The
+site was unavailable for about 2 minutes while the VM restarted.
 
 ### Learner flows
 - [x] Record and score a sentence of each level: score, letter colours, per-word IPA and playback, with

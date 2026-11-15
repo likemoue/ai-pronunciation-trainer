@@ -8,6 +8,7 @@ Port 3000 is open to the whole LAN, though: nothing proves that a request came t
 | Item | Value |
 |---|---|
 | SSH | `ssh -i ~/.ssh/id_ed25519 itadmin@172.16.17.40` (docker access, no sudo); off the LAN, Tailscale `100.121.247.67` |
+| VM | Proxmox VM 209 on node `pve` (`172.16.9.20`): 10 vCPU with `cpu: host` (Xeon E5-2670 v2: AVX, no AVX2), 12 GB. A new CPU type takes effect only after `qm shutdown 209 && qm start 209` on `pve` (about 2 minutes without service); a reboot from inside the VM keeps the old one |
 | Code | `~/ai-pronunciation-trainer` (git, origin = github.com/likemoue/ai-pronunciation-trainer) |
 | Proxy | `ai-pronunciation-trainer-proxy`: Caddy, the only container on port 3000 (`0.0.0.0:3000`). It holds each request body until the whole body has arrived, in up to 1 GB of memory |
 | App | `ai-pronunciation-trainer-blue` (`127.0.0.1:3001`) and `ai-pronunciation-trainer-green` (`127.0.0.1:3002`). The live one runs; the other holds the previous release, stopped |
@@ -337,6 +338,21 @@ a worker answers HTTP.
 browser as `X-Request-ID`. A request whose `CF-Ray` header is missing or does not have that shape gets a random
 16-hex-digit id instead. Port 3000 is reachable from the LAN, so a client there can still send a Ray-ID-shaped
 header of its own.
+
+## Disk
+
+deploy.sh keeps the images of the last 3 deploys but never prunes docker's build cache, which grows with every
+build: each Debian update adds a system packages layer of about 460 MB. On 2026-11-15 the cache had reached 24 GB
+of the 48 GB disk. Right after a deploy, this removes the cache that no build has used for an hour and keeps what
+the live release was built from, so the next code-only build still comes from the cache (about 40 s):
+
+```bash
+df -h /
+docker builder prune -f --filter until=1h
+```
+
+A release whose cache is gone is rebuilt in full when it is deployed again by its sha (minutes: it downloads its
+packages and models again); `--rollback` uses the stopped colour and needs no build.
 
 ## Canary
 
