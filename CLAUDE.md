@@ -127,6 +127,11 @@ through port 3000 until docker has restarted it.
 - Configure logging before importing model code: `epitran` calls `logging.basicConfig(level=CRITICAL)` on import.
   The app logs from INFO. Libraries that log through the root logger, and transformers, log errors only: Piper warns
   once per missing phoneme, and transformers on every transcription.
+- ONNX Runtime's own logger writes plain text to stderr, and on a VM whose display is not a PCI device (Hyper-V, as
+  on GitHub's runners) it warns as soon as it is imported. Its first import must go through
+  `piperTTS.import_onnxruntime()`, which logs those lines as JSON and then keeps ONNX Runtime to errors.
+  `webApp.start_warm_up` calls it while the worker still has one thread, since it points the process's stderr at a
+  file for that moment.
 - Shell scripts keep LF line endings (`.gitattributes`), and `deploy/deploy.sh` stays executable (mode 100755).
 - Write files that contain backslashes with an editor, not a shell heredoc.
 
