@@ -4,6 +4,8 @@ import io
 import os
 import platform
 import re
+import sys
+import tempfile
 import threading
 import wave
 from collections import OrderedDict
@@ -46,6 +48,43 @@ _lock = threading.Lock()
 # warm-up thread or another gthread thread can synthesise while a request does.
 _synth_lock = threading.Lock()
 logger = logging_setup.get_logger(__name__)
+_onnxruntime = None
+_ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def import_onnxruntime():
+    """onnxruntime, imported with its start-up messages logged as JSON lines.
+
+    ONNX Runtime looks for GPUs as soon as it is imported, and its own logger
+    writes to stderr directly. On a virtual machine whose display is not a PCI
+    device (Hyper-V's, as on GitHub's runners) it warns in plain text, which
+    would break the log's one JSON object per line. So the first import runs
+    with stderr pointed at a file, and what ONNX Runtime wrote there is logged
+    here instead; later, it only reports errors. stderr belongs to the whole
+    process, so that first import happens before other threads can log:
+    webApp.start_warm_up calls is_available() first.
+    """
+    global _onnxruntime
+    if _onnxruntime is None:
+        if 'onnxruntime' not in sys.modules:
+            sys.stderr.flush()
+            saved = os.dup(2)
+            with tempfile.TemporaryFile() as captured:
+                os.dup2(captured.fileno(), 2)
+                try:
+                    import onnxruntime  # noqa: F401
+                finally:
+                    os.dup2(saved, 2)
+                    os.close(saved)
+                captured.seek(0)
+                for line in captured.read().decode('utf-8', 'replace').splitlines():
+                    line = _ANSI_ESCAPE.sub('', line).strip()
+                    if line:
+                        logger.warning('onnxruntime: %s', line)
+        import onnxruntime
+        onnxruntime.set_default_logger_severity(3)  # errors only
+        _onnxruntime = onnxruntime
+    return _onnxruntime
 
 
 class TextTooLongError(ValueError):
@@ -84,6 +123,7 @@ VOICE_CONFIGS = _configured_voices(os.environ)
 def is_available() -> bool:
     """True when the piper-tts package can be imported on this host."""
     try:
+        import_onnxruntime()  # before piper imports it, see import_onnxruntime
         import piper  # noqa: F401
         return True
     except ImportError:
@@ -98,7 +138,7 @@ def _download_model(language):
 
 
 def _session_options():
-    import onnxruntime
+    onnxruntime = import_onnxruntime()
     options = onnxruntime.SessionOptions()
     options.intra_op_num_threads = _PIPER_THREADS
     options.inter_op_num_threads = 1
@@ -115,7 +155,7 @@ def _load_model(language):
     with _lock:
         if language not in _models:
             _download_model(language)
-            import onnxruntime
+            onnxruntime = import_onnxruntime()
             from piper import PiperVoice
             # On Windows, ONNX Runtime writes its usage events to ETW instead and
             # ignores ORT_DISABLE_TELEMETRY; this call turns those events off.

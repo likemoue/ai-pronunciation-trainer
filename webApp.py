@@ -294,6 +294,9 @@ def start_warm_up():
         if _warm_up_started:
             return
         _warm_up_started = True
+    # ONNX Runtime is imported while this process still has one thread: its
+    # start-up messages go through stderr, which piperTTS borrows for that.
+    piperTTS.is_available()
     threading.Thread(target=_warm_up_models, daemon=True, name='warm-up').start()
 
 
