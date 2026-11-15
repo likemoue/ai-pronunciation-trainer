@@ -4,10 +4,20 @@ import io
 import os
 import platform
 import re
+import sys
+import tempfile
 import threading
-import urllib.request
 import wave
 from collections import OrderedDict
+
+import logging_setup
+import model_pins
+
+# ONNX Runtime (onnxruntime, imported on first use below) uploads usage events
+# to Microsoft on Linux unless ORT_DISABLE_TELEMETRY is set when it is first
+# imported; onnxruntime.disable_telemetry_events() does not stop that. The
+# Dockerfile sets it too; this covers runs outside the image.
+os.environ.setdefault('ORT_DISABLE_TELEMETRY', '1')
 
 _models = {}
 _cache = OrderedDict()
@@ -35,45 +45,62 @@ _MAX_PIECE_PHONEMES = int(os.environ.get('PIPER_MAX_PIECE_PHONEMES', '300'))
 _MIN_PIECE_CHARS = 8
 _lock = threading.Lock()
 # espeak-ng, which Piper uses to phonemise text, is not thread-safe, and the
-# warm-up thread can synthesise while a request does.
+# warm-up thread or another gthread thread can synthesise while a request does.
 _synth_lock = threading.Lock()
+logger = logging_setup.get_logger(__name__)
+_onnxruntime = None
+_ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def import_onnxruntime():
+    """onnxruntime, imported with its start-up messages logged as JSON lines.
+
+    ONNX Runtime looks for GPUs as soon as it is imported, and its own logger
+    writes to stderr directly. On a virtual machine whose display is not a PCI
+    device (Hyper-V's, as on GitHub's runners) it warns in plain text, which
+    would break the log's one JSON object per line. So the first import runs
+    with stderr pointed at a file, and what ONNX Runtime wrote there is logged
+    here instead; later, it only reports errors. stderr belongs to the whole
+    process, so that first import happens before other threads can log:
+    webApp.start_warm_up calls is_available() first.
+    """
+    global _onnxruntime
+    if _onnxruntime is None:
+        if 'onnxruntime' not in sys.modules:
+            sys.stderr.flush()
+            saved = os.dup(2)
+            with tempfile.TemporaryFile() as captured:
+                os.dup2(captured.fileno(), 2)
+                try:
+                    import onnxruntime  # noqa: F401
+                finally:
+                    os.dup2(saved, 2)
+                    os.close(saved)
+                captured.seek(0)
+                for line in captured.read().decode('utf-8', 'replace').splitlines():
+                    line = _ANSI_ESCAPE.sub('', line).strip()
+                    if line:
+                        logger.warning('onnxruntime: %s', line)
+        import onnxruntime
+        onnxruntime.set_default_logger_severity(3)  # errors only
+        _onnxruntime = onnxruntime
+    return _onnxruntime
 
 
 class TextTooLongError(ValueError):
     """The text would take far longer to say than its length suggests."""
 
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'piper')
-_VOICE_URL = 'https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/{path}/{file}?download=true'
-_VOICE_FILES = ('.onnx', '.onnx.json')
-
-# Voices the app can download, with the sha256 of each file in rhasspy/piper-voices v1.0.0.
-VOICES = {
-    # LJ Speech: one American speaker, recordings in the public domain.
-    'en_US-ljspeech-medium': {
-        'path': 'en/en_US/ljspeech/medium',
-        'sha256': {'.onnx': '6f52a751e2349abe7a76735eb09dc1875298c77ea2342ffd2fef79ff81b87f22',
-                   '.onnx.json': '141d612cc0a95ed7efc1ca936b845c2364967f2e9217c5dbfcf69fc4d6c65860'},
-    },
-    # Same speaker, slightly clearer, about five times slower to synthesise.
-    'en_US-ljspeech-high': {
-        'path': 'en/en_US/ljspeech/high',
-        'sha256': {'.onnx': '5d4f08ba6a2a48c44592eed3ce56bf85e9de3dd4e20df90541ae68a8310c029a',
-                   '.onnx.json': '7e1f4634af596d83cca997fb7a931ba80b70f8a316a2655ee69c55365e0ace14'},
-    },
-    # The previous English voice; its training data is licensed for research only.
-    'en_US-lessac-medium': {
-        'path': 'en/en_US/lessac/medium',
-        'sha256': {'.onnx': '5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f',
-                   '.onnx.json': 'efe19c417bed055f2d69908248c6ba650fa135bc868b0e6abb3da181dab690a0'},
-    },
-    # German is disabled in the English edition; its files are not pinned.
-    'de_DE-thorsten-low': {'path': 'de/de_DE/thorsten/low', 'sha256': None},
-}
+# The Docker image keeps the voices in PIPER_MODEL_DIR (Dockerfile); a
+# development checkout downloads them to models/piper on first use.
+MODEL_DIR = os.environ.get('PIPER_MODEL_DIR') or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'models', 'piper')
+_VOICE_FILES = model_pins.PIPER_VOICE_FILES
+VOICES = model_pins.PIPER_VOICES
 
 _DEFAULT_VOICES = {
     # American English, to match the reference IPA from the CMU dictionary (eng_to_ipa).
-    'en': 'en_US-ljspeech-medium',
+    'en': model_pins.DEFAULT_ENGLISH_VOICE,
     'de': 'de_DE-thorsten-low',
 }
 
@@ -96,47 +123,22 @@ VOICE_CONFIGS = _configured_voices(os.environ)
 def is_available() -> bool:
     """True when the piper-tts package can be imported on this host."""
     try:
+        import_onnxruntime()  # before piper imports it, see import_onnxruntime
         import piper  # noqa: F401
         return True
     except ImportError:
         return False
 
 
-def _sha256(path) -> str:
-    digest = hashlib.sha256()
-    with open(path, 'rb') as f:
-        for block in iter(lambda: f.read(1 << 20), b''):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _download_model(language):
     """Make sure the voice files are in MODEL_DIR and match their pinned sha256."""
     voice = VOICE_CONFIGS[language]
-    spec = VOICES[voice]
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    for suffix in _VOICE_FILES:
-        fname = voice + suffix
-        dest = os.path.join(MODEL_DIR, fname)
-        expected = (spec['sha256'] or {}).get(suffix)
-        if os.path.exists(dest):
-            if expected and _sha256(dest) != expected:
-                raise RuntimeError(f'{dest} does not match its pinned sha256; delete it to download it again.')
-            continue
-        print(f'Downloading Piper voice ({language}): {fname} ...')
-        # Download to a temporary name first so an interrupted download
-        # never leaves a truncated model that looks complete on the next run.
-        partial = dest + '.part'
-        urllib.request.urlretrieve(_VOICE_URL.format(path=spec['path'], file=fname), partial)
-        if expected and _sha256(partial) != expected:
-            os.remove(partial)
-            raise RuntimeError(f'The downloaded {fname} does not match its pinned sha256.')
-        os.replace(partial, dest)
-        print(f'Downloaded {fname} ({os.path.getsize(dest)} bytes)')
+    for name in model_pins.download_piper_voice(voice, MODEL_DIR, VOICES[voice]):
+        logger.info('Downloaded Piper voice file %s for %s', name, language)
 
 
 def _session_options():
-    import onnxruntime
+    onnxruntime = import_onnxruntime()
     options = onnxruntime.SessionOptions()
     options.intra_op_num_threads = _PIPER_THREADS
     options.inter_op_num_threads = 1
@@ -153,8 +155,11 @@ def _load_model(language):
     with _lock:
         if language not in _models:
             _download_model(language)
-            import onnxruntime
+            onnxruntime = import_onnxruntime()
             from piper import PiperVoice
+            # On Windows, ONNX Runtime writes its usage events to ETW instead and
+            # ignores ORT_DISABLE_TELEMETRY; this call turns those events off.
+            onnxruntime.disable_telemetry_events()
             model_path = os.path.join(MODEL_DIR, VOICE_CONFIGS[language] + '.onnx')
             voice = PiperVoice.load(model_path)
             # PiperVoice.load builds its session with default options; replace it
@@ -245,7 +250,7 @@ def generate_wav_base64(text, language='en'):
         counts = [_phoneme_count(model, piece) for piece in pieces]
         if sum(counts) > _MAX_PHONEMES:
             raise TextTooLongError(f'{sum(counts)} phonemes (limit {_MAX_PHONEMES})')
-        pieces = [part for piece, count in zip(pieces, counts) for part in _split_dense_piece(model, piece, count)]
+        pieces = [part for piece, count in zip(pieces, counts, strict=True) for part in _split_dense_piece(model, piece, count)]
         with wave.open(wav_buffer, 'wb') as wav_file:
             format_set = False
             for piece in pieces:

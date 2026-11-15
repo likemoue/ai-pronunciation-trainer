@@ -130,3 +130,6 @@ dmypy.json
 
 # AI models (downloaded at runtime)
 models/
+
+# deploy.sh harness results
+deploy/test/out/

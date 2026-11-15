@@ -1,33 +1,32 @@
-import logging
-
 # Configure logging before importing the model code: epitran calls
 # logging.basicConfig(level=CRITICAL) on import, which would otherwise hide
-# every warning and error the app logs. (basicConfig does nothing once the
-# root logger has a handler.) Libraries that log through the root logger log
-# errors only: Piper warns once for every phoneme its voice lacks, so a crafted
-# text would write hundreds of lines per request. (transformers has its own
-# handler and level.) The app's own logger is set to INFO below.
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+# every warning and error the app logs. Libraries that log through the root
+# logger log errors only; see logging_setup.
+import logging_setup
+logging_setup.configure()
 
-from flask import Flask, render_template, request, g, abort  # noqa: E402
-from werkzeug.exceptions import HTTPException  # noqa: E402
-import webbrowser  # noqa: E402
 import os  # noqa: E402
 import re  # noqa: E402
 import threading  # noqa: E402
-import json  # noqa: E402
+import time  # noqa: E402
 import uuid  # noqa: E402
+import webbrowser  # noqa: E402
 
-import lambdaTTS  # noqa: E402
-import lambdaSpeechToScore
-import lambdaGetSample
-import language_registry
-import piperTTS
-import audioPreprocessing
-import validation
+from flask import Flask, render_template, request, g, abort  # noqa: E402
+from werkzeug.exceptions import HTTPException  # noqa: E402
+
+import audioPreprocessing  # noqa: E402
+import lambdaGetSample  # noqa: E402
+import lambdaSpeechToScore  # noqa: E402
+import language_registry  # noqa: E402
+import piperTTS  # noqa: E402
+import readiness  # noqa: E402
+import validation  # noqa: E402
+
+logger = logging_setup.get_logger(__name__)
+_STARTED_AT = time.time()
 
 app = Flask(__name__)
-app.logger.setLevel(logging.INFO)
 # Largest request body accepted. A 30 s browser recording is well under 1 MB,
 # even base64-encoded; Flask answers 413 before reading anything bigger.
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_REQUEST_BYTES', str(4 * 1024 * 1024)))
@@ -114,7 +113,7 @@ def _handle_http_error(e):
 
 @app.errorhandler(Exception)
 def _handle_unexpected_error(e):
-    app.logger.exception('Unhandled error (request %s)', g.get('request_id', '-'))
+    logger.exception('Unhandled error')
     return _error('Something went wrong on the server.', 500, 'server_error')
 
 
@@ -128,7 +127,7 @@ def _json_body() -> dict:
     except HTTPException:
         raise  # 413 for a Content-Length over the limit, 400 for a client that went away
     except Exception:  # noqa: BLE001 - e.g. gunicorn's errors for malformed chunked encoding
-        raise validation.ValidationError('The request body could not be read.')
+        raise validation.ValidationError('The request body could not be read.') from None
     # A chunked body has no Content-Length, so reading stops at the limit
     # instead of refusing it; and a body shorter than its Content-Length was
     # cut off by the client. Neither may be parsed as if it were complete.
@@ -164,25 +163,19 @@ def getAudioFromText():
     text = validation.speech_text(body.get('value'))
     language = _request_language(body)
 
-    # Prefer Piper on any OS where it is installed; it is fast and natural-sounding.
-    if piperTTS.is_available() and language in piperTTS.VOICE_CONFIGS:
-        try:
-            wav_b64 = piperTTS.generate_wav_base64(text, language=language)
-        except piperTTS.TextTooLongError as e:
-            app.logger.warning('TTS text refused (request %s): %s', g.request_id, e)
-            return _error('This text is too long to read aloud.', 400, 'text_too_long')
-        except Exception:
-            app.logger.exception('TTS failed (request %s)', g.request_id)
-            # Temporary: the browser falls back to its own voice for this text only.
-            return _error('Could not generate audio.', 503, 'tts_failed')
-        return {"wavBase64": wav_b64}
-    if language == 'de':
-        # The Silero fallback only ships a German voice.
-        event = {'body': json.dumps({'value': text})}
-        result = lambdaTTS.lambda_handler(event, [])
-        return json.loads(result['body'])
-    # Permanent: the browser switches to its own speechSynthesis voice.
-    return _error('Server-side TTS is not available.', 503, 'tts_unavailable')
+    if not (piperTTS.is_available() and language in piperTTS.VOICE_CONFIGS):
+        # Permanent: the browser switches to its own speechSynthesis voice.
+        return _error('Server-side TTS is not available.', 503, 'tts_unavailable')
+    try:
+        wav_b64 = piperTTS.generate_wav_base64(text, language=language)
+    except piperTTS.TextTooLongError as e:
+        logger.warning('TTS text refused: %s', e)
+        return _error('This text is too long to read aloud.', 400, 'text_too_long')
+    except Exception:
+        logger.exception('TTS failed')
+        # Temporary: the browser falls back to its own voice for this text only.
+        return _error('Could not generate audio.', 503, 'tts_failed')
+    return {"wavBase64": wav_b64}
 
 
 @app.route(rootPath+'/getSample', methods=['POST'])
@@ -214,24 +207,46 @@ def GetAccuracyFromRecordedAudio():
     except audioPreprocessing.AudioTooLongError:
         return _error('The recording is too long. Please keep it under 30 seconds.', 413, 'audio_too_long')
     except audioPreprocessing.AudioDecodeError as e:
-        app.logger.warning('Unreadable recording (request %s): %s', g.request_id, e)
+        logger.warning('Unreadable recording: %s', e)
         return _error('The recording could not be read. Please try again.', 400, 'bad_audio')
     except Exception:
-        app.logger.exception('Scoring failed (request %s)', g.request_id)
+        logger.exception('Scoring failed')
         return _error('Could not process the recording.', 500, 'scoring_failed')
 
 
-READY_DIR = os.environ.get('READY_DIR', '/tmp/aipt-ready')
+_worker_ready = False
+
+
+@app.route(rootPath+'/healthz')
+def healthz():
+    """Liveness: the process answers HTTP. Never touches the models."""
+    return {'status': 'ok', 'uptime_s': round(time.time() - _STARTED_AT)}
+
+
+@app.route(rootPath+'/readyz')
+def readyz():
+    """Readiness: every worker has scored its warm-up sentence (the same test
+    as the Docker HEALTHCHECK)."""
+    expected = readiness.expected_workers()
+    ready = readiness.ready_workers()
+    body = {'ready_workers': ready, 'expected_workers': expected, 'this_worker_ready': _worker_ready}
+    return body, (200 if ready >= expected else 503)
+
+
+@app.route(rootPath+'/version')
+def version():
+    return {'git_sha': os.environ.get('GIT_SHA', 'unknown'),
+            'git_date': os.environ.get('GIT_DATE', 'unknown')}
 
 
 def _mark_ready():
     """Tell the container health check that this worker finished its warm-up."""
+    global _worker_ready
+    _worker_ready = True
     try:
-        os.makedirs(READY_DIR, exist_ok=True)
-        with open(os.path.join(READY_DIR, str(os.getpid())), 'w') as marker:
-            marker.write('ready\n')
+        readiness.mark_ready()
     except OSError as e:
-        app.logger.warning('Could not write the readiness marker: %s', e)
+        logger.warning('Could not write the readiness marker: %s', e)
 
 
 def _warm_up_models():
@@ -245,28 +260,52 @@ def _warm_up_models():
     all_ok = True
     for lang in languages:
         if not language_registry.is_enabled(lang):
-            app.logger.warning('PRELOAD_LANGUAGES lists "%s", which is not in ENABLED_LANGUAGES; '
-                               'it is not warmed up.', lang)
+            logger.warning('PRELOAD_LANGUAGES lists "%s", which is not in ENABLED_LANGUAGES; '
+                           'it is not warmed up.', lang)
             continue
+        started = time.perf_counter()
         try:
             if piperTTS.is_available() and lang in piperTTS.VOICE_CONFIGS:
                 piperTTS.warm_up(lang)
             ok = lambdaSpeechToScore.warm_up(lang)
-        except Exception as e:
-            print(f'Warm-up failed for "{lang}": {e!r}')
+        except Exception:
+            logger.exception('Warm-up failed for %s', lang)
             ok = False
         all_ok = all_ok and ok
-        print(f'Warm-up {"done" if ok else "FAILED"} for "{lang}"')
+        fields = {'event': 'warmup', 'language': lang, 'ok': ok,
+                  'seconds': round(time.perf_counter() - started, 1)}
+        if ok:
+            logger.info('Warm-up done for %s', lang, extra={'fields': fields})
+        else:
+            logger.error('Warm-up FAILED for %s', lang, extra={'fields': fields})
     if all_ok:
         _mark_ready()
 
 
-# Start loading models as soon as the app is imported. This covers both
-# `python webApp.py` and each gunicorn worker (which imports the app itself).
-threading.Thread(target=_warm_up_models, daemon=True).start()
+_warm_up_lock = threading.Lock()
+_warm_up_started = False
+
+
+def start_warm_up():
+    """Load the models in a background thread, once per process. gunicorn calls
+    this from the post_worker_init hook in gunicorn.conf.py."""
+    global _warm_up_started
+    with _warm_up_lock:
+        if _warm_up_started:
+            return
+        _warm_up_started = True
+    # ONNX Runtime is imported while this process still has one thread: its
+    # start-up messages go through stderr, which piperTTS borrows for that.
+    piperTTS.is_available()
+    threading.Thread(target=_warm_up_models, daemon=True, name='warm-up').start()
 
 
 if __name__ == "__main__":
+    # One process serves everything, so /readyz waits for one warm-up, and
+    # markers left by an earlier run must not count.
+    os.environ.setdefault('WEB_CONCURRENCY', '1')
+    readiness.reset()
+    start_warm_up()
     if os.environ.get('OPEN_BROWSER', '1') == '1':
         webbrowser.open_new('http://127.0.0.1:3000/')
     app.run(host="0.0.0.0", port=int(os.environ.get('PORT', '3000')))

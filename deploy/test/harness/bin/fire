@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# fire <point>: send FAULT_SIG to deploy.sh once, when <point> is listed in FAULT_SIG_AT.
+#   FAULT_SIG_AT=point[:delay][,point[:delay]...]   e.g. "stop" or "wait:1,start:0.03"
+#   FAULT_SIG_TO=group (default; like Ctrl-C, a dropped SSH session or systemd: deploy.sh and its
+#                current child) | bash (kill <pid> of deploy.sh only) | hangup (close the pty: see pty_run.py)
+#   FAULT_SIG_DELAY=seconds (default delay; 0 = now, synchronously; otherwise from a background helper)
+point=$1
+[[ -n "${FAULT_SIG_AT:-}" ]] || exit 0
+delay=
+IFS=, read -r -a specs <<<"$FAULT_SIG_AT"
+for s in "${specs[@]}"; do
+  if [[ "${s%%:*}" == "$point" ]]; then
+    if [[ "$s" == *:* ]]; then delay=${s#*:}; else delay=${FAULT_SIG_DELAY:-0}; fi
+  fi
+done
+[[ -n "$delay" ]] || exit 0
+ST=${HARNESS_STATE:?}
+mkdir "$ST/fired.$point" 2>/dev/null || exit 0
+pid=$(cat "$ST/deploy.pid")
+sig=${FAULT_SIG:-INT}
+case "${FAULT_SIG_TO:-group}" in
+  group) target=(-- "-$pid") ;;
+  bash)  target=("$pid") ;;
+  hangup) target=() ;;
+esac
+send() {
+  echo "$(/bin/date +%T.%3N) FIRE $sig -> ${FAULT_SIG_TO:-group} $pid at '$point' (+${delay}s)" >> "$ST/trace.log"
+  if [[ "${FAULT_SIG_TO:-}" == hangup ]]; then
+    touch "$ST/hangup-now"   # pty_run.py closes the pty master: the kernel sends SIGHUP
+  else
+    kill -s "$sig" "${target[@]}"
+  fi
+}
+if [[ "$delay" == 0 ]]; then
+  trap '' INT TERM HUP
+  send
+  [[ "${FAULT_SIG_TO:-}" == hangup ]] && sleep 0.5
+else
+  ( trap '' INT TERM HUP; sleep "$delay"; send ) </dev/null >/dev/null 2>&1 &
+fi
+exit 0

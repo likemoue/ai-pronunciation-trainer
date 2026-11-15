@@ -1,0 +1,43 @@
+# The fault-injection harness for deploy/deploy.sh (deploy/test/README.md), when
+# anything under deploy/ changes.
+name: deploy-test
+
+on:
+  pull_request:
+    paths:
+      - deploy/**
+      - .github/workflows/deploy-test.yml
+  push:
+    branches: [main]
+    paths:
+      - deploy/**
+      - .github/workflows/deploy-test.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # As in ci.yml: a run of a push to main is never cancelled by a newer push.
+  group: deploy-test-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  harness:
+    runs-on: ubuntu-24.04
+    # A full run takes about 20 minutes (three lanes; 17 minutes with Docker Desktop on 16
+    # CPUs). The scenarios mostly wait (drains, health checks), so 4 vCPUs are enough.
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run every scenario
+        run: deploy/test/run.sh
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deploy-test-results
+          path: deploy/test/out/
+          retention-days: 14

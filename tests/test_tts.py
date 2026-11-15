@@ -7,7 +7,54 @@ import wave
 
 import pytest
 
+import model_pins
 import piperTTS
+
+
+def test_onnxruntime_start_up_messages_are_logged_as_json_lines(monkeypatch, capfd):
+    # ONNX Runtime's native logger writes to file descriptor 2 while it is
+    # imported (on Hyper-V, as on GitHub's runners). A stand-in does the same.
+    import importlib.abc
+    import importlib.machinery
+    import os
+    import sys
+
+    severities = []
+
+    class Loader(importlib.abc.Loader):
+        def create_module(self, spec):
+            return None
+
+        def exec_module(self, module):
+            os.write(2, b'\x1b[0;93m[W:onnxruntime:Default, device_discovery.cc:95 GetPciBusId] Skipping\x1b[m\n')
+            module.set_default_logger_severity = severities.append
+
+    class Finder(importlib.abc.MetaPathFinder):
+        def find_spec(self, name, path=None, target=None):
+            if name == 'onnxruntime':
+                return importlib.machinery.ModuleSpec(name, Loader())
+            return None
+
+    class Logger:
+        def __init__(self):
+            self.warnings = []
+
+        def warning(self, message, *args):
+            self.warnings.append(message % args)
+
+    # setitem then del: the real module, if any, comes back after the test.
+    monkeypatch.setitem(sys.modules, 'onnxruntime', None)
+    del sys.modules['onnxruntime']
+    monkeypatch.setattr(sys, 'meta_path', [Finder(), *sys.meta_path])
+    monkeypatch.setattr(piperTTS, '_onnxruntime', None)
+    logger = Logger()
+    monkeypatch.setattr(piperTTS, 'logger', logger)
+
+    module = piperTTS.import_onnxruntime()
+    assert capfd.readouterr().err == ''
+    assert logger.warnings == ['onnxruntime: [W:onnxruntime:Default, device_discovery.cc:95 GetPciBusId] Skipping']
+    assert severities == [3]
+    assert piperTTS.import_onnxruntime() is module and severities == [3]
 
 
 def test_every_english_voice_is_pinned_by_sha256():
@@ -35,11 +82,11 @@ def test_voice_files_are_checked_against_their_pinned_hash(monkeypatch, tmp_path
     monkeypatch.setitem(piperTTS.VOICE_CONFIGS, 'en', 'en_US-test')
     served = {'data': good}
 
-    def fake_urlretrieve(url, dest):
+    def fake_download(url, dest):
         with open(dest, 'wb') as f:
             f.write(served['data'])
 
-    monkeypatch.setattr(piperTTS.urllib.request, 'urlretrieve', fake_urlretrieve)
+    monkeypatch.setattr(model_pins, '_download', fake_download)
     piperTTS._download_model('en')
     assert (tmp_path / 'en_US-test.onnx').read_bytes() == good
 

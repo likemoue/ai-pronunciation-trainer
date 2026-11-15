@@ -1,93 +1,225 @@
+# AI Pronunciation Trainer, English edition
 
-# AI Pronunciation Trainer 
-This tool uses AI to evaluate your pronunciation so you can improve it and be understood more clearly. You can go straight test the tool at https://aipronunciationtr.com (please use the chrome browser for desktop and have some patience for it to "warm-up" :) ). 
+Learners (mostly Vietnamese school children) read an English sentence aloud in the browser and get a
+score for the whole sentence, for every word and for every letter. The service runs at
+<https://aitrainer.ism.io.vn>.
 
-![](images/MainScreen.jpg)
+This is a modified version of [AI Pronunciation Trainer](https://github.com/Thiagohgl/ai-pronunciation-trainer)
+by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICENSE)). See
+[Modifications](#modifications) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## This fork: English edition
+## Features
 
-This fork serves an English-only version of the trainer with a redesigned interface:
+- **Practice sentences** from a bank of about 11,000 English sentences from [Tatoeba](https://tatoeba.org),
+  screened for school use, in three levels (up to 8 words, 9-20 words, longer).
+- **Your own text**: up to 300 characters or 60 words of English; the server gives its reference IPA.
+- **Recording popup** with a live waveform and timer. It warns when it hears nothing, stops after 30 seconds
+  and shows progress while the recording is scored.
+- **Feedback**: a score for the sentence, a colour for every letter, and for each word the reference IPA,
+  what was heard, and both sounds to compare (with slow playback).
+- **Reference voice**: [Piper](https://github.com/OHF-voice/piper1-gpl) with the public-domain LJ Speech voice
+  (`en_US-ljspeech-medium`), synthesised on the server. If the server has no voice, the browser's voice is used.
+- **Privacy**: recordings and typed text are never stored, and student audio is never sent to third-party
+  speech services. Logs hold timings and outcomes, never the text or the audio.
 
-* **English only** – the language picker is gone; the server only loads the English models (see `ENABLED_LANGUAGES`).
-* **Recording popup with a live waveform** – tapping the microphone (or pressing <kbd>Space</kbd>) opens a popup that shows the sentence, a live waveform and a timer. It warns when it cannot hear you, stops automatically after 30 seconds and shows a progress state while the recording is scored.
-* **Practise your own text** – the "Your own text" tab accepts up to 300 characters of any English text; the reference IPA is generated on the server (`/getCustomSample`).
-* Per-word feedback: tap any word to compare the correct IPA with yours and replay both sounds. A slow-playback toggle helps with long sentences.
-* Server-side voice with [Piper](https://github.com/rhasspy/piper) (American English, downloaded on first use to `models/piper/`), falling back to the browser voice when Piper is not installed.
+## How scoring works
+
+1. The browser records with MediaRecorder (Opus in WebM or Ogg; AAC in MP4 on Safari) and sends it as base64.
+2. One ffmpeg process decodes it to 16 kHz mono, with limits on size, length (35 s), formats, codecs, streams,
+   memory and time (`audioPreprocessing.py`).
+3. [Whisper base](https://huggingface.co/openai/whisper-base) (through transformers, on CPU) transcribes it,
+   with a timestamp for every word.
+4. The transcript is aligned with the sentence word by word (dynamic time warping, `WordMatching.py`), and
+   every word pair is compared letter by letter. The score is the share of letters that match.
+5. The reference IPA comes from the CMU Pronouncing Dictionary (`eng_to_ipa`, `RuleBasedModels.py`).
+
+The score measures how well the speech was *recognised* as the sentence, not how each sound was pronounced:
+Whisper is good at guessing the intended word, so a mispronounced sound can still score well. Scoring by
+phoneme, with a model of its own, is planned.
+
+## How it fits together
+
+```text
+browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) ──HTTP──> VM :3000
+                                                                            │
+                         Caddy (ai-pronunciation-trainer-proxy) ────────────┘
+                           └─> the live colour: ai-pronunciation-trainer-blue or -green
+                                 gunicorn (gunicorn.conf.py): 2 workers × 4 threads, Flask (webApp.py)
+                                   ├─ /getSample, /getCustomSample   lambdaGetSample.py, validation.py
+                                   ├─ /getAudioFromText               piperTTS.py (Piper, ONNX Runtime)
+                                   └─ /GetAccuracyFromRecordedAudio   lambdaSpeechToScore.py
+                                        audioPreprocessing.py → whisper_wrapper.py → pronunciationTrainer.py
+```
+
+- Cloudflare gives up on a request after 125 s (error 524). Every step is bounded well below that.
+- Each gunicorn worker loads its own models and then scores a spoken warm-up sentence. It writes a readiness
+  marker (`readiness.py`) only if that worked; the Docker `HEALTHCHECK` and `/readyz` count the markers.
+- Scoring is serialised within a worker, and its other threads serve the page, samples and speech meanwhile, as
+  long as fewer than four recordings (the one being scored included) are on that worker. A worker keeps
+  accepting recordings while it scores one, so recordings that arrive together can queue on one worker while the
+  other is idle. Under a burst (a class sending their recordings at once), every thread of a worker can be
+  waiting for its model, and then the page, samples and speech wait too: up to 34 s, measured with 24 recordings
+  sent at once. Phase 2 replaces this with one shared model and a bounded queue.
+- Caddy receives each request in full before the app sees it, so a slow or stalled upload holds no app thread.
+  It holds the bodies in up to 1 GB of memory, which held about 110 uploads of 4.9 MB at once in a test. More
+  than that at once can make the kernel kill Caddy, which cuts every request in flight until docker has
+  restarted it. Nothing on the server limits requests per client yet.
+- `deploy/deploy.sh` deploys a new release next to the live one and switches Caddy to it once it has passed
+  its checks. Requests in flight finish on the old release, uploads still arriving included
+  ([deploy/RUNBOOK.md](deploy/RUNBOOK.md) gives the exception: a request sent at the very moment of the switch,
+  on an idle connection or, rarely, on a new one).
+
+## Running it
 
 ### Docker
 
-```
-docker build -t ai-pronunciation-trainer .
-docker run -d --name ai-pronunciation-trainer --restart unless-stopped -p 3000:3000 ai-pronunciation-trainer
+```bash
+docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciation-trainer .
+docker run -d --name aipt -p 3000:3000 --memory 9g --tmpfs /tmp:rw,nosuid,size=256m ai-pronunciation-trainer
+docker ps --filter name=aipt   # (healthy) after about 30-60 s; then open http://localhost:3000
 ```
 
-The image downloads the Whisper checkpoint and the Piper voice at build time and runs offline afterwards (`HF_HUB_OFFLINE=1`).
+Unpacked, the image is about 2.9 GB: torch takes 0.8 GB, the other Python packages 1.1 GB, ffmpeg and its
+libraries 0.45 GB, the models 0.35 GB and the base image 0.13 GB (`docker images` shows about 3.9 GB, as it also
+counts the compressed layers). The build downloads Whisper and the Piper voice once, checks every file against its
+pinned sha256, and then scores a spoken sentence: it fails if the image cannot score. At run time the app opens no
+connection to the internet: Hugging Face is offline, and the telemetry of Hugging Face and ONNX Runtime is off.
 
-### Configuration (environment variables)
+### Local development
+
+Needs Python 3.12 and [ffmpeg](https://ffmpeg.org/download.html) on the `PATH` (or `FFMPEG_BINARY`).
+
+```bash
+python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -r requirements.txt                  # unpinned; the image and CI use requirements.lock
+python -m pytest -q                              # fast suite: Whisper and Piper are faked
+python -m pytest -q -m slow                      # the real models (downloaded on first use)
+OPEN_BROWSER=0 python webApp.py                  # http://localhost:3000
+```
+
+The fast suite replaces Whisper and Piper with `FakeASR` and `FakeVoice` (`tests/conftest.py`). On Windows,
+set `PYTHONUTF8=1`. The German pipeline from upstream is kept but disabled: install `epitran`, set
+`ENABLED_LANGUAGES=en,de` and run `pytest -m de`.
+
+## Configuration
+
+Environment variables, with their defaults. The Docker image sets the ones marked *image*.
 
 | Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `3000` | HTTP port |
-| `OPEN_BROWSER` | `1` | Set to `0` on servers so `webApp.py` does not try to open a browser |
-| `ENABLED_LANGUAGES` | `en` | Languages the API accepts (each one loads its own ASR model) |
-| `PRELOAD_LANGUAGES` | `en` | Models loaded in the background at start-up so the first user does not wait |
-| `WHISPER_MODEL` | `openai/whisper-base` | Hugging Face Whisper checkpoint used for speech recognition |
-| `WHISPER_MAX_NEW_TOKENS` | `160` | Caps transcription length (prevents long hallucinations on noise) |
-| `MAX_CUSTOM_TEXT_CHARS` | `300` | Maximum length of user-provided practice text |
-| `PIPER_CACHE_SIZE` | `256` | Number of synthesised sentences kept in memory |
+|---|---|---|
+| `PORT` | `3000` | Port of `python webApp.py` |
+| `BIND` | `0.0.0.0:3000` | Address gunicorn listens on |
+| `WEB_CONCURRENCY` | `2` (image) | gunicorn workers; each loads its own models (about 0.5 GB) |
+| `GUNICORN_THREADS` | `4` | Threads per worker |
+| `GUNICORN_TIMEOUT` / `GUNICORN_GRACEFUL_TIMEOUT` | `120` / `120` | Worker heartbeat timeout; time to finish the requests a stopping worker has accepted |
+| `OMP_NUM_THREADS` | `5` (image) | Threads per worker for torch (Whisper) |
+| `LOG_LEVEL` | `INFO` | Level of the app's own logs (libraries log errors only) |
+| `OPEN_BROWSER` | `1`, `0` (image) | `python webApp.py` opens a browser tab |
+| `ENABLED_LANGUAGES` | `en` | Languages the API accepts |
+| `PRELOAD_LANGUAGES` | `en` | Languages warmed up when a worker starts; empty: none (the worker is ready at once) |
+| `READY_DIR` | `/tmp/aipt-ready` | Readiness markers of the workers |
+| `WARMUP_STRICT` | unset | `1`: a failed warm-up raises (the Docker build sets it) |
+| `WHISPER_MODEL` | `openai/whisper-base` at the commit in `model_pins.py`; `/models/whisper-base` (image) | Whisper checkpoint: a Hugging Face repo id or a directory |
+| `WHISPER_MAX_NEW_TOKENS` | `160` | Longest transcript Whisper may produce (stops hallucinations on noise) |
+| `PIPER_VOICE_EN` | `en_US-ljspeech-medium` | English voice, one of `model_pins.PIPER_VOICES`; the image holds the one it was built with (build argument `PIPER_VOICE_EN`) |
+| `PIPER_MODEL_DIR` | `models/piper`; `/models/piper` (image) | Where the voices are |
+| `PIPER_THREADS` | `2` | ONNX Runtime threads for speech synthesis |
+| `PIPER_CACHE_MAX_MB` | `64` | Memory for synthesised audio, reused for repeated texts |
+| `PIPER_MAX_PHONEMES` / `PIPER_MAX_PIECE_PHONEMES` | `900` / `300` | Longest text the voice reads; longest piece synthesised at once |
+| `MAX_CUSTOM_TEXT_CHARS` / `MAX_TEXT_WORDS` | `300` / `60` | Longest practice text |
+| `MAX_AUDIO_SECONDS` | `35` | Longest recording |
+| `AUDIO_DECODE_TIMEOUT` | `5` | Seconds ffmpeg may take to decode a recording |
+| `MAX_REQUEST_BYTES` | `4194304` | Largest request body (Flask answers 413 above it) |
+| `FFMPEG_BINARY` | `ffmpeg` on the `PATH` | ffmpeg to use |
+| `GIT_SHA` / `GIT_DATE` | `unknown` (set by deploy.sh) | Reported by `/version` |
+| `HF_HUB_OFFLINE` | `1` (image) | Never contact the Hugging Face Hub at run time |
 
-## !! Update !! 
+## HTTP API
 
-I'm happy (and surprised!) that apparently a considerable amount of people are using this tool, and this made -even more- clear that many things could be improved. I tried to solve the most critical issues with small changes on the code base, so that now: 
-* Requirements are relaxed and should work with modern python versions (tested with 3.12)
-* Whisper is used as standard ASR model 
-* You can edit the text you want to speak by clicking on it and typing (please do before an evaluation)
-* Code does not dependent on OR-Tools anymore, which makes is somewhat lighter and faster 
-* Code is slightly changed so it is now easier to add more languages and change the database. 
-* Errors will be shown on the console for easier debugging. 
+The page is `GET /`. The API routes take a JSON object (`Content-Type: application/json`; anything else gets
+415) and answer JSON. `language` is optional and must be an enabled language (`en`).
 
-I hope this facilitates the use of the tool and you have more fun (and learning!) with it. I plan to add those changes to the server in the coming weeks when I find some more time.
+| Route | Request | Response |
+|---|---|---|
+| `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty) |
+| `POST /getCustomSample` | `text` | the same, for the user's text |
+| `POST /getAudioFromText` | `value`: the text to read | `wavBase64`: a WAV file |
+| `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
+| `GET /healthz` | | `{"status": "ok", "uptime_s": …}`: the worker answers HTTP |
+| `GET /readyz` | | 200 once every worker has warmed up, else 503: `ready_workers`, `expected_workers` |
+| `GET /version` | | `git_sha`, `git_date` |
 
-## Installation 
-To run the program locally, you need to install the requirements and run the main python file:
-```
-pip install -r requirements.txt
-python webApp.py
-```
-You'll also need ffmpeg, which you can download from here https://ffmpeg.org/download.html. On Windows, it may be needed to add the ffmpeg "bin" folder to your PATH environment variable. On Mac, you can also just run "brew install ffmpeg".
+Errors are JSON too: `{"error": "<message for the user>", "code": "<code>"}`, with a status that fits.
 
-You should be able to run it locally without any major issues as long as you’re using a recent python 3.X version.  
+| Code | Status | Meaning |
+|---|---|---|
+| `invalid_request` | 400 | Not a JSON object, an unreadable body, or no text |
+| `bad_language` | 400 | `language` is not enabled |
+| `bad_category` | 400 | `category` is not 0-3 |
+| `text_too_long` | 400 | More than 300 characters or 60 words, or too long to read aloud |
+| `text_not_english` | 400 | Less than 90% Latin letters |
+| `text_bad_characters` | 400 | Control characters or lone surrogates |
+| `no_audio` / `bad_audio` | 400 | No recording, or one that cannot be decoded |
+| `audio_too_long` | 413 | A recording over 35 s |
+| `request_entity_too_large` | 413 | A body over 4 MB (over 5 MB, the proxy answers it) |
+| `unsupported_media_type` | 415 | Not `application/json` |
+| `no_speech` | 422 | Silence, or nothing Whisper recognised |
+| `tts_failed` | 503 | Speech synthesis failed for this text (the browser reads it instead) |
+| `tts_unavailable` | 503 | The server has no voice (the browser reads every text) |
+| `scoring_failed` / `server_error` | 500 | A bug; the response has an `X-Request-ID` to look up in the logs |
+| `server_unavailable` | 502-504 | The proxy could not reach the app (a restart) |
 
-## Online version
-For the people who don’t feel comfortable running code or just want to have a quick way to use the tool, I hosted an online version of it at https://aipronunciationtr.com. It should work well in desktop-chrome, any other browser is not officially supported, although most of the functionality should work fine. 
- 
-Please be aware that the usage is limited by day (I’m still not rich ;)). If, for some reason, you would like to avoid the daily usage limit, just enter in contact and we see what we can do. 
+Every response from the app carries `X-Request-ID` (Cloudflare's Ray ID when there is one) and security headers
+(a Content Security Policy without inline scripts or styles, `nosniff`, a microphone-only Permissions-Policy).
 
-## Motivation
+## Dependencies and builds
 
-Often, when we want to improve our pronunciation, it is very difficult to self-assess how good we’re speaking. Asking a native, or language instructor, to constantly correct us is either impractical, due to monetary constrains, or annoying due to simply being too boring for this other person. Additionally, they may often say “it sounds good” after your 10th try to not discourage you, even though you may still have some mistakes in your pronunciation. 
+- `requirements.in` lists the direct dependencies. `requirements.lock` pins them and everything they pull in,
+  each file by its sha256, for CPython 3.12 on Linux x86_64; torch is the CPU build. `scripts/lock.sh`
+  regenerates it with [uv](https://docs.astral.sh/uv/) from releases that are at least 7 days old
+  (`--upgrade` to move everything forward; `--check` in CI, which fetches every hash again).
+  `requirements-dev.lock` adds pytest, ruff and pip-audit. `scripts/pip_install_locked.sh` installs the locks: it
+  also builds eng-to-ipa, which has no wheel, with the locked setuptools instead of one pip would fetch unchecked.
+- `model_pins.py` pins the Whisper checkpoint to a commit and every model file by sha256.
+- The `Dockerfile` pins its base image by digest. The Python packages and the models are built in stages of their
+  own; the image's layers go from what changes least to what changes most: models, Python packages, system
+  packages, code. The system packages are upgraded again whenever Debian publishes an update for the base image's
+  release: `scripts/system_refresh.sh` derives the build argument `SYSTEM_REFRESH` from Debian's package indexes
+  (the ISO week when Debian cannot be reached within about a minute), and deploy.sh and CI pass it. A rebuild
+  after a code change, while Debian has published nothing new, reuses everything else (about 35 s, most of it the
+  warm-up check), so such a release adds about 2 MB on the host; one built after a Debian update adds about 460 MB.
+- CI (`.github/workflows/ci.yml`) runs ruff, shellcheck, actionlint, the lock check and pip-audit; the test
+  suite; and builds the image, smoke-tests it, runs the tests inside it against the image's own copy of the app,
+  without network (real ffmpeg, Whisper and Piper), and scans it with Trivy. A manual run with the input
+  `system_refresh` forces the system packages to be upgraded again. `deploy-test.yml` runs deploy.sh's fault-injection harness
+  (`deploy/test/`) when `deploy/` changes. Actions, the BuildKit daemon and tool images are pinned by commit SHA
+  or digest.
 
-The AI pronunciation trainer is a way to provide objective feedback on how well your pronunciation is in an automatic and scalable fashion, so the only limit to your improvement is your own dedication. 
+## Operations
 
-This project originated from a small program that I did to improve my own pronunciation.  When I finished it, I believed it could be a useful tool also for other people trying to be better understood, so I decided to make a simple, more user-friendly version of it. 
+[deploy/RUNBOOK.md](deploy/RUNBOOK.md) covers the server: deploys without downtime (`deploy/deploy.sh`, which
+deploys commits of main, refuses one whose CI run failed, was cancelled or has not finished, and only warns when
+it cannot ask GitHub or the commit has no run), rollback, logs, health checks and the canary that smoke-tests the
+public site every 15 minutes (`.github/workflows/canary.yml`).
 
-## Disclaimer 
-This is a simple project that I made in my free time with the goal to be useful to some people. It is not perfect, thus be aware that some small bugs may be present. In case you find something is not working, all feedback is welcome, and issues may be addressed depending on their severity.
+## Modifications
 
-## FAQ
+As section 5(a) of the AGPL requires, this notes that the edition was changed from the upstream project (last
+upstream commit 2025-08-16): it includes the changes of upstream pull request 28 (2026-08-24, Piper and
+refactoring) and changes made for this edition from 2026-11-12 on. The main changes:
+- English only, with a redesigned interface, practice of your own text and a recording popup.
+- Hardened API: JSON only, input limits, safe audio decoding with ffmpeg, bounded speech synthesis, security
+  headers, JSON errors.
+- A sentence bank screened for school use; the public-domain LJ Speech voice for Piper.
+- Whisper only (the Silero models and their code were removed); JSON logs with request ids; readiness and
+  version endpoints; gunicorn with threads.
+- Reproducible builds (lock files with hashes, pinned models and images), tests, CI, a canary, and deploys
+  without downtime behind Caddy.
 
-### How do I add a new language?
+The source code of the running version is linked from the page footer, as section 13 of the AGPL requires.
 
-There's definitely a code architecture that would allow this to be easier, but I have limited time and I think the current solution is doable with relative ease. What you need to do is: 
-#### Backend 
-As long as your language is supported by Whisper, you need only a database and small changes in key files:
+## Licences
 
-1. Add your language identifier to the "lambdaGetSample.py" file
-2. Add a .csv file with your text database in the "./databases" folder, following the naming convention 
-3. Add a corresponding phonem model in the "RuleBasedModels.py", you likely need only to give the language code to Epitran and possibly correct some characters with a wrapper 
-4. Add your trainer to "lambdaSpeechToScore.py" with the correct language code
-
-If you language is not supported by Whisper, you need to have an Speech-To-Text model and add it to the "getASRModel" function in "models.py", and it needs to implement the "IASRModel" interface. Besides this, you need to do the same as above.
-#### Frontend 
-
-The English edition has no language picker. Set `LANGUAGE` in "static/javascript/app.js" and add the language to `ENABLED_LANGUAGES`. 
+The code is under the [GNU AGPL v3](LICENSE). The sentences come from Tatoeba (CC BY 2.0 FR), the voice is
+trained on the public-domain LJ Speech recordings, and Whisper's weights are under Apache-2.0. Every component
+that ships in the image or the page is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1,19 +1,37 @@
 """gunicorn settings for the container (CMD: gunicorn -c gunicorn.conf.py webApp:app)."""
 import ctypes
 import os
-import shutil
 
 from gunicorn.glogging import Logger as _GunicornLogger
 
 import access_log as _access_log
+import logging_setup as _logging_setup
+import readiness as _readiness
 
 bind = os.environ.get('BIND', '0.0.0.0:3000')
 workers = int(os.environ.get('WEB_CONCURRENCY', '2'))
-worker_class = 'sync'
-# Cloudflare gives up after 125 s (error 524), so a request that runs longer
-# only wastes a worker.
+# Threads let a worker serve the page, samples and TTS while one thread scores.
+# Scoring is serialised per worker by a lock in lambdaSpeechToScore, and Piper
+# synthesis by one in piperTTS. A recording that waits for the lock keeps its
+# thread, so once a worker holds 4 recordings, every later request (the page
+# and /healthz too) waits behind them: up to 34 s, measured with 24 recordings
+# sent at once. Phase 2's bounded queue removes this.
+# With threads, `timeout` only restarts a worker whose main loop hangs; a slow
+# request is not interrupted. Every request is bounded on its own: decoding by
+# AUDIO_DECODE_TIMEOUT, recordings by MAX_AUDIO_SECONDS, Whisper by
+# WHISPER_MAX_NEW_TOKENS and speech synthesis by PIPER_MAX_PHONEMES. gunicorn
+# does not bound a slow upload: a thread reading a stalled body waits. In
+# production, Caddy (deploy/deploy.sh) buffers every body before the app gets
+# it and drops clients that take over 60 s to send one; the colours listen on
+# 127.0.0.1 only, so every request goes through it.
+worker_class = 'gthread'
+threads = int(os.environ.get('GUNICORN_THREADS', '4'))
 timeout = int(os.environ.get('GUNICORN_TIMEOUT', '120'))
-graceful_timeout = int(os.environ.get('GUNICORN_GRACEFUL_TIMEOUT', '30'))
+# Time a stopping worker has to finish the requests it has accepted, including
+# recordings queued behind the one being scored. Cloudflare gives up on a
+# request after 125 s, so nothing that could still be answered is cut.
+# deploy/deploy.sh gives a colour 130 s (docker stop -t) before it is killed.
+graceful_timeout = int(os.environ.get('GUNICORN_GRACEFUL_TIMEOUT', '120'))
 keepalive = 5
 # Worker heartbeat files on tmpfs rather than the container's overlay filesystem.
 if os.path.isdir('/dev/shm'):
@@ -26,10 +44,17 @@ errorlog = '-'
 loglevel = os.environ.get('LOG_LEVEL', 'info')
 
 
-class JsonAccessLogger(_GunicornLogger):
-    """Writes one JSON object per request (access_log.py): no client IP, no
-    query string, no body. gunicorn's access_log_format cannot produce valid
+class JsonLogger(_GunicornLogger):
+    """gunicorn's own messages and the access log as JSON lines.
+
+    The access log has one object per request (access_log.py): no client IP,
+    no query string, no body. gunicorn's access_log_format cannot produce valid
     JSON: it does not escape backslashes or newlines."""
+
+    def setup(self, cfg):
+        super().setup(cfg)
+        for handler in self.error_log.handlers:
+            handler.setFormatter(_logging_setup.JsonFormatter())
 
     def access(self, resp, req, environ, request_time):
         if not self.cfg.accesslog:
@@ -40,23 +65,23 @@ class JsonAccessLogger(_GunicornLogger):
             self.exception('Could not write the access log entry')
 
 
-logger_class = JsonAccessLogger
-
-# Each worker writes READY_DIR/<pid> after a successful warm-up (webApp.py);
-# healthcheck.py counts the markers of live workers.
-READY_DIR = os.environ.get('READY_DIR', '/tmp/aipt-ready')
+logger_class = JsonLogger
 
 
+# Each worker writes a readiness marker after a successful warm-up (webApp.py);
+# healthcheck.py and /readyz count the markers of live workers.
 def on_starting(server):
-    shutil.rmtree(READY_DIR, ignore_errors=True)
-    os.makedirs(READY_DIR, exist_ok=True)
+    _readiness.reset()
 
 
 def child_exit(server, worker):
-    try:
-        os.remove(os.path.join(READY_DIR, str(worker.pid)))
-    except FileNotFoundError:
-        pass
+    _readiness.forget(worker.pid)
+
+
+def post_worker_init(worker):
+    """Load the models in the background as soon as the worker is up."""
+    import webApp
+    webApp.start_warm_up()
 
 
 try:

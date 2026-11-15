@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# git for deploy.sh and the harness. With FAKE_GITHUB_REPO=<owner>/<repo>, `git remote get-url
+# origin` names that GitHub repository, so deploy.sh asks the GitHub API whether CI passed
+# (bin/curl answers); everything else is the real git.
+if [[ -n "${FAKE_GITHUB_REPO:-}" && " $* " == *" remote get-url origin "* ]]; then
+  echo "https://github.com/$FAKE_GITHUB_REPO.git"
+  exit 0
+fi
+exec /usr/bin/git "$@"

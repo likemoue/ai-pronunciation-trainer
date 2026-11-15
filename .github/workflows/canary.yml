@@ -1,0 +1,50 @@
+# Every 15 minutes, score one synthesised sentence on the public site, through
+# Cloudflare, the tunnel and the proxy (deploy/smoke_test.py). A failed run
+# sends GitHub's failure e-mail. GitHub delays scheduled runs at busy times and
+# turns the schedule off after 60 days without activity in the repository.
+name: canary
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+  # Check the canary itself when it changes.
+  pull_request:
+    paths:
+      - .github/workflows/canary.yml
+      - deploy/smoke_test.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canary
+  cancel-in-progress: false
+
+env:
+  SITE: https://aitrainer.ism.io.vn
+  # Cloudflare refuses Python's default user agent.
+  USER_AGENT: aitrainer-canary/1.0 (+https://github.com/likemoue/ai-pronunciation-trainer)
+
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: deploy/smoke_test.py
+          sparse-checkout-cone-mode: false
+      - name: Smoke test the public site (one retry after a minute)
+        run: |
+          for attempt in 1 2; do
+            # 60 s per quick check (120 s for the page, sample, speech and score), as
+            # deploy.sh allows after a switch: during a burst of
+            # recordings the page and /healthz wait behind them (up to 34 s measured).
+            # A site that does not answer at all still fails at the first check.
+            python3 deploy/smoke_test.py "$SITE" --user-agent "$USER_AGENT" --timeout 60 && exit 0
+            echo "::warning::attempt $attempt failed"
+            [ "$attempt" = 2 ] || sleep 60
+          done
+          exit 1

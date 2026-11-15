@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# Fault-injecting wrapper around the real docker CLI. Only deploy.sh runs through it;
+# the harness itself calls /usr/local/bin/docker directly.
+#   FAULT_STAGING=unhealthy|crash|port|create   the `docker run` of the new colour
+#   FAULT_RELOAD=fail                           `caddy reload` inside the proxy
+#   FAULT_PROXY_START=fail|port                 `docker start` of the proxy
+#   FAULT_INSPECT_FAIL=N    the Nth health-status inspect of a colour fails once
+#   FAULT_CREATE_LAG=secs   the daemon creates the new colour late (see `run` below)
+#   FAULT_SIG_AT=<point>    see bin/fire; points here: build, rm-colour, stage-run, wait,
+#                           reload, after-reload, stop-legacy, start-proxy, after-start-proxy,
+#                           after-rename, stop-colour, post-tag
+REAL=/usr/local/bin/docker
+ST=${HARNESS_STATE:?}
+A=${APP:?}
+# The lanes build and remove images at the same time, and the classic builder fails
+# ("unable to find image") when another lane removes an image while it looks for a
+# cached step. So builds share this lock and removals take it alone (lib.sh too).
+IMAGE_LOCK=/tmp/aipt-harness-images.lock
+printf '%s %s [pid %s ppid %s] docker %s\n' "$(/bin/date +%T.%3N)" "$(/bin/date +%s.%3N)" "$$" "$PPID" "$*" >> "$ST/trace.log"
+last=${*: -1}
+
+case "$1" in
+  build)
+    /h/bin/fire build
+    # Docker Desktop's image store also fails a build when another client changes images at
+    # that moment ("lease does not exist", "failed to export layer"). Such a build is tried
+    # again, from a copy of the context deploy.sh pipes in, so that the case still tests
+    # what it says; any other failure is deploy.sh's.
+    ctx=$(mktemp) err=$(mktemp)
+    cat > "$ctx"
+    for try in 1 2 3; do
+      flock -s "$IMAGE_LOCK" "$REAL" "$@" < "$ctx" 2> "$err"; rc=$?
+      cat "$err" >&2
+      (( rc != 0 )) && grep -qE 'unable to find image|lease does not exist|failed to export layer' "$err" || break
+      echo "$(/bin/date +%T.%3N) DAEMON: the build failed on its own (attempt $try of 3)" >> "$ST/trace.log"
+    done
+    rm -f "$ctx" "$err"
+    exit "$rc" ;;
+  rmi)
+    exec flock "$IMAGE_LOCK" "$REAL" "$@" ;;
+  image)
+    [[ "$2" == prune || "$2" == rm ]] && exec flock "$IMAGE_LOCK" "$REAL" "$@" ;;
+  rm)
+    # rm-colour: right after a colour was removed (in a deploy, the previous release).
+    if [[ "$last" == "$A-blue" || "$last" == "$A-green" ]]; then
+      "$REAL" "$@"; rc=$?
+      trap '' INT TERM HUP          # the removal has completed; the signal is for deploy.sh
+      if [[ -e "$ST/lagged-create.pending" ]]; then
+        # FAULT_CREATE_LAG (see run): the late create lands now, just after this removal.
+        touch "$ST/lagged-create.go"
+        for _ in $(seq 1 200); do [[ -e "$ST/lagged-create.done" ]] && break; sleep 0.05; done
+      fi
+      /h/bin/fire rm-colour
+      exit $rc
+    fi ;;
+  run)
+    if [[ " $* " == *" --name $A-blue "* || " $* " == *" --name $A-green "* ]]; then
+      case "${FAULT_STAGING:-}" in
+        unhealthy) shift; set -- run -e FORCE_UNHEALTHY=1 "$@" ;;
+        crash)     shift; set -- run -e FORCE_CRASH=1 "$@" ;;
+        port)
+          port=$(grep -oE '127\.0\.0\.1:[0-9]+:3000' <<<"$*" | cut -d: -f2)
+          "$REAL" run -d --name "$A-blocker" -p "127.0.0.1:$port:80" alpine:3 sleep 3600 >/dev/null
+          echo "$(/bin/date +%T.%3N) FAULT: $A-blocker holds 127.0.0.1:$port" >> "$ST/trace.log" ;;
+        create)
+          echo "docker: Error response from daemon: failed to create container: no space left on device (injected)" >&2
+          exit 125 ;;
+      esac
+      /h/bin/fire stage-run
+      if [[ -n "${FAULT_CREATE_LAG:-}" ]]; then
+        # Docker's CLI gives up at once on SIGINT, SIGTERM or SIGHUP, while the daemon
+        # still creates the container it was asked for. Here the daemon is late: it
+        # creates the container right after deploy.sh's next `docker rm -f` of this
+        # colour (the worst moment: that removal found nothing), or FAULT_CREATE_LAG
+        # seconds after the call when no removal comes. A deploy.sh that lets the signal
+        # reach this CLI then loses the previous release, every time.
+        rm -f "$ST/lagged-create.go" "$ST/lagged-create.done"
+        touch "$ST/lagged-create.pending"
+        echo "$(/bin/date +%T.%3N) FAULT: the daemon creates the new colour late" >> "$ST/trace.log"
+        setsid bash -c '
+          st=$1 lag=$2; shift 2
+          trap "" INT TERM HUP
+          end=$(( $(/bin/date +%s) + lag ))
+          while [[ ! -e "$st/lagged-create.go" ]] && (( $(/bin/date +%s) < end )); do sleep 0.05; done
+          rm -f "$st/lagged-create.pending"
+          "$@"; rc=$?
+          echo "$(/bin/date +%T.%3N) FAULT: the late create returned $rc" >> "$st/trace.log"
+          touch "$st/lagged-create.done"
+          exit $rc' _ "$ST" "$FAULT_CREATE_LAG" "$REAL" "$@" </dev/null >"$ST/lagged-create.out" 2>&1 &
+        bg=$!
+        trap 'echo "$(/bin/date +%T.%3N) FAULT: the docker CLI gave up on a signal; the daemon goes on" >> "$ST/trace.log"; exit 130' INT TERM HUP
+        wait "$bg"; rc=$?
+        trap - INT TERM HUP
+        cat "$ST/lagged-create.out"
+        exit $rc
+      fi
+    fi ;;
+  container)
+    if [[ "$2" == inspect && "$*" == *State.Health.Status* && ( "$last" == "$A-blue" || "$last" == "$A-green" ) ]]; then
+      n=$(( $(cat "$ST/health-inspects" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$ST/health-inspects"
+      /h/bin/fire wait
+      if [[ -n "${FAULT_INSPECT_FAIL:-}" && "$n" == "$FAULT_INSPECT_FAIL" ]]; then
+        echo "$(/bin/date +%T.%3N) FAULT: health inspect #$n fails" >> "$ST/trace.log"
+        echo "Error response from daemon: i/o timeout (injected transient failure)" >&2
+        exit 1
+      fi
+    fi ;;
+  exec)
+    if [[ "$2" == "$A-proxy" && "$3" == caddy && "$4" == reload ]]; then
+      /h/bin/fire reload
+      if [[ "${FAULT_RELOAD:-}" == fail ]]; then
+        echo "$(/bin/date +%T.%3N) FAULT: the reload fails before it reaches Caddy" >> "$ST/trace.log"
+        echo "Error: sending configuration to instance: injected failure" >&2
+        exit 1
+      fi
+      # traffic.py saw the line above and sends its reload probes: they reach Caddy before
+      # the new configuration (and its listener, SO_REUSEPORT) exists.
+      sleep 0.3
+      printf '%s %s [pid %s ppid %s] reload-begins\n' "$(/bin/date +%T.%3N)" "$(/bin/date +%s.%3N)" "$$" "$PPID" >> "$ST/trace.log"
+      "$REAL" "$@"; rc=$?
+      # Caddy has switched to the new configuration (or refused it) by now.
+      printf '%s %s [pid %s ppid %s] reload-done rc=%s\n' "$(/bin/date +%T.%3N)" "$(/bin/date +%s.%3N)" "$$" "$PPID" "$rc" >> "$ST/trace.log"
+      /h/bin/fire after-reload
+      exit $rc
+    fi ;;
+  stop)
+    [[ "$last" == "$A" ]] && /h/bin/fire stop-legacy
+    [[ "$last" == "$A-blue" || "$last" == "$A-green" ]] && /h/bin/fire stop-colour ;;
+  start)
+    if [[ "$last" == "$A-proxy" ]]; then
+      /h/bin/fire start-proxy
+      case "${FAULT_PROXY_START:-}" in
+        fail)
+          echo "Error response from daemon: injected start failure" >&2
+          exit 1 ;;
+        port)
+          if [[ ! -e "$ST/port-blocked" ]]; then
+            touch "$ST/port-blocked"
+            "$REAL" run -d --name "$A-blocker" -p "${PROD_PORT}:80" alpine:3 sleep "${BLOCKER_SECS:-3600}" >/dev/null
+            echo "$(/bin/date +%T.%3N) FAULT: $A-blocker now holds :$PROD_PORT" >> "$ST/trace.log"
+          fi ;;
+      esac
+      "$REAL" "$@"; rc=$?
+      /h/bin/fire after-start-proxy
+      exit $rc
+    fi ;;
+  rename)
+    if [[ "$2" == "$A" && "$3" == "$A-legacy" ]]; then
+      "$REAL" "$@"; rc=$?
+      trap '' INT TERM HUP          # the rename has completed; the signal is for deploy.sh
+      /h/bin/fire after-rename
+      exit $rc
+    fi ;;
+  tag)
+    if [[ "$last" == "$A:latest" ]]; then
+      "$REAL" "$@"; rc=$?
+      trap '' INT TERM HUP
+      /h/bin/fire post-tag
+      exit $rc
+    fi ;;
+esac
+exec "$REAL" "$@"

@@ -115,7 +115,7 @@ def category(value) -> int:
     try:
         number = int(value)
     except (TypeError, ValueError):
-        raise ValidationError('Unknown sentence category.', code='bad_category')
+        raise ValidationError('Unknown sentence category.', code='bad_category') from None
     if number not in CATEGORIES:
         raise ValidationError('Unknown sentence category.', code='bad_category')
     return number
@@ -131,7 +131,7 @@ def audio_bytes(value) -> bytes:
     try:
         raw = base64.b64decode(value, validate=True)
     except (binascii.Error, ValueError):
-        raise ValidationError('The recording could not be read. Please try again.', code='bad_audio')
+        raise ValidationError('The recording could not be read. Please try again.', code='bad_audio') from None
     if not raw:
         raise ValidationError('No audio was received.', code='no_audio')
     return raw

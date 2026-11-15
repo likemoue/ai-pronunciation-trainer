@@ -7,6 +7,9 @@ import pronunciationTrainer
 import base64
 import time
 import audioPreprocessing
+import logging_setup
+
+logger = logging_setup.get_logger(__name__)
 
 
 class NoSpeechError(Exception):
@@ -60,18 +63,20 @@ def warm_up(language, strict=None) -> bool:
         if sentence is None or not piperTTS.is_available() or language not in piperTTS.VOICE_CONFIGS:
             raise RuntimeError(f'No warm-up voice for language "{language}"')
         audio = base64.b64decode(piperTTS.generate_wav_base64(sentence, language))
-        start = time.time()
+        start = time.perf_counter()
         result = score(sentence, audio, language)
         accuracy = int(result['pronunciation_accuracy'])
         if accuracy < 50:
             raise RuntimeError(f'Warm-up sentence scored only {accuracy}% '
                                f'(heard: {result["real_transcript"]!r})')
-        print(f'Warm-up scoring pass OK for "{language}": {accuracy}% in {time.time() - start:.1f} s')
+        logger.info('warm-up scoring pass ok', extra={'fields': {
+            'event': 'warmup', 'language': language, 'accuracy': accuracy,
+            'seconds': round(time.perf_counter() - start, 1)}})
         return True
     except Exception as e:
         if strict:
             raise
-        print(f'WARM-UP FAILED for "{language}": {e!r}')
+        logger.error('WARM-UP FAILED for %s: %r', language, e)
         return False
 
 
@@ -82,24 +87,54 @@ def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
     if not real_text.strip():
         raise ValueError('There is no sentence to compare with.')
 
-    signal = audioPreprocessing.decode_audio(audio_bytes, target_rate=16000)
-    # A muted or disconnected microphone produces (near) digital silence. Do not
-    # send it to Whisper, which would hallucinate text for it.
-    if signal.numel() == 0 or float(signal.abs().max()) < SILENCE_PEAK_THRESHOLD:
-        raise NoSpeechError()
+    started = time.perf_counter()
+    stats = {'event': 'score', 'language': language, 'upload_kb': round(len(audio_bytes) / 1024, 1),
+             'words': len(real_text.split())}
+    try:
+        signal = audioPreprocessing.decode_audio(audio_bytes, target_rate=16000)
+        stats['decode_ms'] = round((time.perf_counter() - started) * 1000)
+        stats['audio_s'] = round(signal.shape[-1] / 16000, 2)
+        # A muted or disconnected microphone produces (near) digital silence. Do not
+        # send it to Whisper, which would hallucinate text for it.
+        if signal.numel() == 0 or float(signal.abs().max()) < SILENCE_PEAK_THRESHOLD:
+            raise NoSpeechError()
 
-    trainer = _get_trainer(language)
-    with _inference_lock:
-        try:
-            result = trainer.processAudioForGivenText(signal, real_text)
-        except Exception:
-            if not trainer.asr_model.getTranscript().strip():
-                raise NoSpeechError()
-            raise
-    if not result['recording_transcript'].strip():
-        raise NoSpeechError()
+        trainer = _get_trainer(language)
+        waiting = time.perf_counter()
+        with _inference_lock:
+            stats['lock_wait_ms'] = round((time.perf_counter() - waiting) * 1000)
+            try:
+                result = trainer.processAudioForGivenText(signal, real_text)
+            except Exception:
+                if not trainer.asr_model.getTranscript().strip():
+                    raise NoSpeechError() from None
+                raise
+        stats.update({f'{name}_ms': value for name, value in result.get('timings_ms', {}).items()})
+        if not result['recording_transcript'].strip():
+            raise NoSpeechError()
+        response = _build_response(result)
+        stats['accuracy'] = int(response['pronunciation_accuracy'])
+        stats['outcome'] = 'ok'
+        return response
+    except NoSpeechError:
+        stats['outcome'] = 'no_speech'
+        raise
+    except audioPreprocessing.AudioTooLongError:
+        stats['outcome'] = 'too_long'
+        raise
+    except audioPreprocessing.AudioDecodeError:
+        stats['outcome'] = 'bad_audio'
+        raise
+    except Exception:
+        stats['outcome'] = 'error'
+        raise
+    finally:
+        stats['total_ms'] = round((time.perf_counter() - started) * 1000)
+        logger.info('scored', extra={'fields': stats})
 
-    start = time.time()
+
+def _build_response(result) -> dict:
+    """Shape the trainer's result into the JSON the frontend expects."""
     real_transcripts_ipa = ' '.join(
         [word[0] for word in result['real_and_transcribed_words_ipa']])
     matched_transcripts_ipa = ' '.join(
@@ -127,7 +162,6 @@ def score(real_text: str, audio_bytes: bytes, language: str) -> dict:
 
     pair_accuracy_category = ' '.join(
         [str(category) for category in result['pronunciation_categories']])
-    print('Time to post-process results: ', str(time.time()-start))
 
     return {'real_transcript': result['recording_transcript'],
             'ipa_transcript': result['recording_ipa'],

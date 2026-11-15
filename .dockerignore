@@ -1,8 +1,18 @@
-.git
-images
-Dockerfile
-.dockerignore
-models
-__pycache__
-*.pyc
-.claude
+# The build context holds only what the image needs (Dockerfile); everything
+# else (tests, deploy scripts, docs, local models, git data) stays out. Every
+# file let in here must be copied by the Dockerfile, and the other way round:
+# deploy.sh builds from a `git archive` tar, to which this file does not apply
+# (tests/test_build.py checks that they agree).
+*
+!*.py
+!requirements.lock
+!scripts/download_models.py
+!scripts/pip_install_locked.sh
+!databases/data_en.csv
+!static/
+!templates/
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+**/__pycache__
+**/*.pyc
+**/.DS_Store

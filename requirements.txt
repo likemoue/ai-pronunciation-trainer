@@ -1,17 +1,7 @@
--f https://download.pytorch.org/whl/torch_stable.html
-torch 
-torchaudio 
-soundfile 
-omegaconf
-epitran 
-audioread
-requests
-dtwalign
-eng_to_ipa
-pandas
-flask
-pickle-mixin
-sqlalchemy
-transformers
-sentencepiece
-piper-tts>=1.3.0
+# Local development on any platform, with versions left open:
+#     pip install -r requirements.txt
+# The Docker image and CI install requirements.lock instead, which pins every
+# package by version and sha256 (see requirements.in and scripts/lock.sh).
+-r requirements.in
+pytest
+ruff
