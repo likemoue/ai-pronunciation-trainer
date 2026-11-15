@@ -71,7 +71,7 @@ image of the commit and mount the set into it (Git Bash: `export MSYS_NO_PATHCON
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t aipt:eval .
 docker run --rm --network none --cpus 10 --memory 9g -v "$PWD/evaluation:/app/evaluation" -w /app \
   --entrypoint python aipt:eval -m evaluation.harness run --out evaluation/runs/<name>.json
-python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase2-1c4813c.json
+python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-5-known-mistakes.json
 ```
 
 On the development machine a run scores the recordings in about 3.5 minutes (0.46 s each) and then simulates
@@ -88,7 +88,7 @@ machine.
 ## Judging a change
 
 - **Alignment, normalisation, IPA comparison** (anything after Whisper): `python -m evaluation.harness rescore
-  evaluation/runs/phase2-1c4813c.json --out evaluation/runs/<name>.json --every 1` scores what Whisper heard in
+  evaluation/runs/phase3-4-level-vad.json --out evaluation/runs/<name>.json --every 1` (the last full run) scores what Whisper heard in
   each recording again with the checkout's code, in seconds, and prints the words fixed and broken.
 - **Anything before or inside Whisper** (voice activity detection, scaling by a robust level instead of the peak,
   Whisper's settings): a full `run` in the image.
@@ -97,6 +97,13 @@ Then point `REPORT` in `harness.py` at the new run (and `against` at the run it 
 `python -m evaluation.harness report --committed`, and commit the run with the change. `tests/test_evaluation.py`
 fails while the committed run is not what the code makes of what Whisper heard, or the report is not the run's
 report; it cannot tell that a full run is due, so a change before Whisper must bring its own.
+
+## The runs
+
+`runs/` keeps every run the report has been judged on: `phase1-e4a1693` and `phase2-1c4813c` (the images of phases
+1 and 2), then one per step of phase 3: `phase3-2-alignment` and `phase3-3-normalisation` (rescored from phase 2's
+run), `phase3-4-level-vad` (a full run: the step changed what Whisper hears) and `phase3-5-known-mistakes`
+(rescored from it). Each commit message gives the words its step fixed and broke.
 
 ## Limits
 

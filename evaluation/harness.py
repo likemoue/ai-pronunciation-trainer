@@ -44,8 +44,8 @@ FORMAT = 1
 # tests/test_evaluation.py checks that the run is what this checkout's
 # alignment and scoring make of what Whisper heard, and that report.md is its
 # report. A change to the scoring adds its own run here and points REPORT at it.
-REPORT = {'run': 'runs/phase3-4-level-vad.json', 'against': 'runs/phase3-3-normalisation.json',
-          'against_name': 'step 3 (normalisation)', 'markdown': 'report.md'}
+REPORT = {'run': 'runs/phase3-5-known-mistakes.json', 'against': 'runs/phase2-1c4813c.json',
+          'against_name': 'phase 2 (main, 1c4813c)', 'markdown': 'report.md'}
 
 
 def load_manifest(path=MANIFEST):

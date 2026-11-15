@@ -93,7 +93,7 @@ class PronunciationTrainer:
             matches)
 
         pronunciation_categories = self.getWordsPronunciationCategory(
-            current_words_pronunciation_accuracy)
+            current_words_pronunciation_accuracy, matches)
 
         result = {'recording_transcript': recording_transcript,
                   'real_and_transcribed_words': real_and_transcribed_words,
@@ -185,12 +185,19 @@ class PronunciationTrainer:
 
         return np.round(percentage_of_correct_pronunciations), current_words_pronunciation_accuracy
 
-    def getWordsPronunciationCategory(self, accuracies) -> list:
+    def getWordsPronunciationCategory(self, accuracies, matches=None) -> list:
+        """0 (Correct), 1 (Almost) or 2 (Needs work) per word, from its share
+        of letters heard as written. A word heard with a learner's typical
+        mistake (WordMatching.known_mistake: an ending left out, th said as t,
+        sh as s) is at best Almost, however many of its letters were heard."""
         categories = []
 
-        for accuracy in accuracies:
-            categories.append(
-                self.getPronunciationCategoryFromAccuracy(accuracy))
+        for index, accuracy in enumerate(accuracies):
+            category = int(self.getPronunciationCategoryFromAccuracy(accuracy))
+            if category == 0 and matches is not None and wm.known_mistake(
+                    matches[index].real_canonical, matches[index].heard_canonical):
+                category = 1
+            categories.append(category)
 
         return categories
 

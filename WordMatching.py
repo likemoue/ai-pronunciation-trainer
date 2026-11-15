@@ -236,6 +236,31 @@ def canonical(word: str) -> list:
     return words
 
 
+# Vietnamese learners' typical mistakes that leave a word close in spelling to
+# the one it stands for, so that the share of its letters heard as written
+# calls it Correct: "book" for "books" is 80%, "tank" for "thank" 80%.
+_ENDINGS = ('s', 'es', 'd', 'ed')
+_TH_SAID_AS = ('t', 'd', 's', 'f')
+
+
+def known_mistake(real: str, heard: str) -> str:
+    """The typical mistake that makes the word real (as said, canonical) into
+    the word heard: 'ending' (a final -s, -es, -d or -ed left out), 'th' (th
+    said as t, d, s or f) or 'sh' (sh said as s); '' when it is none of them."""
+    r, h = real.replace(' ', ''), heard.replace(' ', '')
+    if not r or not h or r == h:
+        return ''
+    if any(r == h + ending for ending in _ENDINGS):
+        return 'ending'
+    for kind, letters, said_as in (('th', 'th', _TH_SAID_AS), ('sh', 'sh', ('s',))):
+        start = r.find(letters)
+        while start >= 0:
+            if any(r[:start] + sound + r[start + 2:] == h for sound in said_as):
+                return kind
+            start = r.find(letters, start + 1)
+    return ''
+
+
 class WordMatch(NamedTuple):
     """How one word of the sentence was heard."""
     heard: str             # for the page: the word itself when heard as written, else what was heard in its

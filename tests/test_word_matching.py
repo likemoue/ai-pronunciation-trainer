@@ -181,3 +181,25 @@ def test_the_trainer_scores_another_way_of_writing_as_correct(fake_asr):
     assert response['pronunciation_accuracy'] == '100'
     assert response['pair_accuracy_category'] == '0 0 0 0 0 0 0'
     assert '0' not in response['is_letter_correct_all_words']
+
+
+@pytest.mark.parametrize('real,heard,kind', [
+    ('books', 'book', 'ending'), ('watches', 'watch', 'ending'), ('cleaned', 'clean', 'ending'),
+    ('liked', 'like', 'ending'), ('thank', 'tank', 'th'), ('three', 'tree', 'th'), ('this', 'dis', 'th'),
+    ('nothing', 'noting', 'th'), ('mouth', 'mous', 'th'), ('fish', 'fis', 'sh'), ('she', 'se', 'sh'),
+    ('books', 'books', ''), ('book', 'books', ''), ('think', 'pink', ''), ('cat', 'cap', ''), ('', 'a', ''),
+    ('two thirty', 'two thirt', ''),
+])
+def test_known_mistakes(real, heard, kind):
+    assert wm.known_mistake(real, heard) == kind
+
+
+def test_a_word_heard_with_a_known_mistake_is_never_correct(fake_asr):
+    import lambdaSpeechToScore
+    trainer = lambdaSpeechToScore._trainer_cache['en']
+    fake_asr.transcript = 'Mary has written three book. Thank you, tank you.'
+    result = trainer.processAudioForGivenText(np.zeros((1, 32000), dtype=np.float32),
+                                              'Mary has written three books. Thank you, thank you.')
+    categories = lambdaSpeechToScore._build_response(result)['pair_accuracy_category'].split()
+    # "book" is 80% of "books" and "tank" 80% of "thank": letters alone said Correct.
+    assert categories == ['0', '0', '0', '0', '1', '0', '0', '1', '0']

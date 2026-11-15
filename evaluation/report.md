@@ -1,25 +1,25 @@
 # Scoring evaluation
 
-Pipeline: phase 3, step 4: recordings scaled by a robust level, and Silero VAD before Whisper. What Whisper heard comes from a run of `phase3-step4`: Python 3.12.16 on Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41 (16 CPUs, avx avx2 fma avx512f); faster_whisper 1.2.1, ctranslate2 4.8.5.
+Pipeline: phase 3, step 5: a learner's typical mistake is never Correct. What Whisper heard comes from a run of `2f25672`: Python 3.12.16 on Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41 (16 CPUs, avx avx2 fma avx512f); faster_whisper 1.2.1, ctranslate2 4.8.5.
 435 recordings, 0.45 s each (median), 197.7 s in all, one at a time.
 
 How to read it: `evaluation/README.md`. Each recording says what was said, word by word; a label agrees with the truth when a word said right is Correct, a mistaken word Almost or Needs work, and a word left out Needs work. Ranges in brackets are 95% intervals.
 
 ## Summary
 
-|  | step 3 (normalisation) | this run |
+|  | phase 2 (main, 1c4813c) | this run |
 |---|---|---|
 | Recordings of speech scored (not refused as "no speech") | 383/398 (96.2%) | 398/398 (100.0%) [99.0-100.0] |
 | Recordings of noise refused as "no speech" | 6/11 (54.5%) | 10/11 (90.9%) [62.3-98.4] |
-| Word labels that agree with the truth (all counted words) | 2658/2922 (91.0%) | 2691/2922 (92.1%) [91.1-93.0] |
-| Words said right and labelled Correct | 2576/2728 (94.4%) | 2610/2761 (94.5%) [93.6-95.3] |
-| Learners' mistakes flagged (Almost or Needs work) | 70/149 (47.0%) | 69/149 (46.3%) [38.5-54.3] |
+| Word labels that agree with the truth (all counted words) | 2614/2922 (89.5%) | 2714/2922 (92.9%) [91.9-93.8] |
+| Words said right and labelled Correct | 2529/2728 (92.7%) | 2609/2761 (94.5%) [93.6-95.3] |
+| Learners' mistakes flagged (Almost or Needs work) | 73/149 (49.0%) | 93/149 (62.4%) [54.4-69.8] |
 | Words left out labelled Needs work | 12/12 (100.0%) | 12/12 (100.0%) [75.7-100.0] |
-| Flags that point at a real mistake or missing word (precision) | 82/234 (35.0%) | 81/232 (34.9%) [29.1-41.2] |
-| Readings without a mistake with every word Correct | 199/251 (79.3%) | 198/251 (78.9%) [73.4-83.5] |
-| Readings without a mistake with a red letter somewhere | 51/251 (20.3%) | 53/251 (21.1%) [16.5-26.6] |
-| Words said right with a red letter | 144/2728 (5.3%) | 146/2761 (5.3%) [4.5-6.2] |
-| Mean distance between a sentence score and the share of its words said right | 6.7 points | 6.9 points |
+| Flags that point at a real mistake or missing word (precision) | 85/284 (29.9%) | 105/257 (40.9%) [35.0-47.0] |
+| Readings without a mistake with every word Correct | 190/251 (75.7%) | 198/251 (78.9%) [73.4-83.5] |
+| Readings without a mistake with a red letter somewhere | 96/251 (38.2%) | 53/251 (21.1%) [16.5-26.6] |
+| Words said right with a red letter | 278/2728 (10.2%) | 146/2761 (5.3%) [4.5-6.2] |
+| Mean distance between a sentence score and the share of its words said right | 9.0 points | 6.9 points |
 
 ## Word labels against the truth
 
@@ -27,8 +27,8 @@ Every counted word (2922: all groups but `wrong` and `no_speech`).
 
 | truth | Correct | Almost | Needs work | no speech |
 |---|---|---|---|---|
-| ok | 2610 | 20 | 131 | 0 |
-| error | 80 | 15 | 54 | 0 |
+| ok | 2609 | 21 | 131 | 0 |
+| error | 56 | 39 | 54 | 0 |
 | missing | 0 | 0 | 12 | 0 |
 
 ## By group
@@ -43,8 +43,8 @@ Every counted word (2922: all groups but `wrong` and `no_speech`).
 
 | group | clips | outcome as expected | labels agree | words said right but flagged | mistakes and missing words flagged | mean score | deserved | bias |
 |---|---|---|---|---|---|---|---|---|
-| `bank` | 191 | 191/191 (100.0%) | 93.0% | 110/1825 (6.0%) | 52/76 (68.4%) | 94.0 | 96.4 | -2.3 |
-| `learner` | 126 | 126/126 (100.0%) | 88.4% | 24/619 (3.9%) | 17/73 (23.3%) | 95.5 | 89.4 | 6.2 |
+| `bank` | 191 | 191/191 (100.0%) | 93.4% | 111/1825 (6.1%) | 61/76 (80.3%) | 94.0 | 96.4 | -2.3 |
+| `learner` | 126 | 126/126 (100.0%) | 90.6% | 24/619 (3.9%) | 32/73 (43.8%) | 95.5 | 89.4 | 6.2 |
 | `edit` | 18 | 18/18 (100.0%) | 93.7% | 7/99 (7.1%) | 12/12 (100.0%) | 83.9 | 88.8 | -4.8 |
 | `normalisation` | 20 | 20/20 (100.0%) | 94.3% | 7/122 (5.7%) | - | 95.4 | 100.0 | -4.6 |
 | `soft_tap` | 43 | 43/43 (100.0%) | 96.9% | 3/96 (3.1%) | - | 94.3 | 100.0 | -5.7 |
@@ -57,10 +57,10 @@ The deserved score of a reading is the share of its words said right; bias is th
 
 | group/condition | words | said right but flagged | mistakes flagged | not scored | said right with a red letter |
 |---|---|---|---|---|---|
-| `bank/child` | 276 | 11/276 (4.0%) | - | - | 4.0% |
+| `bank/child` | 276 | 12/276 (4.3%) | - | - | 4.0% |
 | `bank/clean` | 276 | 6/276 (2.2%) | - | - | 2.2% |
 | `bank/fast` | 276 | 10/276 (3.6%) | - | - | 2.9% |
-| `bank/misspelled` | 245 | 23/169 (13.6%) | 52/76 (68.4%) | - | 12.4% |
+| `bank/misspelled` | 245 | 23/169 (13.6%) | 61/76 (80.3%) | - | 12.4% |
 | `bank/noise0` | 276 | 40/276 (14.5%) | - | - | 14.1% |
 | `bank/noise10` | 276 | 11/276 (4.0%) | - | - | 3.6% |
 | `bank/slow` | 276 | 9/276 (3.3%) | - | - | 3.6% |
@@ -72,11 +72,11 @@ The deserved score of a reading is the share of its words said right; bias is th
 | `learner/clean` | 346 | 12/346 (3.5%) | - | - | 3.2% |
 | `learner/dh_d` | 41 | 0/33 (0.0%) | 1/8 (12.5%) | - | 0.0% |
 | `learner/final_stop` | 53 | 5/43 (11.6%) | 5/10 (50.0%) | - | 9.3% |
-| `learner/multi` | 40 | 1/23 (4.3%) | 3/17 (17.6%) | - | 4.3% |
-| `learner/past_ed` | 52 | 1/42 (2.4%) | 4/10 (40.0%) | - | 2.4% |
-| `learner/plural_s` | 56 | 0/46 (0.0%) | 0/10 (0.0%) | - | 0.0% |
+| `learner/multi` | 40 | 1/23 (4.3%) | 8/17 (47.1%) | - | 4.3% |
+| `learner/past_ed` | 52 | 1/42 (2.4%) | 5/10 (50.0%) | - | 2.4% |
+| `learner/plural_s` | 56 | 0/46 (0.0%) | 8/10 (80.0%) | - | 0.0% |
 | `learner/sh_s` | 48 | 4/40 (10.0%) | 4/8 (50.0%) | - | 12.5% |
-| `learner/th_t` | 56 | 1/46 (2.2%) | 0/10 (0.0%) | - | 2.2% |
+| `learner/th_t` | 56 | 1/46 (2.2%) | 1/10 (10.0%) | - | 2.2% |
 | `normalisation/clean` | 122 | 7/122 (5.7%) | - | - | 6.6% |
 | `soft_tap/30db` | 18 | 0/18 (0.0%) | - | - | 0.0% |
 | `soft_tap/40db` | 18 | 1/18 (5.6%) | - | - | 5.6% |
@@ -91,20 +91,20 @@ A mistake is caught when its word is Almost or Needs work. "Heard as the word" m
 
 | group/mistake | words | caught | heard as the word | caught when heard otherwise | a red letter | Correct / Almost / Needs work |
 |---|---|---|---|---|---|---|
-| `bank/final_stop` | 33 | 21/33 (63.6%) | 11/33 (33.3%) | 21/22 (95.5%) | 22/33 (66.7%) | 12 / 6 / 15 |
-| `bank/plural_s` | 13 | 4/13 (30.8%) | 2/13 (15.4%) | 4/11 (36.4%) | 11/13 (84.6%) | 9 / 1 / 3 |
-| `bank/th` | 30 | 27/30 (90.0%) | 0/30 (0.0%) | 27/30 (90.0%) | 30/30 (100.0%) | 3 / 2 / 25 |
+| `bank/final_stop` | 33 | 22/33 (66.7%) | 11/33 (33.3%) | 22/22 (100.0%) | 22/33 (66.7%) | 11 / 7 / 15 |
+| `bank/plural_s` | 13 | 11/13 (84.6%) | 2/13 (15.4%) | 11/11 (100.0%) | 11/13 (84.6%) | 2 / 8 / 3 |
+| `bank/th` | 30 | 28/30 (93.3%) | 0/30 (0.0%) | 28/30 (93.3%) | 30/30 (100.0%) | 2 / 3 / 25 |
 | `learner/dh_d` | 10 | 1/10 (10.0%) | 9/10 (90.0%) | 1/1 (100.0%) | 1/10 (10.0%) | 9 / 0 / 1 |
 | `learner/final_stop` | 12 | 6/12 (50.0%) | 5/12 (41.7%) | 6/7 (85.7%) | 7/12 (58.3%) | 6 / 1 / 5 |
-| `learner/past_ed` | 12 | 4/12 (33.3%) | 6/12 (50.0%) | 4/6 (66.7%) | 6/12 (50.0%) | 8 / 3 / 1 |
-| `learner/plural_s` | 14 | 0/14 (0.0%) | 3/14 (21.4%) | 0/11 (0.0%) | 11/14 (78.6%) | 14 / 0 / 0 |
+| `learner/past_ed` | 12 | 6/12 (50.0%) | 6/12 (50.0%) | 6/6 (100.0%) | 6/12 (50.0%) | 6 / 5 / 1 |
+| `learner/plural_s` | 14 | 11/14 (78.6%) | 3/14 (21.4%) | 11/11 (100.0%) | 11/14 (78.6%) | 3 / 11 / 0 |
 | `learner/sh_s` | 11 | 6/11 (54.5%) | 5/11 (45.5%) | 6/6 (100.0%) | 6/11 (54.5%) | 5 / 2 / 4 |
-| `learner/th_t` | 14 | 0/14 (0.0%) | 12/14 (85.7%) | 0/2 (0.0%) | 2/14 (14.3%) | 14 / 0 / 0 |
+| `learner/th_t` | 14 | 2/14 (14.3%) | 12/14 (85.7%) | 2/2 (100.0%) | 2/14 (14.3%) | 12 / 2 / 0 |
 
 ## Where wrong labels come from
 
-- Mistakes labelled Correct: 80; Whisper wrote the reference word for 53 of them (lost by the recogniser) and something else for 27 (lost by the scoring, which still said Correct).
-- Words said right but flagged: 151; for 144 the word is nowhere in what Whisper wrote (misheard, or written otherwise: 2:30, okay), for 7 it is there and the alignment or the scoring marked it down.
+- Mistakes labelled Correct: 56; Whisper wrote the reference word for 53 of them (lost by the recogniser) and something else for 3 (lost by the scoring, which still said Correct).
+- Words said right but flagged: 152; for 145 the word is nowhere in what Whisper wrote (misheard, or written otherwise: 2:30, okay), for 7 it is there and the alignment or the scoring marked it down.
 
 ## Noise and soft speech, recording by recording
 
@@ -209,44 +209,44 @@ Words said right but flagged:
 - `tap-p2-06` (phase2_refused): heard "Down.": **Go.** labelled needs_work (aligned with "Down.")
 - `tap-p2-08` (phase2_refused): heard "BAM! Then owner.": **Banana.** labelled needs_work (aligned with "BAM!")
 
-## Against step 3 (normalisation)
+## Against phase 2 (main, 1c4813c)
 
-Of 2922 counted words, 58 changed label; 44 went from wrong to right and 11 from right to wrong (McNemar p = 8.7e-06).
+Of 2922 counted words, 141 changed label; 114 went from wrong to right and 14 from right to wrong (McNemar p = 1.16e-20).
 
 | group | outcome as expected | labels agree | said right but flagged | mistakes and missing words flagged | mean score |
 |---|---|---|---|---|---|
-| `bank` | 100.0% → 100.0% | 92.8% → 93.0% | 6.1% → 6.0% | 68.4% → 68.4% | 93.8 → 94.0 |
-| `learner` | 100.0% → 100.0% | 88.4% → 88.4% | 4.0% → 3.9% | 24.7% → 23.3% | 95.4 → 95.5 |
-| `edit` | 100.0% → 100.0% | 93.7% → 93.7% | 7.1% → 7.1% | 100.0% → 100.0% | 83.9 → 83.9 |
-| `normalisation` | 100.0% → 100.0% | 94.3% → 94.3% | 5.7% → 5.7% | - → - | 95.4 → 95.4 |
-| `soft_tap` | 65.1% → 100.0% | 64.6% → 96.9% | 1.6% → 3.1% | - → - | 98.9 → 94.3 |
-| `wrong` | 100.0% → 100.0% | - → - | - → - | 97.0% → 97.0% | 3.8 → 3.8 |
+| `bank` | 100.0% → 100.0% | 92.1% → 93.4% | 6.9% → 6.1% | 68.4% → 80.3% | 92.1 → 94.0 |
+| `learner` | 100.0% → 100.0% | 86.6% → 90.6% | 6.6% → 3.9% | 28.8% → 43.8% | 91.3 → 95.5 |
+| `edit` | 100.0% → 100.0% | 87.4% → 93.7% | 14.1% → 7.1% | 100.0% → 100.0% | 76.8 → 83.9 |
+| `normalisation` | 100.0% → 100.0% | 89.3% → 94.3% | 10.7% → 5.7% | - → - | 89.0 → 95.4 |
+| `soft_tap` | 65.1% → 100.0% | 60.4% → 96.9% | 7.9% → 3.1% | - → - | 93.2 → 94.3 |
+| `wrong` | 100.0% → 100.0% | - → - | - → - | 98.5% → 97.0% | -0.9 → 3.8 |
 | `no_speech` | 54.5% → 90.9% | - → - | - → - | - → - | - → - |
 
-Each cell: step 3 (normalisation) → this run.
+Each cell: phase 2 (main, 1c4813c) → this run.
 
-Wrong before, right now (44; the first 10):
+Wrong before, right now (114; the first 10):
 
+- `bank-s05-misspelled` **of** (ok): needs_work → correct
+- `bank-s05-misspelled` **gas.** (ok): needs_work → correct
 - `bank-s10-clean` **Is** (ok): needs_work → correct
+- `bank-s10-noise0` **me?** (ok): needs_work → correct
 - `bank-s12-misspelled` **still** (ok): almost → correct
 - `bank-s13-noise0` **me?** (ok): needs_work → correct
-- `bank-s17-misspelled` **watch** (ok): almost → correct
+- `bank-s17-misspelled` **This** (error): correct → almost
+- `bank-s17-misspelled` **watch** (ok): needs_work → correct
 - `bank-s17-misspelled` **is** (ok): needs_work → correct
 - `bank-s17-noise0` **watch** (ok): needs_work → correct
-- `bank-s17-noise0` **is** (ok): needs_work → correct
-- `bank-s23-noise10` **space** (ok): almost → correct
-- `bank-s25-fast` **can** (ok): needs_work → correct
-- `bank-s27-child` **unattainably** (ok): needs_work → correct
 
-Right before, wrong now (11; the first 10):
+Right before, wrong now (14; the first 10):
 
 - `bank-s08-fast` **this** (ok): correct → needs_work
 - `bank-s12-noise0` **still** (ok): correct → almost
 - `bank-s12-noise0` **at** (ok): correct → needs_work
 - `bank-s14-misspelled` **parking** (ok): correct → needs_work
 - `bank-s16-noise0` **old** (ok): correct → needs_work
+- `bank-s26-child` **crossed** (ok): correct → almost
 - `bank-s26-child` **chance.** (ok): correct → almost
 - `bank-s26-noise10` **there** (ok): correct → almost
 - `bank-s26-noise10` **by** (ok): correct → needs_work
 - `learner-34-final_stop` **milk** (error): needs_work → correct
-- `learner-47-clean` **Tom** (ok): correct → needs_work

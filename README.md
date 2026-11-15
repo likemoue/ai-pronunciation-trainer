@@ -41,13 +41,16 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
    "three day", "OK" and "okay" alike, and homophones and British or American spellings counted as the same word
    by the CMU dictionary), then aligned word by word (an edit-distance alignment, `WordMatching.py`: a word left
    out or added costs its own place only). Every word pair is compared letter by letter, aligned the same way.
-   The score is the share of letters that match.
+   The score is the share of letters that match. A word heard with one of Vietnamese learners' typical mistakes
+   (an ending -s, -es, -d or -ed left out, th said as t, d, s or f, sh as s) is never labelled Correct, however
+   many of its letters match ("book" for "books").
 5. The reference IPA comes from the CMU Pronouncing Dictionary through `eng_to_ipa`, with the dictionary held in
    memory (`RuleBasedModels.CmuIpa`, exactly eng_to_ipa's output).
 
 The score measures how well the speech was *recognised* as the sentence, not how each sound was pronounced:
-Whisper is good at guessing the intended word, so a mispronounced sound can still score well. Scoring by
-phoneme, with a model of its own, is planned.
+Whisper is good at guessing the intended word, so a mispronounced sound can still score well (it wrote "think"
+for 12 of 14 readings of "think" said as "tink" in the evaluation set). Scoring by phoneme, with a model of its
+own, is planned.
 
 ### Evaluating the scoring
 
@@ -266,7 +269,9 @@ refactoring) and changes made for this edition from 2026-11-12 on. The main chan
 - Static files cached by content version, fonts served by the app, bank sentences read aloud as cacheable MP3s.
 - Reproducible builds (lock files with hashes, pinned models and images), tests, CI, a canary, and deploys
   without downtime behind Caddy.
-- An evaluation harness for the scoring, with a set of synthetic recordings labelled word by word.
+- An evaluation harness for the scoring, with a set of synthetic recordings labelled word by word; scoring
+  judged by it: edit-distance alignment (without dtwalign), words read as they are said, a robust recording
+  level, Silero VAD before Whisper, and learners' typical mistakes never labelled Correct.
 
 The source code of the running version is linked from the page footer, as section 13 of the AGPL requires.
 

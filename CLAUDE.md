@@ -37,7 +37,8 @@ trimmed to English. `README.md` describes it for readers; this file is the short
      word said before a pause.
   3. `pronunciationTrainer.py`: both sides read as said (`WordMatching.canonical`: numbers, times, hyphens, spellings;
      `same_sound`: homophones by the CMU dictionary), then words and letters aligned by edit distance (Needleman-Wunsch,
-     pure Python since phase 3: dtwalign and its numba, scipy and matplotlib are gone); reference IPA from `eng_to_ipa`, with the
+     pure Python since phase 3: dtwalign and its numba, scipy and matplotlib are gone); a word heard with a typical
+     mistake (`WordMatching.known_mistake`: ending, th, sh) is at best Almost; reference IPA from `eng_to_ipa`, with the
      CMU dictionary in memory (`RuleBasedModels.CmuIpa`; `tests/test_ipa.py` holds it to eng_to_ipa's output on the bank).
 - `piperTTS.py`: the reference voice (Piper, `en_US-ljspeech-medium`, public domain). Voice files are pinned by sha256
   in `model_pins.py`. A text over 900 phonemes is refused, and pieces over 300 phonemes are synthesised in smaller parts.
@@ -79,8 +80,8 @@ docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciati
 scripts/lock.sh [--upgrade | --check]   # requirements*.lock from requirements*.in (needs uv)
 
 # Scoring evaluation (evaluation/README.md): a full run belongs in the image (see there).
-python -m evaluation.harness rescore evaluation/runs/phase2-1c4813c.json --out evaluation/runs/<name>.json --every 1
-python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase2-1c4813c.json
+python -m evaluation.harness rescore evaluation/runs/phase3-4-level-vad.json --out evaluation/runs/<name>.json --every 1
+python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-5-known-mistakes.json
 python -m evaluation.harness report --committed   # evaluation/report.md from harness.REPORT
 ```
 
@@ -190,8 +191,9 @@ The full plan is in the maintainer's Claude plan file. Status:
   bounded queue that answers 503 with Retry-After and a client that sends again, 24 threads per worker, static
   files cached by content version, fonts served by the app, bank sentences as cacheable MP3s (rendered on first
   request, then kept by Cloudflare), 32 kbps recordings, `scripts/load_test.py`.
-- **Phase 3, scoring accuracy** (branch `phase3/scoring`): the evaluation harness first (`evaluation/`, done: its report
-  went to the user for a decision), then Levenshtein alignment, text normalisation, VAD and IPA comparison, each judged
-  by the harness's report and merged only if it improves.
+- **Phase 3, scoring accuracy** (PR #10, branch `phase3/scoring`): the evaluation harness (`evaluation/`), then, each
+  judged by its report: edit-distance alignment (dtwalign gone, the image 2.06 GB), words read as said (numbers,
+  spellings, homophones), a robust level and Silero VAD, and typical mistakes never Correct. Against phase 2: labels
+  right 89.5% -> 92.9%, learners' mistakes flagged 49% -> 62%, red letters on words said right 10.2% -> 5.3%.
 - **Phase 4, frontend:** UX, mobile, accessibility, and in-app browsers such as Zalo.
 - **Phases 5-7** (learning features, phoneme-level scoring, school platform): only when chosen.
