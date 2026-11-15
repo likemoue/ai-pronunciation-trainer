@@ -37,9 +37,11 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
    of 5-8 s. The transformers pipeline invented a sentence for every noise recording. A short phrase spoken very
    softly, next to a tap on the phone far louder than the voice, can be rated as not speech too: the learner is
    asked to speak louder.
-4. The transcript is aligned with the sentence word by word (an edit-distance alignment, `WordMatching.py`: a
-   word left out or added costs its own place only), and every word pair is compared letter by letter, aligned
-   the same way. The score is the share of letters that match.
+4. Both the sentence and the transcript are read as their words are said ("2:30" as "two thirty", "3-day" as
+   "three day", "OK" and "okay" alike, and homophones and British or American spellings counted as the same word
+   by the CMU dictionary), then aligned word by word (an edit-distance alignment, `WordMatching.py`: a word left
+   out or added costs its own place only). Every word pair is compared letter by letter, aligned the same way.
+   The score is the share of letters that match.
 5. The reference IPA comes from the CMU Pronouncing Dictionary through `eng_to_ipa`, with the dictionary held in
    memory (`RuleBasedModels.CmuIpa`, exactly eng_to_ipa's output).
 

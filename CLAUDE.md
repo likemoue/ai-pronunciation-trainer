@@ -35,8 +35,9 @@ trimmed to English. `README.md` describes it for readers; this file is the short
      Whisper rates as probably not speech is skipped however sure it is of its words (`log_prob_threshold=None`):
      noise as the page sends it was transcribed. `hallucination_silence_threshold` stays off: it dropped a single
      word said before a pause.
-  3. `pronunciationTrainer.py`: words and letters aligned by edit distance (Needleman-Wunsch, `WordMatching.py`, pure
-     Python since phase 3: dtwalign and its numba, scipy and matplotlib are gone); reference IPA from `eng_to_ipa`, with the
+  3. `pronunciationTrainer.py`: both sides read as said (`WordMatching.canonical`: numbers, times, hyphens, spellings;
+     `same_sound`: homophones by the CMU dictionary), then words and letters aligned by edit distance (Needleman-Wunsch,
+     pure Python since phase 3: dtwalign and its numba, scipy and matplotlib are gone); reference IPA from `eng_to_ipa`, with the
      CMU dictionary in memory (`RuleBasedModels.CmuIpa`; `tests/test_ipa.py` holds it to eng_to_ipa's output on the bank).
 - `piperTTS.py`: the reference voice (Piper, `en_US-ljspeech-medium`, public domain). Voice files are pinned by sha256
   in `model_pins.py`. A text over 900 phonemes is refused, and pieces over 300 phonemes are synthesised in smaller parts.

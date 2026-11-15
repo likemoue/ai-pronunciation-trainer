@@ -1,6 +1,7 @@
 """The alignment of a transcript with its sentence (WordMatching.py)."""
 import random
 
+import numpy as np
 import pytest
 
 import WordMatching as wm
@@ -90,6 +91,62 @@ def test_letters_heard_as_written(real, heard, flags):
     assert wm.letters_correct(real, heard) == flags
 
 
+@pytest.mark.parametrize('written,said', [
+    ('2:30.', ['two', 'thirty']), ('6:00', ['six']), ('2:05', ['two', 'oh', 'five']),
+    ('3-day', ['three', 'day']), ('next-door', ['next', 'door']), ('70%', ['seventy', 'percent']),
+    ('€2.', ['two', 'euros']), ('$1', ['one', 'dollar']), ('1st', ['first']), ('22nd', ['twenty', 'second']),
+    ('105', ['one', 'hundred', 'five']), ('1,000', ['one', 'thousand']), ('1990', ['nineteen', 'ninety']),
+    ('3.5', ['three', 'point', 'five']), ('Mr.', ['mister']), ('OK.', ['okay']), ("o'clock", ['oclock']),
+    ('“Hello,”', ['hello']), ('&', ['and']), ('...', []), ('​​as', ['as']), ('André', ['andré']),
+    ('theatre', ['theater']),
+])
+def test_words_are_read_as_they_are_said(written, said):
+    assert wm.canonical(written) == said
+
+
+@pytest.fixture(scope='module')
+def same_sound():
+    import RuleBasedModels
+    return RuleBasedModels.EngPhonemConverter().same_sound
+
+
+def heard(sentence, transcript, same_sound):
+    return [m.heard for m in wm.match_words(sentence.split(), transcript.split(), same_sound)]
+
+
+@pytest.mark.parametrize('sentence,transcript', [
+    ('We need to get home before 2:30.', 'We need to get home before two thirty.'),
+    ('Wait just 3 minutes.', 'Wait just three minutes.'),
+    ('Wait just three minutes.', 'Wait just 3 minutes.'),
+    ('We were next-door neighbors.', 'We were next door neighbours.'),
+    ("It's OK.", "It's okay."),
+    ('A small cup of coffee costs €2.', 'A small cup of coffee costs 2 euros.'),
+    ('The surface of the earth is 70% water.', 'The surface of the earth is 70 percent water.'),
+    ('Mr. Smith lives in Kyoto now.', 'Mister Smith lives in Kyoto now.'),
+    ('What colour are her eyes?', 'What color are her eyes?'),
+    ('He loves theatre.', 'He loves theater.'),
+    ('I want two apples.', 'I want to apples.'),  # homophones: the same sound
+    ('Our grandfather learned five languages ​​as a child.', 'Our grandfather learned five languages as a child.'),
+])
+def test_another_way_of_writing_the_same_words_is_heard_as_written(sentence, transcript, same_sound):
+    assert heard(sentence, transcript, same_sound) == sentence.split()
+
+
+def test_a_word_said_otherwise_is_still_heard_otherwise(same_sound):
+    assert heard('Who do you think will win?', 'Who do you tink will win?', same_sound)[3] == 'tink'
+    assert heard('Mary has written three books.', 'Mary has written three book.', same_sound)[4] == 'book.'
+    assert heard('Wait just 3 minutes.', 'Wait just tree minutes.', same_sound)[2] == 'tree'
+    match = wm.match_words('We need to get home before 2:30.'.split(), 'We need to get home before 2:40.'.split())[6]
+    assert (match.heard, match.real_canonical, match.heard_canonical) == ('2:40.', 'two thirty', 'two forty')
+    assert wm.match_words(['Hello'], [])[0] == wm.WordMatch('-', 'hello', '', -1, -1)
+
+
+def test_a_word_heard_in_two_parts_spans_them_both():
+    first, second = wm.match_words(['2:30', 'today.'], ['two', 'thirty', 'today.'])
+    assert (first.heard, first.first, first.last) == ('2:30', 0, 1)
+    assert (second.first, second.last) == (2, 2)
+
+
 def test_no_bank_sentence_read_exactly_gets_a_red_letter_or_a_moved_word():
     from evaluation import textsim
     sentences = textsim.bank_sentences()
@@ -111,3 +168,16 @@ def test_a_word_left_out_of_a_bank_sentence_marks_down_no_other_word():
         gap = indices.index(-1)
         assert wm.plain(words[gap]) == wm.plain(words[k]), (sentence, k, result)
         assert all(wm.plain(result[i]) == wm.plain(words[i]) for i in range(len(words)) if i != gap), sentence
+
+
+def test_the_trainer_scores_another_way_of_writing_as_correct(fake_asr):
+    # Whisper writes digits and times its own way: the learner said the words right.
+    import lambdaSpeechToScore
+    trainer = lambdaSpeechToScore._trainer_cache['en']
+    fake_asr.transcript = 'We need to get home before two thirty.'
+    result = trainer.processAudioForGivenText(np.zeros((1, 32000), dtype=np.float32),
+                                              'We need to get home before 2:30.')
+    response = lambdaSpeechToScore._build_response(result)
+    assert response['pronunciation_accuracy'] == '100'
+    assert response['pair_accuracy_category'] == '0 0 0 0 0 0 0'
+    assert '0' not in response['is_letter_correct_all_words']

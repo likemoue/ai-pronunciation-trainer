@@ -45,6 +45,6 @@ class TestGermanScore:
 
     def test_exact_transcription(self):
         words_real = 'Ich habe sehr viel glück, am leben und gesund zu sein'
-        pairs, _, _ = self.trainer.matchSampleAndRecordedWords(words_real, words_real)
-        accuracy, _ = self.trainer.getPronunciationAccuracy(pairs)
+        _, _, matches = self.trainer.matchSampleAndRecordedWords(words_real, words_real)
+        accuracy, _ = self.trainer.getPronunciationAccuracy(matches)
         assert int(accuracy) == 100

@@ -6,7 +6,6 @@ import WordMatching as wm
 import ModelInterfaces as mi
 import RuleBasedModels
 import language_registry
-from string import punctuation
 import time
 
 
@@ -83,15 +82,15 @@ class PronunciationTrainer:
             return {'recording_transcript': '', 'timings_ms': {'asr': round(asr_ms)}}
 
         start = time.perf_counter()
-        real_and_transcribed_words, real_and_transcribed_words_ipa, mapped_words_indices = self.matchSampleAndRecordedWords(
+        real_and_transcribed_words, real_and_transcribed_words_ipa, matches = self.matchSampleAndRecordedWords(
             real_text, recording_transcript)
         match_ms = (time.perf_counter() - start) * 1000
 
         start_time, end_time = self.getWordLocationsFromRecordInSeconds(
-            word_locations, mapped_words_indices)
+            word_locations, matches)
 
         pronunciation_accuracy, current_words_pronunciation_accuracy = self.getPronunciationAccuracy(
-            real_and_transcribed_words)  # _ipa
+            matches)
 
         pronunciation_categories = self.getWordsPronunciationCategory(
             current_words_pronunciation_accuracy)
@@ -120,20 +119,25 @@ class PronunciationTrainer:
 
         return current_recorded_transcript, current_recorded_ipa, current_recorded_word_locations
 
-    def getWordLocationsFromRecordInSeconds(self, word_locations, mapped_words_indices) -> list:
+    def getWordLocationsFromRecordInSeconds(self, word_locations, matches) -> list:
+        """Where each word of the sentence was said: from the start of the first
+        word of the transcript heard for it to the end of the last. (A word
+        not heard gets the transcript's last word; the page plays nothing for it.)"""
         start_time = []
         end_time = []
-        for word_idx in range(len(mapped_words_indices)):
-            start_time.append(float(word_locations[mapped_words_indices[word_idx]]
-                                    [0])/self.sampling_rate)
-            end_time.append(float(word_locations[mapped_words_indices[word_idx]]
-                                  [1])/self.sampling_rate)
+        for match in matches:
+            start_time.append(float(word_locations[match.first][0])/self.sampling_rate)
+            end_time.append(float(word_locations[match.last][1])/self.sampling_rate)
         return ' '.join([str(time) for time in start_time]), ' '.join([str(time) for time in end_time])
 
     ##################### END ASR Functions ###########################
 
     ##################### Evaluation Functions ###########################
     def matchSampleAndRecordedWords(self, real_text, recorded_transcript):
+        """(sentence word, what was heard for it) pairs, the same as IPA, and
+        how each word was heard (WordMatching.WordMatch). Spellings and
+        homophones count as the word when the IPA converter can tell them
+        (same_sound, English)."""
         words_estimated = recorded_transcript.split()
 
         if real_text is None:
@@ -141,29 +145,28 @@ class PronunciationTrainer:
         else:
             words_real = real_text.split()
 
-        mapped_words, mapped_words_indices = wm.get_best_mapped_words(
-            words_estimated, words_real)
+        matches = wm.match_words(words_real, words_estimated, getattr(self.ipa_converter, 'same_sound', None))
 
         real_and_transcribed_words = []
         real_and_transcribed_words_ipa = []
-        for word_idx in range(len(words_real)):
-            if word_idx >= len(mapped_words)-1:
-                mapped_words.append('-')
-            real_and_transcribed_words.append(
-                (words_real[word_idx],    mapped_words[word_idx]))
-            real_and_transcribed_words_ipa.append((self.ipa_converter.convertToPhonem(words_real[word_idx]),
-                                                   self.ipa_converter.convertToPhonem(mapped_words[word_idx])))
-        return real_and_transcribed_words, real_and_transcribed_words_ipa, mapped_words_indices
+        for word, match in zip(words_real, matches, strict=True):
+            real_and_transcribed_words.append((word, match.heard))
+            real_and_transcribed_words_ipa.append((self.ipa_converter.convertToPhonem(word),
+                                                   self.ipa_converter.convertToPhonem(match.heard)))
+        return real_and_transcribed_words, real_and_transcribed_words_ipa, matches
 
-    def getPronunciationAccuracy(self, real_and_transcribed_words_ipa) -> float:
+    def getPronunciationAccuracy(self, matches) -> float:
+        """The share of letters heard as written, per word and in all, from the
+        words as said (WordMatch.real_canonical and heard_canonical): "2:30" is
+        the letters of "two thirty"."""
         total_mismatches = 0.
         number_of_phonemes = 0.
         current_words_pronunciation_accuracy = []
-        for pair in real_and_transcribed_words_ipa:
+        for match in matches:
 
-            real_without_punctuation = self.removePunctuation(pair[0]).lower()
+            real_without_punctuation = match.real_canonical.replace(' ', '')
             number_of_word_mismatches = WordMetrics.edit_distance_python(
-                real_without_punctuation, self.removePunctuation(pair[1]).lower())
+                real_without_punctuation, match.heard_canonical.replace(' ', ''))
             total_mismatches += number_of_word_mismatches
             number_of_phonemes_in_word = len(real_without_punctuation)
             number_of_phonemes += number_of_phonemes_in_word
@@ -181,9 +184,6 @@ class PronunciationTrainer:
             percentage_of_correct_pronunciations = 100.0
 
         return np.round(percentage_of_correct_pronunciations), current_words_pronunciation_accuracy
-
-    def removePunctuation(self, word: str) -> str:
-        return ''.join([char for char in word if char not in punctuation])
 
     def getWordsPronunciationCategory(self, accuracies) -> list:
         categories = []

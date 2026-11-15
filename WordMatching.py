@@ -14,8 +14,18 @@ the neighbour down in two sentences of three (evaluation/report.md, text
 simulation). Letters are aligned the same way within a word, so a word heard
 exactly has no red letter (the warping path skipped one of a double letter,
 as in "all", in one sentence of seven).
+
+match_words, which the trainer uses, first reads both sides as their words
+are said (canonical: "2:30" is "two thirty", "OK." is "okay") and counts a
+word as heard when the dictionary says it alike (homophones, British and
+American spellings): the ways Whisper writes a word are not the learner's
+mistakes.
 """
+import re
+import unicodedata
+from collections import defaultdict
 from string import punctuation
+from typing import NamedTuple
 
 WORD_NOT_FOUND_TOKEN = '-'
 # The cost of a word (or letter) on one side paired with nothing: as much as
@@ -110,3 +120,163 @@ def letters_correct(real_word: str, heard_word: str) -> list:
     pairs = align(real, heard, lambda a, b: 0.0 if a == b else 1.0)
     return [1 if letter in punctuation or (j is not None and heard[j] == letter) else 0
             for letter, j in zip(real, pairs, strict=True)]
+
+
+# ---------------------------------------------------------------- words as they are said
+# Before they are aligned, the words of the sentence and of the transcript are
+# both turned into the words they are said as, in lower case without
+# punctuation: Whisper writes "3", "2:30" or "okay" for what the sentence spells
+# "three", "two thirty" or "OK", and the learner said them right.
+_ONES = ('zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen '
+         'seventeen eighteen nineteen').split()
+_TENS = 'zero ten twenty thirty forty fifty sixty seventy eighty ninety'.split()
+_SCALES = ((10 ** 9, 'billion'), (10 ** 6, 'million'), (1000, 'thousand'))
+_ORDINALS = {'one': 'first', 'two': 'second', 'three': 'third', 'five': 'fifth', 'eight': 'eighth', 'nine': 'ninth',
+             'twelve': 'twelfth'}
+_CURRENCIES = {'$': ('dollar', 'dollars'), '€': ('euro', 'euros'), '£': ('pound', 'pounds')}
+_SYMBOLS = {'&': 'and', '+': 'plus', '=': 'equals', '@': 'at'}
+# Abbreviations read as words, and British spellings whose American spelling
+# the CMU dictionary says otherwise. (The dictionary itself equates most
+# others, and homophones: RuleBasedModels.EngPhonemConverter.same_sound.)
+_SPELLINGS = {
+    'ok': 'okay', 'mr': 'mister', 'mrs': 'missus', 'ms': 'miz', 'dr': 'doctor', 'vs': 'versus', 'etc': 'etcetera',
+    'theatre': 'theater', 'centre': 'center', 'metre': 'meter', 'metres': 'meters', 'litre': 'liter',
+    'litres': 'liters', 'kilometre': 'kilometer', 'kilometres': 'kilometers', 'centimetre': 'centimeter',
+    'centimetres': 'centimeters', 'organisation': 'organization', 'organisations': 'organizations',
+    'organise': 'organize', 'organised': 'organized', 'organises': 'organizes', 'analyse': 'analyze',
+    'analysed': 'analyzed', 'analysing': 'analyzing', 'programme': 'program', 'programmes': 'programs',
+    'catalogue': 'catalog', 'dialogue': 'dialog', 'travelling': 'traveling', 'traveller': 'traveler',
+    'travellers': 'travelers', 'cancelled': 'canceled', 'jewellery': 'jewelry', 'defence': 'defense',
+    'licence': 'license', 'offence': 'offense', 'practise': 'practice', 'sceptical': 'skeptical',
+    'pyjamas': 'pajamas', 'moustache': 'mustache', 'plough': 'plow', 'aluminium': 'aluminum',
+}
+# Stripped from both ends of a word before it is read (inner ones count: 2:30, 3.5).
+_EDGE = '\'"“”‘’«»()[]{}.,!?;:…'
+
+
+def number_words(n: int) -> list:
+    """An integer in words, the American way: 105 -> one hundred five."""
+    if n < 20:
+        return [_ONES[n]]
+    if n < 100:
+        return [_TENS[n // 10]] + ([_ONES[n % 10]] if n % 10 else [])
+    if n < 1000:
+        return [_ONES[n // 100], 'hundred'] + (number_words(n % 100) if n % 100 else [])
+    for scale, name in _SCALES:
+        if n >= scale:
+            return number_words(n // scale) + [name] + (number_words(n % scale) if n % scale else [])
+    raise AssertionError(n)
+
+
+def _ordinal(words: list) -> list:
+    last = words[-1]
+    if last in _ORDINALS:
+        last = _ORDINALS[last]
+    elif last.endswith('y'):
+        last = last[:-1] + 'ieth'
+    else:
+        last += 'th'
+    return words[:-1] + [last]
+
+
+def _number(text: str) -> list:
+    """Digits as they are read: 1,000 -> one thousand; 3.5 -> three point
+    five; 1990 -> nineteen ninety; a long string of digits one by one."""
+    whole, _, fraction = text.replace(',', '').partition('.')
+    if len(whole) > 12:
+        words = [_ONES[int(d)] for d in whole]
+    elif len(whole) == 4 and 1100 <= int(whole) <= 1999:
+        century, year = divmod(int(whole), 100)
+        words = number_words(century) + (['hundred'] if year == 0 else
+                                          ['oh', _ONES[year]] if year < 10 else number_words(year))
+    else:
+        words = number_words(int(whole))
+    if fraction:
+        words += ['point'] + [_ONES[int(d)] for d in fraction]
+    return words
+
+
+def _said_as(part: str) -> list:
+    """The words one piece of a written word (no hyphen in it) is said as."""
+    match = re.fullmatch(r'([$€£])(\d[\d,]*(?:\.\d+)?)', part)
+    if match:
+        singular = match.group(2) in ('1', '1.0', '1.00')
+        return _number(match.group(2)) + [_CURRENCIES[match.group(1)][0 if singular else 1]]
+    match = re.fullmatch(r'(\d[\d,]*(?:\.\d+)?)%', part)
+    if match:
+        return _number(match.group(1)) + ['percent']
+    match = re.fullmatch(r'(\d{1,2}):(\d{2})', part)
+    if match:
+        minutes = match.group(2)
+        said = [] if minutes == '00' else ['oh', _ONES[int(minutes[1])]] if minutes[0] == '0' \
+            else number_words(int(minutes))
+        return number_words(int(match.group(1))) + said
+    match = re.fullmatch(r'(\d+)(st|nd|rd|th)', part)
+    if match:
+        return _ordinal(number_words(int(match.group(1))))
+    if re.fullmatch(r'\d[\d,]*(?:\.\d+)?', part):
+        return _number(part)
+    if part in _SYMBOLS:
+        return [_SYMBOLS[part]]
+    letters = ''.join(ch for ch in part if unicodedata.category(ch)[0] in 'LN')
+    return [_SPELLINGS.get(letters, letters)] if letters else []
+
+
+def canonical(word: str) -> list:
+    """The words a written word is said as, in lower case without punctuation:
+    "2:30" -> [two, thirty], "next-door" -> [next, door], "70%" -> [seventy,
+    percent], "€2" -> [two, euros], "Mr." -> [mister], "1st" -> [first].
+    Invisible characters (zero-width spaces, in a few bank sentences) are
+    dropped. A word of punctuation alone is said as nothing."""
+    text = unicodedata.normalize('NFKC', word)
+    text = ''.join(ch for ch in text if unicodedata.category(ch) != 'Cf').lower()
+    words = []
+    for part in re.split(r'[-‐‑–—/]+', text):
+        words += _said_as(part.strip(_EDGE))
+    return words
+
+
+class WordMatch(NamedTuple):
+    """How one word of the sentence was heard."""
+    heard: str             # for the page: the word itself when heard as written, else what was heard in its
+    #                        place (several words joined by '-'), or WORD_NOT_FOUND_TOKEN
+    real_canonical: str    # the word as said ("two thirty")
+    heard_canonical: str   # what was heard in its place, the same way ('' for nothing)
+    first: int             # index in the transcript of the first word heard for it, -1 for none
+    last: int              # and of the last
+
+
+def match_words(real_words: list, heard_words: list, same_sound=None) -> list:
+    """For each word of the sentence, how it was heard (WordMatch).
+
+    Both are read as their words are said (canonical) and aligned word by
+    word; a word of the sentence is heard as written when every word it is
+    said as is paired with the same word, or with one the dictionary says
+    alike (same_sound(a, b): homophones, spellings of one word)."""
+    real = [(i, word) for i, written in enumerate(real_words) for word in canonical(written)]
+    heard = [(j, word) for j, written in enumerate(heard_words) for word in canonical(written)]
+
+    def same(a, b):
+        return a == b or (same_sound is not None and same_sound(a, b))
+
+    def cost(r, h):
+        (i, a), (j, b) = r, h
+        base = 0.0 if same(a, b) else edit_distance(a, b) / max(len(a), len(b))
+        return base + (_PUNCTUATED_OTHERWISE if real_words[i].lower() != heard_words[j].lower() else 0.0)
+
+    pairs = align(real, heard, cost)
+    said = defaultdict(list)
+    for (i, word), j in zip(real, pairs, strict=True):
+        said[i].append((word, j))
+    matches = []
+    for i, written in enumerate(real_words):
+        words = said.get(i, [])
+        owners = sorted({heard[j][0] for _, j in words if j is not None})
+        as_said = ' '.join(word for word, _ in words)
+        if all(j is not None and same(word, heard[j][1]) for word, j in words):
+            shown, heard_as = written, as_said
+        else:
+            shown = '-'.join(heard_words[k] for k in owners) if owners else WORD_NOT_FOUND_TOKEN
+            heard_as = ' '.join(heard[j][1] for _, j in words if j is not None)
+        matches.append(WordMatch(shown, as_said, heard_as, owners[0] if owners else -1, owners[-1] if owners else -1))
+    return matches
