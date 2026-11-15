@@ -317,7 +317,9 @@ also shows any line that is not):
 * gunicorn's own messages (worker start and exit).
 
 Libraries that log through Python's root logger, and transformers, log errors only, and transformers shows no
-progress bars. The proxy keeps no access log; it logs its own warnings and errors. Errors that the proxy answers
+progress bars. ONNX Runtime writes its own messages to stderr and reports errors only; what it says while it is
+imported (on some virtual machines, a warning that the display is not a PCI device) is logged as a JSON line from
+`aipt.piperTTS`. The proxy keeps no access log; it logs its own warnings and errors. Errors that the proxy answers
 itself (a body over 5 MB, a colour that does not answer) are JSON like the app's (`request_entity_too_large`,
 `server_unavailable`).
 
