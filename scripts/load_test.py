@@ -3,12 +3,13 @@
     python scripts/load_test.py --base http://127.0.0.1:3000 --students 40
     python scripts/load_test.py --base https://aitrainer.ism.io.vn --user-agent aipt-load-test --students 40
 
-Standard library only. Each student sends one recording as app.js does (JSON
-with a base64 data URL) and, like app.js, sends it again after Retry-After
-plus up to 2 s when the server answers 503, at most --retries times. The
-recordings are the server's own reference voice reading bank sentences
-(fetched once, before the burst). Meanwhile a probe asks for the page and a
-sample every second, to see whether light requests wait behind the scoring.
+Standard library only. Each student sends one recording as the page does
+(recorder.js: JSON with a base64 data URL) and, like the page, sends it again
+after Retry-After plus up to 2 s when the server answers 503, at most
+--retries times. The recordings are the server's own reference voice reading
+bank sentences (fetched once, before the burst). Meanwhile a probe asks for
+the page and a sample every second, to see whether light requests wait behind
+the scoring.
 
 Run it outside school hours: it keeps both workers busy while it lasts.
 Cloudflare refuses Python's default user agent; pass --user-agent for the
@@ -27,7 +28,7 @@ parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
 parser.add_argument('--base', default='http://127.0.0.1:3000')
 parser.add_argument('--students', type=int, default=40)
 parser.add_argument('--spread', type=float, default=0.0, help='seconds over which the recordings are sent (0: at once)')
-parser.add_argument('--retries', type=int, default=3, help='resends after a 503, as app.js does')
+parser.add_argument('--retries', type=int, default=3, help='resends after a 503, as the page does')
 parser.add_argument('--sentences', type=int, default=8, help='different sentences (levels 1-3)')
 parser.add_argument('--timeout', type=float, default=100.0,
                     help="a client's limit for one request; the page gives each attempt 100 s (Cloudflare: 125 s)")

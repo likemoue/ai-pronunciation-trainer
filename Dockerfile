@@ -67,6 +67,7 @@ COPY *.py LICENSE THIRD_PARTY_NOTICES.md ./
 COPY databases/data_en.csv databases/
 COPY static/ static/
 COPY templates/ templates/
+COPY i18n/ i18n/
 
 ARG PIPER_VOICE_EN=
 # GOMP_SPINCOUNT: CTranslate2's OpenMP threads (GNU libgomp, 5 per worker) wait

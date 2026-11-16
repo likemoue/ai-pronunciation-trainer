@@ -35,16 +35,30 @@ _TYPOGRAPHY = str.maketrans({
     '‘': "'", '’': "'", '‛': "'", '′': "'",
     '“': '"', '”': '"', '‟': '"', '″': '"',
     '–': ' - ', '—': ' - ', '−': ' - ', '…': '...',
+    # The same punctuation as Windows-1252 writes it, read as Latin-1: text
+    # from a page decoded with the wrong code page (Word's quotes among it)
+    # has these C1 controls in its place. The other C1 controls are refused
+    # (_UNREADABLE).
+    '\x91': "'", '\x92': "'", '\x93': '"', '\x94': '"',
+    '\x96': ' - ', '\x97': ' - ', '\x85': '...',
+    # Invisible, and dropped (ZERO WIDTH NO-BREAK SPACE is the byte order
+    # mark). Pasted inside a word, they hide in it: the page shows the word,
+    # but neither the dictionary nor the voice knows it.
+    '\N{ZERO WIDTH SPACE}': None, '\N{ZERO WIDTH NON-JOINER}': None, '\N{ZERO WIDTH JOINER}': None,
+    '\N{WORD JOINER}': None, '\N{ZERO WIDTH NO-BREAK SPACE}': None, '\N{SOFT HYPHEN}': None,
 })
 
 
 def normalize_text(text: str) -> str:
-    """Collapse whitespace, straighten typographic quotes/dashes and drop
-    tokens that contain no letters or digits (they cannot be pronounced and
-    would break the word-by-word alignment).
+    """Collapse whitespace, straighten typographic quotes/dashes (also in
+    their Windows-1252 places), drop invisible characters, and drop tokens
+    that contain no letters or digits (they cannot be pronounced and would
+    break the word-by-word alignment).
 
-    The function is idempotent, and the frontend applies the same rules, so
-    the words the browser shows and the words the server scores stay in step.
+    The function is idempotent, and the frontend applies the same rules
+    (static/javascript/core.js, normalizeText; checkText there mirrors
+    practice_text), so the words the browser shows and the words the server
+    scores stay in step.
     """
     text = (text or '').translate(_TYPOGRAPHY)
     tokens = [token for token in text.split() if any(ch.isalnum() for ch in token)]
@@ -60,6 +74,8 @@ def latin_letter_ratio(text: str) -> float:
 
 # Control characters (NUL makes espeak-ng fail) and lone UTF-16 surrogates:
 # JSON allows "\ud800", and the phonemiser, sqlite and hashlib cannot encode it.
+# Checked on normalised text, which no longer has the C1 controls that stand
+# for punctuation (_TYPOGRAPHY), nor whitespace other than spaces.
 _UNREADABLE = re.compile('[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ud800-\udfff]')
 
 

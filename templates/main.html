@@ -1,25 +1,57 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}">
+
+{#- A dictionary text with elements in it: the text around each {slot},
+    escaped, and for each slot what the call block gives (an element with
+    data-slot="<name>"). static/javascript/i18n.js renders the same texts the
+    same way when the learner switches language. -#}
+{%- macro rich(key) -%}
+{%- for kind, value in i18n_parts(t[key]) -%}
+{%- if kind == 'slot' %}{{ caller(value) }}{% else %}{{ value }}{% endif -%}
+{%- endfor -%}
+{%- endmacro %}
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Practise English pronunciation with instant AI feedback on every word.">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+    <meta name="description" content="{{ t['page.description'] }}">
     <meta name="theme-color" content="#4f46e5">
-    <title>AI Pronunciation Trainer</title>
+    <title>{{ t['page.title'] }}</title>
 
     <link rel="icon"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%234f46e5'/%3E%3Cpath fill='white' d='M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5.5a6.5 6.5 0 0 0 5.75 6.45V20h1.5v-2.55A6.5 6.5 0 0 0 18.5 11H17Z'/%3E%3C/svg%3E">
     <link rel="preload" href="{{ url_for('static', filename='fonts/inter-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version }}">
-    <script defer src="{{ url_for('static', filename='javascript/app.js') }}?v={{ asset_version }}"></script>
+    {%- if lang == 'vi' %}
+    <link rel="preload" href="{{ url_for('static', filename='fonts/inter-vietnamese.woff2') }}" as="font" type="font/woff2" crossorigin>
+    {%- endif %}
+    <link rel="stylesheet" href="{{ asset_url('css/style.css') }}">
+    <script type="application/json" id="i18nData">{{ dictionaries|tojson }}</script>
+    <script defer src="{{ asset_url('javascript/core.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/i18n.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/ui.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/inapp.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/audio.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/recorder.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/result.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/progress.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/miccheck.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/tour.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/banner.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/app.js') }}"></script>
 </head>
 
 <body>
-    <!-- SVG icon sprite -->
-    <svg width="0" height="0" class="icon-sprite" aria-hidden="true">
+    <!-- Icons (fill: currentColor). The warning, info, offline, clock, refresh, copy, chevron, check,
+         microphone-off, open-in-new, lock, tune, more-vertical, lightbulb, help, star, flame, person-add and
+         delete icons are Material Icons paths (Apache-2.0, THIRD_PARTY_NOTICES.md). The three status marks
+         (design-system §1.3: ✓ Correct, ~ Almost, ✗ Needs work) are strokes of their own, so that every device
+         draws the same mark: Inter has no ✗. The target is three rings. -->
+    <svg class="icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
         <symbol id="i-mic" viewBox="0 0 24 24">
             <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5.3-3a.75.75 0 0 1 1.5 0 6.8 6.8 0 0 1-6.05 6.76V20.5h2.5a.75.75 0 0 1 0 1.5h-6.5a.75.75 0 0 1 0-1.5h2.5v-2.74A6.8 6.8 0 0 1 5.2 11a.75.75 0 0 1 1.5 0 5.3 5.3 0 0 0 10.6 0Z" />
+        </symbol>
+        <symbol id="i-mic-off" viewBox="0 0 24 24">
+            <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3 3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
         </symbol>
         <symbol id="i-play" viewBox="0 0 24 24">
             <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11.04-6.86a1 1 0 0 0 0-1.72L9.5 4.28A1 1 0 0 0 8 5.14Z" />
@@ -42,210 +74,625 @@
         <symbol id="i-edit" viewBox="0 0 24 24">
             <path d="M15.6 3.6a2.4 2.4 0 0 1 3.4 0l1.4 1.4a2.4 2.4 0 0 1 0 3.4L9.6 19.2a2 2 0 0 1-.95.53l-4.4 1.1a.8.8 0 0 1-.97-.97l1.1-4.4c.09-.36.27-.69.53-.95L15.6 3.6Z" />
         </symbol>
-        <symbol id="i-shuffle" viewBox="0 0 24 24">
-            <path d="M17.3 3.3a1 1 0 0 1 1.4 0l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.4-1.4L18.6 8H17a5 5 0 0 0-4 2l-.4.53-1.25-1.66.05-.07A7 7 0 0 1 17 6h1.6l-1.3-1.3a1 1 0 0 1 0-1.4ZM3 6h2a7 7 0 0 1 5.6 2.8l3.99 5.32A5 5 0 0 0 18.6 16h0l-1.3-1.3a1 1 0 1 1 1.4-1.4l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.4-1.4l1.3-1.3H17a7 7 0 0 1-5.6-2.8L7.4 10A5 5 0 0 0 5 8H3a1 1 0 1 1 0-2Zm0 10h2a5 5 0 0 0 4-2l.4-.53 1.25 1.66-.05.07A7 7 0 0 1 5 18H3a1 1 0 1 1 0-2Z" />
-        </symbol>
         <symbol id="i-snail" viewBox="0 0 24 24">
             <path d="M13 6a7 7 0 0 0-7 7c0 .7.1 1.37.3 2H4a1 1 0 0 0-1 1 3 3 0 0 0 3 3h11a4 4 0 0 0 4-4V9.2l1.45-2.9a1 1 0 1 0-1.8-.9L19.8 7h-.6l-.85-1.6a1 1 0 1 0-1.77.94l.68 1.29A6.97 6.97 0 0 0 13 6Zm0 2a5 5 0 0 1 5 5 3 3 0 0 1-3 3h-.5A3.5 3.5 0 0 1 11 12.5a2 2 0 0 1 2-2 1 1 0 0 1 1 1 1 1 0 1 0 2 0 3 3 0 0 0-3-3 4 4 0 0 0-4 4c0 1.32.4 2.55 1.08 3.57A5 5 0 0 1 13 8Z" />
         </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+            <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+        </symbol>
+        <symbol id="i-warn" viewBox="0 0 24 24">
+            <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
+        </symbol>
+        <symbol id="i-info" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
+        </symbol>
+        <symbol id="i-wifi-off" viewBox="0 0 24 24">
+            <path d="M23.64 7c-.45-.34-4.93-4-11.64-4-1.5 0-2.89.19-4.15.48L18.18 13.8 23.64 7zm-6.6 8.22L3.27 1.44 2 2.72l2.05 2.06C1.91 5.76.59 6.82.36 7l11.63 14.49.01.01.01-.01 3.9-4.86 3.32 3.32 1.27-1.27-3.46-3.46z" />
+        </symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24">
+            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+        </symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24">
+            <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+        </symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24">
+            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+        </symbol>
+        <symbol id="i-chev" viewBox="0 0 24 24">
+            <path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+        </symbol>
+        <symbol id="i-open" viewBox="0 0 24 24">
+            <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+        </symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24">
+            <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
+        </symbol>
+        <symbol id="i-tune" viewBox="0 0 24 24">
+            <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+        </symbol>
+        <symbol id="i-more-vert" viewBox="0 0 24 24">
+            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+        </symbol>
+        <symbol id="i-bulb" viewBox="0 0 24 24">
+            <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z" />
+        </symbol>
+        <symbol id="i-correct" viewBox="0 0 24 24">
+            <path d="M4 12.5l5 5L20 6.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-almost" viewBox="0 0 24 24">
+            <path d="M3 14.5C4.7 10.9 6.4 9.5 8.4 9.5C11.1 9.5 12.9 14.5 15.6 14.5C17.6 14.5 19.3 13.1 21 9.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-needs-work" viewBox="0 0 24 24">
+            <path d="M5.5 5.5l13 13M18.5 5.5l-13 13" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+        </symbol>
+        <symbol id="i-help" viewBox="0 0 24 24">
+            <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" />
+        </symbol>
+        <symbol id="i-star" viewBox="0 0 24 24">
+            <path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+        </symbol>
+        <symbol id="i-flame" viewBox="0 0 24 24">
+            <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z" />
+        </symbol>
+        <symbol id="i-person-add" viewBox="0 0 24 24">
+            <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+        </symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+        </symbol>
+        <symbol id="i-target" viewBox="0 0 24 24">
+            <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm0-14a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+        </symbol>
     </svg>
 
-    <div class="app">
+    <div class="app" id="app">
+        <!-- The in-app browser banner (design/wireframes/04-in-app-banner.html) goes here, first on the page. -->
+        <div class="banner-slot" id="bannerSlot"></div>
+
         <header class="topbar">
-            <a class="brand" href="/" aria-label="AI Pronunciation Trainer home">
-                <span class="brand-mark"><svg class="icon"><use href="#i-mic" /></svg></span>
-                <span class="brand-text">
-                    <span class="brand-title">AI Pronunciation Trainer</span>
-                    <span class="brand-sub">English · instant feedback on every word</span>
-                </span>
-            </a>
-            <div class="session-stats" aria-label="Session progress">
-                <div class="stat"><span class="stat-value" id="statPoints">0</span><span class="stat-label">points</span></div>
-                <div class="stat"><span class="stat-value" id="statSentences">0</span><span class="stat-label">sentences</span></div>
-                <div class="stat"><span class="stat-value" id="statAverage">–</span><span class="stat-label">average</span></div>
+            <div class="topbar-inner">
+                <div class="brand">
+                    <span class="brand-mark" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-mic"></use></svg></span>
+                    <div class="brand-text">
+                        <h1 class="brand-title" data-i18n="page.title">{{ t['page.title'] }}</h1>
+                        <p class="brand-sub" data-i18n="header.tagline">{{ t['header.tagline'] }}</p>
+                    </div>
+                </div>
+                <div class="topbar-tools">
+                    <!-- From 1024 px: reopens the tour (design/wireframes/08-desktop.html H1). Phones and tablets
+                         have "Show the tour again" in How it works. -->
+                    <button type="button" class="text-btn header-how" id="btnHowHeader" aria-haspopup="dialog">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-help"></use></svg>
+                        <span data-i18n="how.title">{{ t['how.title'] }}</span>
+                    </button>
+                    <div class="lang-switch" role="group" aria-label="{{ t['lang.label'] }}" data-i18n-attr="aria-label:lang.label">
+                        <button type="button" class="lang-btn" data-lang="en" lang="en" aria-pressed="{{ 'true' if lang == 'en' else 'false' }}"
+                            aria-label="{{ t['lang.en'] }}" data-i18n-attr="aria-label:lang.en"><span data-i18n="lang.enCode">{{ t['lang.enCode'] }}</span></button>
+                        <button type="button" class="lang-btn" data-lang="vi" lang="vi" aria-pressed="{{ 'true' if lang == 'vi' else 'false' }}"
+                            aria-label="{{ t['lang.vi'] }}" data-i18n-attr="aria-label:lang.vi"><span data-i18n="lang.viCode">{{ t['lang.viCode'] }}</span></button>
+                    </div>
+                    <!-- Today's points, opening the progress sheet (design/wireframes/06-progress-sheet.html). -->
+                    <div class="progress-slot" id="progressSlot"></div>
+                </div>
             </div>
         </header>
 
-        <main class="layout">
-            <section class="panel source-panel" aria-label="Choose what to practise">
-                <div class="tabs" role="tablist" aria-label="Practice mode">
-                    <button class="tab is-active" role="tab" id="tabPractice" aria-selected="true"
-                        aria-controls="panePractice" type="button">
-                        <svg class="icon"><use href="#i-shuffle" /></svg> Practice sentences
-                    </button>
-                    <button class="tab" role="tab" id="tabCustom" aria-selected="false" aria-controls="paneCustom"
-                        type="button" tabindex="-1">
-                        <svg class="icon"><use href="#i-edit" /></svg> Your own text
-                    </button>
+        <main class="layout" id="main">
+            <div class="col-main">
+                <div class="levels" id="levels" role="radiogroup" aria-label="{{ t['level.label'] }}" data-i18n-attr="aria-label:level.label">
+                    <button type="button" class="chip" role="radio" data-value="1" aria-checked="true" tabindex="0" data-i18n="level.easy">{{ t['level.easy'] }}</button>
+                    <button type="button" class="chip" role="radio" data-value="2" aria-checked="false" tabindex="-1" data-i18n="level.medium">{{ t['level.medium'] }}</button>
+                    <button type="button" class="chip" role="radio" data-value="3" aria-checked="false" tabindex="-1" data-i18n="level.hard">{{ t['level.hard'] }}</button>
+                    <button type="button" class="chip" role="radio" data-value="0" aria-checked="false" tabindex="-1" data-i18n="level.random">{{ t['level.random'] }}</button>
                 </div>
 
-                <div class="tab-pane" id="panePractice" role="tabpanel" aria-labelledby="tabPractice">
-                    <div class="pane-row">
-                        <div class="chips" role="radiogroup" aria-label="Sentence length">
-                            <button class="chip" role="radio" aria-checked="false" data-category="0" type="button">Random</button>
-                            <button class="chip is-active" role="radio" aria-checked="true" data-category="1" type="button">Easy</button>
-                            <button class="chip" role="radio" aria-checked="false" data-category="2" type="button">Medium</button>
-                            <button class="chip" role="radio" aria-checked="false" data-category="3" type="button">Hard</button>
+                <section class="card sentence-card" id="sentenceCard" aria-labelledby="cardLabel" aria-busy="true">
+                    <div class="card-top">
+                        <p class="card-label" id="cardLabel">
+                            <svg class="icon card-label-icon" aria-hidden="true" focusable="false"><use id="cardLabelIcon" href="#i-edit"></use></svg>
+                            <span id="cardLabelText" data-i18n="card.eyebrow">{{ t['card.eyebrow'] }}</span>
+                        </p>
+                        <button type="button" class="text-btn" id="btnMyText">
+                            <svg class="icon" aria-hidden="true" focusable="false"><use id="myTextIcon" href="#i-edit"></use></svg>
+                            <span id="myTextLabel" data-i18n="card.myText">{{ t['card.myText'] }}</span>
+                        </button>
+                    </div>
+
+                    <div class="sentence-area">
+                        <div class="skeleton" id="sentenceSkeleton" aria-hidden="true">
+                            <span class="skel skel-big skel-w95"></span>
+                            <span class="skel skel-big skel-w60"></span>
+                            <span class="skel skel-w80"></span>
                         </div>
-                        <button class="btn btn-primary" id="btnNext" type="button">
-                            New sentence <svg class="icon"><use href="#i-next" /></svg>
-                        </button>
+                        <p class="sentence" id="sentence" lang="en" tabindex="-1" hidden></p>
+                        <p class="ipa" id="ipa" lang="en" hidden></p>
+                        <div class="load-error" id="loadError" role="alert" hidden>
+                            <svg class="icon load-error-icon" aria-hidden="true" focusable="false"><use href="#i-wifi-off"></use></svg>
+                            <p class="load-error-title" data-i18n="card.loadFailed">{{ t['card.loadFailed'] }}</p>
+                            <p class="load-error-text" data-i18n="card.loadFailedHelp">{{ t['card.loadFailedHelp'] }}</p>
+                            <button type="button" class="btn btn-primary" id="btnRetryLoad">
+                                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"></use></svg>
+                                <span data-i18n="common.tryAgain">{{ t['common.tryAgain'] }}</span>
+                            </button>
+                        </div>
+                        <noscript><p class="noscript">{{ t['page.noscript'] }}</p></noscript>
                     </div>
-                </div>
 
-                <div class="tab-pane" id="paneCustom" role="tabpanel" aria-labelledby="tabCustom" hidden>
-                    <label class="field-label" for="customText">Type or paste the English text you want to practise</label>
-                    <textarea id="customText" class="textarea" rows="3" maxlength="300"
-                        placeholder="e.g. Could you tell me the way to the train station, please?"></textarea>
-                    <div class="pane-row">
-                        <span class="hint" id="customCounter">0 / 300</span>
-                        <button class="btn btn-primary" id="btnUseCustom" type="button" disabled>
-                            Practise this text <svg class="icon"><use href="#i-next" /></svg>
-                        </button>
-                    </div>
-                    <p class="field-error" id="customError" role="alert" hidden></p>
-                </div>
-            </section>
-
-            <section class="panel practice-panel" aria-label="Pronunciation practice">
-                <p class="status" id="statusLine" aria-live="polite">Loading a sentence…</p>
-
-                <div class="sentence-block">
-                    <p class="eyebrow">Read this aloud</p>
-                    <p class="sentence" id="sentence" lang="en">&nbsp;</p>
-                    <div class="ipa-rows">
-                        <p class="ipa-row"><span class="ipa-label">Reference</span><span class="ipa" id="ipaReference"></span></p>
-                        <p class="ipa-row" id="ipaSpokenRow" hidden><span class="ipa-label">You said</span><span class="ipa" id="ipaSpoken"></span></p>
-                    </div>
-                </div>
-
-                <div class="word-detail" id="wordDetail" hidden aria-live="polite">
-                    <div class="word-detail-head">
-                        <span class="word-detail-word" id="wdWord"></span>
-                        <span class="badge" id="wdBadge"></span>
-                    </div>
-                    <div class="word-detail-grid">
-                        <button class="wd-cell" id="wdPlayRef" type="button">
-                            <span class="wd-label">Correct</span>
-                            <span class="wd-ipa" id="wdRefIpa"></span>
-                            <span class="wd-action"><svg class="icon"><use href="#i-volume" /></svg> Listen</span>
-                        </button>
-                        <button class="wd-cell" id="wdPlayYours" type="button">
-                            <span class="wd-label">Yours</span>
-                            <span class="wd-ipa" id="wdYourIpa"></span>
-                            <span class="wd-action"><svg class="icon"><use href="#i-headphones" /></svg> Replay</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="controls">
-                    <div class="control-side">
-                        <button class="btn-round" id="btnListen" type="button" disabled aria-label="Listen to the sentence">
-                            <svg class="icon"><use href="#i-volume" /></svg>
-                        </button>
-                        <span class="control-label">Listen</span>
-                        <label class="toggle" title="Play more slowly">
+                    <div class="card-foot">
+                        <label class="toggle">
                             <input type="checkbox" id="slowToggle">
-                            <span class="toggle-ui"><svg class="icon"><use href="#i-snail" /></svg> Slow</span>
+                            <span class="toggle-ui">
+                                <span class="toggle-box" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-check"></use></svg></span>
+                                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-snail"></use></svg>
+                                <span data-i18n="card.slow">{{ t['card.slow'] }}</span>
+                            </span>
                         </label>
-                    </div>
-
-                    <div class="control-main">
-                        <button class="btn-mic" id="btnRecord" type="button" disabled aria-label="Start recording">
-                            <span class="btn-mic-ring"></span>
-                            <svg class="icon"><use href="#i-mic" /></svg>
+                        <button type="button" class="toggle-btn" id="btnShowIpa" aria-expanded="false" aria-controls="ipa" hidden>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chev"></use></svg>
+                            <span id="showIpaLabel" data-i18n="card.showIpa">{{ t['card.showIpa'] }}</span>
                         </button>
-                        <span class="control-label">Tap to speak <kbd>Space</kbd></span>
+                        <p class="playing-note" id="playingNote" hidden>
+                            <span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>
+                            <span id="playingText"></span>
+                        </p>
                     </div>
 
-                    <div class="control-side">
-                        <button class="btn-round" id="btnPlayback" type="button" disabled
-                            aria-label="Play your recording">
-                            <svg class="icon"><use href="#i-headphones" /></svg>
-                        </button>
-                        <span class="control-label">Your voice</span>
+                    <!-- Listen · Mic · Next: a bar fixed at the bottom of phones, inline in the card from 768 px.
+                         Notices about these controls dock right above them. -->
+                    <div class="control-zone" id="controlZone">
+                        <div class="dock" id="dock" aria-live="polite"></div>
+                        <div class="controls">
+                            <div class="control">
+                                <button type="button" class="btn-round" id="btnListen" aria-labelledby="listenLabel" aria-pressed="false" aria-disabled="true" data-state="idle">
+                                    <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-volume"></use></svg>
+                                    <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                    <span class="spinner" aria-hidden="true"></span>
+                                </button>
+                                <span class="control-label" id="listenLabel" data-i18n="controls.listen">{{ t['controls.listen'] }}</span>
+                            </div>
+                            <div class="control control-mic">
+                                <button type="button" class="btn-mic" id="btnRecord" aria-labelledby="micLabel" aria-disabled="true" aria-keyshortcuts="Space">
+                                    <span class="btn-mic-ring" aria-hidden="true"></span>
+                                    <svg class="icon icon-mic" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg>
+                                    <svg class="icon icon-mic-off" aria-hidden="true" focusable="false"><use href="#i-mic-off"></use></svg>
+                                </button>
+                                <span class="control-label" id="micLabel" data-i18n="controls.speak">{{ t['controls.speak'] }}</span>
+                                <kbd class="space-hint" aria-hidden="true" data-i18n="controls.space">{{ t['controls.space'] }}</kbd>
+                            </div>
+                            <div class="control">
+                                <button type="button" class="btn-round" id="btnNext" aria-labelledby="nextLabel" aria-disabled="true">
+                                    <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+                                </button>
+                                <span class="control-label" id="nextLabel" data-i18n="controls.next">{{ t['controls.next'] }}</span>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                </section>
+            </div>
 
-                <div class="result" id="resultBox" hidden>
-                    <div class="score-ring" id="scoreRing">
-                        <svg viewBox="0 0 120 120" aria-hidden="true">
+            <!-- The result (design/wireframes/03-result-card.html, C1-C7; design-system §2.10-2.13). result.js fills it
+                 and names its tier in data-tier: excellent, good, almost, keep or different. -->
+            <section class="card result-card" id="resultCard" aria-label="{{ t['result.region'] }}" data-i18n-attr="aria-label:result.region" hidden>
+                <div class="result-head">
+                    <div class="score-ring" id="scoreRing" aria-hidden="true">
+                        <svg viewBox="0 0 120 120" focusable="false">
                             <circle class="ring-track" cx="60" cy="60" r="52" />
                             <circle class="ring-value" cx="60" cy="60" r="52" />
                         </svg>
                         <div class="score-ring-text"><span id="scoreValue">0</span><small>%</small></div>
                     </div>
-                    <div class="result-text">
-                        <p class="result-title" id="resultTitle"></p>
-                        <p class="result-sub" id="resultSub"></p>
-                        <ul class="legend">
-                            <li><span class="dot dot-good"></span>Correct</li>
-                            <li><span class="dot dot-ok"></span>Almost</li>
-                            <li><span class="dot dot-bad"></span>Needs work</li>
-                        </ul>
+                    <div class="result-headline">
+                        <h2 class="result-title" id="resultTitle" tabindex="-1"></h2>
+                        <p class="result-meaning" id="resultMeaning"></p>
                     </div>
+                </div>
+
+                <!-- The take was stopped at 30 s before the end of the text (02-recording-sheet.html, B4). -->
+                <p class="result-note" id="resultCutOff" hidden>
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-clock"></use></svg>
+                    <span data-i18n="result.cutOff">{{ t['result.cutOff'] }}</span>
+                </p>
+                <p class="done-line" id="resultDone" hidden>
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"></use></svg>
+                    <span data-i18n="result.done">{{ t['result.done'] }}</span>
+                </p>
+                <div class="practise" id="practise" hidden>
+                    <h3 class="result-sub" id="practiseTitle" data-i18n="result.practise">{{ t['result.practise'] }}</h3>
+                    <div class="word-chips" id="wordChips" role="group" aria-labelledby="practiseTitle"></div>
+                </div>
+
+                <div class="word-detail" id="wordDetail" hidden>
+                    <div class="word-detail-head">
+                        <p class="word-detail-word" id="wdWord" lang="en"></p>
+                        <span class="badge" id="wdBadge"><svg class="icon" aria-hidden="true" focusable="false"><use id="wdBadgeIcon" href="#i-correct"></use></svg><span id="wdBadgeText"></span></span>
+                    </div>
+                    <div class="word-detail-grid">
+                        <div class="wd-cell">
+                            <span class="wd-label" data-i18n="detail.correct">{{ t['detail.correct'] }}</span>
+                            <span class="wd-ipa" id="wdRefIpa" lang="en"></span>
+                            <button type="button" class="wd-action play-btn" id="wdPlayRef" aria-pressed="false" data-state="idle">
+                                <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-volume"></use></svg>
+                                <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                <span class="spinner" aria-hidden="true"></span>
+                                <span data-i18n="detail.listen">{{ t['detail.listen'] }}</span>
+                            </button>
+                        </div>
+                        <div class="wd-cell">
+                            <span class="wd-label" data-i18n="detail.heard">{{ t['detail.heard'] }}</span>
+                            <span class="wd-ipa" id="wdHeardIpa"></span>
+                            <button type="button" class="wd-action play-btn" id="wdPlayHeard" aria-pressed="false" data-state="idle">
+                                <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-headphones"></use></svg>
+                                <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                <span class="spinner" aria-hidden="true"></span>
+                                <span data-i18n="detail.replay">{{ t['detail.replay'] }}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- The typical-mistake hint (Q3, C3/C4): only on an Almost word whose mistake the server names. -->
+                    <div class="hint" id="wdHint" hidden>
+                        <svg class="icon hint-icon" aria-hidden="true" focusable="false"><use href="#i-bulb"></use></svg>
+                        <div class="hint-body">
+                            <p class="hint-lead" id="wdHintLead"></p>
+                            <p class="hint-tip" id="wdHintTip"></p>
+                            <div class="hint-actions">
+                                <button type="button" class="btn btn-secondary btn-sm play-btn" id="wdHintWord" aria-pressed="false" data-state="idle">
+                                    <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-volume"></use></svg>
+                                    <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                    <span class="spinner" aria-hidden="true"></span>
+                                    <span id="wdHintWordText" lang="en"></span>
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm play-btn" id="wdHintHeard" aria-pressed="false" data-state="idle">
+                                    <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-volume"></use></svg>
+                                    <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                    <span class="spinner" aria-hidden="true"></span>
+                                    <span id="wdHintHeardText" lang="en"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-row">
+                    <button type="button" class="btn btn-secondary btn-sm play-btn" id="btnPlayback" aria-pressed="false" data-state="idle">
+                        <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg>
+                        <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                        <span class="spinner" aria-hidden="true"></span>
+                        <span data-i18n="result.myRecording">{{ t['result.myRecording'] }}</span>
+                    </button>
+                </div>
+                <p class="result-heard" id="resultHeard"></p>
+                <button type="button" class="text-btn heard-more" id="btnHeardMore" aria-expanded="false" aria-controls="resultHeard" hidden>
+                    <span id="heardMoreLabel" data-i18n="result.heardMore">{{ t['result.heardMore'] }}</span>
+                </button>
+
+                <!-- The marks of the sentence (design-system §2.13): ~ Almost, ✗ Needs work, none for Correct, and
+                     the wrong letters. -->
+                <ul class="legend">
+                    <li><span class="mark mark-1" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-almost"></use></svg></span><span data-i18n="status.almost">{{ t['status.almost'] }}</span></li>
+                    <li><span class="mark mark-2" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-needs-work"></use></svg></span><span data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></li>
+                    <li><span data-i18n="legend.noMark">{{ t['legend.noMark'] }}</span></li>
+                    <li><b class="legend-letters" lang="en" aria-hidden="true">ab</b><span data-i18n="legend.letters">{{ t['legend.letters'] }}</span></li>
+                </ul>
+
+                <!-- From 1024 px only: the eye ends here, far from the controls (design/wireframes/08-desktop.html, H2). -->
+                <div class="result-actions">
+                    <button type="button" class="btn btn-primary" id="btnResultRetry">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg>
+                        <span data-i18n="common.tryAgain">{{ t['common.tryAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="btnResultNext">
+                        <span data-i18n="result.next">{{ t['result.next'] }}</span>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+                    </button>
                 </div>
             </section>
 
-            <section class="panel tips-panel" aria-label="How it works">
-                <h2 class="tips-title">How it works</h2>
-                <ol class="tips">
-                    <li><strong>Listen</strong> to the sentence first – turn on <em>Slow</em> if you need to.</li>
-                    <li>Tap the <strong>microphone</strong>, read the sentence aloud, then tap <strong>Stop</strong>.</li>
-                    <li>Letters in <span class="t-good">green</span> were pronounced well, <span class="t-bad">red</span> ones need work. Tap any word to compare your sound with the correct one.</li>
+            <!-- Phones and tablets: "How it works" after the result. From 1024 px the right column, until a result takes it. -->
+            <section class="card tips-card" id="howItWorks" aria-labelledby="howTitle">
+                <h2 class="tips-title" id="howTitle">
+                    <span class="narrow-only" data-i18n="how.title">{{ t['how.title'] }}</span>
+                    <span class="wide-only" data-i18n="how.titleWide">{{ t['how.titleWide'] }}</span>
+                </h2>
+                <ol class="tips narrow-only">
+                    <li data-i18n-rich="how.step1">{% call(slot) rich('how.step1') %}<b data-slot="slow" data-i18n="card.slow">{{ t['card.slow'] }}</b>{% endcall %}</li>
+                    <li data-i18n-rich="how.step2">{% call(slot) rich('how.step2') %}{% if slot == 'mic' %}<b data-slot="mic" data-i18n="how.mic">{{ t['how.mic'] }}</b>{% else %}<b data-slot="stop" data-i18n="controls.stop">{{ t['controls.stop'] }}</b>{% endif %}{% endcall %}</li>
+                    <li data-i18n-rich="how.step3">{% call(slot) rich('how.step3') %}{% if slot == 'almost' %}<b class="tips-mark" data-slot="almost"><span class="mark mark-1" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-almost"></use></svg></span><span class="visually-hidden" data-i18n="status.almost">{{ t['status.almost'] }}</span></b>{% else %}<b class="tips-mark" data-slot="needsWork"><span class="mark mark-2" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-needs-work"></use></svg></span><span class="visually-hidden" data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></b>{% endif %}{% endcall %}</li>
                 </ol>
-                <p class="tips-note">Works best in Chrome or Edge with a headset microphone in a quiet room.</p>
+                <ol class="tips wide-only">
+                    <li data-i18n="how.step1Wide">{{ t['how.step1Wide'] }}</li>
+                    <li data-i18n-rich="how.step2Wide">{% call(slot) rich('how.step2Wide') %}<kbd data-slot="space" data-i18n="controls.space">{{ t['controls.space'] }}</kbd>{% endcall %}</li>
+                    <li data-i18n-rich="how.step3Wide">{% call(slot) rich('how.step3Wide') %}{% if slot == 'almost' %}<b class="tips-mark" data-slot="almost"><span class="mark mark-1" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-almost"></use></svg></span><span class="visually-hidden" data-i18n="status.almost">{{ t['status.almost'] }}</span></b>{% else %}<b class="tips-mark" data-slot="needsWork"><span class="mark mark-2" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-needs-work"></use></svg></span><span class="visually-hidden" data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></b>{% endif %}{% endcall %}</li>
+                </ol>
+                <!-- The tour and the microphone check, again (design/wireframes/05-onboarding.html E10). From 1024 px
+                     the header's How it works reopens the tour, so only the check stays here (H1). -->
+                <div class="tips-actions">
+                    <button type="button" class="btn btn-secondary btn-sm tips-tour" id="btnTourAgain" aria-haspopup="dialog">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-help"></use></svg>
+                        <span data-i18n="how.tourAgain">{{ t['how.tourAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnMicCheck" aria-haspopup="dialog">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg>
+                        <span data-i18n="how.micCheck">{{ t['how.micCheck'] }}</span>
+                    </button>
+                </div>
             </section>
         </main>
 
         <footer class="footer">
-            <p>
-                Based on <a href="https://github.com/Thiagohgl/ai-pronunciation-trainer" target="_blank" rel="noopener">AI Pronunciation Trainer</a>
-                by Thiago Lobato · <a href="https://github.com/likemoue/ai-pronunciation-trainer" target="_blank" rel="noopener">Source code</a> (AGPL-3.0)
-                · Sentences from <a href="https://tatoeba.org" target="_blank" rel="noopener">Tatoeba</a> (CC BY 2.0 FR)
-            </p>
+            <p data-i18n-rich="footer.credits">{% call(slot) rich('footer.credits') %}{% if slot == 'original' %}<a href="https://github.com/Thiagohgl/ai-pronunciation-trainer" target="_blank" rel="noopener" data-slot="original" data-i18n="footer.original">{{ t['footer.original'] }}</a>{% elif slot == 'source' %}<a href="https://github.com/likemoue/ai-pronunciation-trainer" target="_blank" rel="noopener" data-slot="source" data-i18n="footer.source">{{ t['footer.source'] }}</a>{% else %}<a href="https://tatoeba.org" target="_blank" rel="noopener" data-slot="tatoeba" data-i18n="footer.tatoeba">{{ t['footer.tatoeba'] }}</a>{% endif %}{% endcall %}</p>
         </footer>
     </div>
 
-    <!-- Recording popup -->
-    <div class="modal" id="recordModal" hidden>
-        <div class="modal-backdrop" data-close></div>
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="recTitle" aria-describedby="recSentence">
-            <button class="modal-x" type="button" data-close aria-label="Cancel recording">
-                <svg class="icon"><use href="#i-close" /></svg>
-            </button>
-
-            <div class="rec-head">
-                <span class="rec-dot" id="recDot"></span>
-                <h2 class="rec-title" id="recTitle">Getting the microphone ready…</h2>
-                <span class="rec-timer" id="recTimer">0:00</span>
-            </div>
-
-            <p class="eyebrow">Read aloud</p>
-            <p class="rec-sentence" id="recSentence" lang="en"></p>
-
-            <div class="wave-wrap" id="waveWrap">
-                <canvas class="wave" id="waveCanvas" aria-label="Live microphone waveform" role="img"></canvas>
-                <div class="wave-overlay" id="waveOverlay" hidden>
-                    <span class="spinner" aria-hidden="true"></span>
-                    <span id="waveOverlayText">Analysing your pronunciation…</span>
+    <!-- My text (design/wireframes/07-my-text-sheet.html): a bottom sheet on phones, a dialog from 768 px. -->
+    <div class="sheet-root" id="myTextSheet" hidden>
+        <div class="backdrop"></div>
+        <div class="sheet-frame">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="myTextTitle">
+                <div class="sheet-head">
+                    <svg class="icon sheet-icon" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>
+                    <h2 class="sheet-title" id="myTextTitle" tabindex="-1" data-i18n="mytext.title">{{ t['mytext.title'] }}</h2>
+                    <button type="button" class="sheet-x" data-sheet-close aria-label="{{ t['common.close'] }}" data-i18n-attr="aria-label:common.close">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+                    </button>
+                </div>
+                <div class="sheet-body">
+                    <label class="field-label" for="customText" data-i18n="mytext.label">{{ t['mytext.label'] }}</label>
+                    <textarea class="textarea" id="customText" lang="en" rows="4" spellcheck="true" autocomplete="off"
+                        aria-describedby="customCounter customMessage"
+                        placeholder="{{ t['mytext.placeholder'] }}" data-i18n-attr="placeholder:mytext.placeholder"></textarea>
+                    <p class="counter" id="customCounter">
+                        <span id="countChars"></span>
+                        <span id="countWords"></span>
+                        <span id="countTime"></span>
+                    </p>
+                    <p class="field-msg" id="customMessage" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use id="customMessageIcon" href="#i-warn"></use></svg>
+                        <span id="customMessageText"></span>
+                    </p>
+                    <p class="visually-hidden" id="myTextStatus" role="status"></p>
+                    <p class="visually-hidden" id="myTextAlert" role="alert"></p>
+                </div>
+                <div class="sheet-actions">
+                    <button type="button" class="btn btn-secondary" data-sheet-close data-i18n="common.cancel">{{ t['common.cancel'] }}</button>
+                    <button type="button" class="btn btn-primary" id="btnUseCustom" disabled>
+                        <span class="spinner" aria-hidden="true" hidden></span>
+                        <span id="useCustomLabel" data-i18n="mytext.submit">{{ t['mytext.submit'] }}</span>
+                    </button>
                 </div>
             </div>
-            <p class="rec-hint" id="recHint">Speak clearly at a normal pace, then tap <strong>Stop</strong> when you finish<span class="desk-only"> (or press <kbd>Space</kbd>)</span>.</p>
+        </div>
+    </div>
 
-            <div class="rec-actions">
-                <button class="btn btn-ghost" id="recCancel" type="button" data-close>Cancel</button>
-                <button class="btn btn-stop" id="recStop" type="button" disabled>
-                    <svg class="icon"><use href="#i-stop" /></svg> Stop &amp; check
-                </button>
-                <button class="btn btn-primary" id="recRetry" type="button" hidden>
-                    <svg class="icon"><use href="#i-mic" /></svg> Try again
+    <!-- Recording (design/wireframes/02-recording-sheet.html, B1-B21; a dialog from 768 px, 08-desktop.html H3).
+         recorder.js runs it as one state machine and names the state in data-state. Its body shows the take
+         (sentence, waveform, hint) or a message; the actions are the state's. The backdrop never closes it. -->
+    <div class="sheet-root rec-sheet" id="recordSheet" data-state="idle" hidden>
+        <div class="backdrop"></div>
+        <div class="sheet-frame">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="recTitle" tabindex="-1">
+                <div class="sheet-head">
+                    <span class="rec-dot" id="recDot" aria-hidden="true"></span>
+                    <span class="rec-label" id="recLabel" aria-hidden="true" data-i18n="rec.rec" hidden>{{ t['rec.rec'] }}</span>
+                    <svg class="icon sheet-icon rec-icon" id="recIcon" aria-hidden="true" focusable="false" hidden><use id="recIconUse" href="#i-warn"></use></svg>
+                    <h2 class="sheet-title" id="recTitle" tabindex="-1"></h2>
+                    <span class="rec-timer" id="recTimer" hidden></span>
+                    <button type="button" class="sheet-x" data-sheet-close aria-label="{{ t['common.close'] }}" data-i18n-attr="aria-label:common.close">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+                    </button>
+                </div>
+                <div class="sheet-body">
+                    <div class="rec-take" id="recTake">
+                        <p class="eyebrow" data-i18n="rec.readAloud">{{ t['rec.readAloud'] }}</p>
+                        <p class="rec-sentence" id="recSentence" lang="en"></p>
+                        <div class="wave-wrap">
+                            <canvas class="wave" id="waveCanvas" aria-hidden="true"></canvas>
+                            <div class="wave-overlay" id="waveOverlay" hidden>
+                                <span class="spinner" id="waveSpinner" aria-hidden="true"></span>
+                                <svg class="icon wave-clock" id="waveClock" aria-hidden="true" focusable="false" hidden><use href="#i-clock"></use></svg>
+                                <span class="wave-overlay-text" id="waveOverlayText"></span>
+                            </div>
+                        </div>
+                        <p class="rec-hint" id="recHint"></p>
+                    </div>
+                    <div class="rec-message" id="recMessage" hidden>
+                        <p class="rec-lead" id="recLead"></p>
+                        <p class="rec-text" id="recText"></p>
+                        <ol class="rec-steps" id="recSteps" hidden></ol>
+                        <p class="rec-kept" id="recKept" hidden>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"></use></svg>
+                            <span id="recKeptText"></span>
+                        </p>
+                        <p class="rec-note" id="recNote" hidden>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"></use></svg>
+                            <span data-i18n="rec.backOnline">{{ t['rec.backOnline'] }}</span>
+                        </p>
+                        <div class="rec-copy" id="recCopyHelp" hidden>
+                            <p class="rec-copy-text" data-i18n="notice.copyBlocked.text">{{ t['notice.copyBlocked.text'] }}</p>
+                        </div>
+                    </div>
+                    <p class="visually-hidden" id="recStatus" role="status"></p>
+                    <p class="visually-hidden" id="recAlert" role="alert"></p>
+                </div>
+                <div class="sheet-actions" id="recActions">
+                    <button type="button" class="btn btn-secondary" id="recCancel" data-i18n="common.cancel">{{ t['common.cancel'] }}</button>
+                    <button type="button" class="btn btn-stop" id="recStop" aria-disabled="true">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                        <span data-i18n="rec.stopCheck">{{ t['rec.stopCheck'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-primary" id="recSend" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"></use></svg>
+                        <span data-i18n="rec.sendAgain">{{ t['rec.sendAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="recRecordAgain" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg>
+                        <span data-i18n="rec.recordAgain">{{ t['rec.recordAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-primary" id="recTryAgain" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"></use></svg>
+                        <span data-i18n="common.tryAgain">{{ t['common.tryAgain'] }}</span>
+                    </button>
+                    <a class="btn btn-primary" id="recOpenChrome" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-open"></use></svg>
+                        <span data-i18n="inapp.openChrome">{{ t['inapp.openChrome'] }}</span>
+                    </a>
+                    <button type="button" class="btn btn-secondary" id="recCopyLink" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use id="recCopyIcon" href="#i-copy"></use></svg>
+                        <span id="recCopyLabel" data-i18n="notice.copyLink">{{ t['notice.copyLink'] }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress, kept in this browser only (design/wireframes/06-progress-sheet.html, F1-F7): a bottom sheet on
+         phones, a dialog from 768 px, opened from the progress chip in the header. progress.js fills it. -->
+    <div class="sheet-root progress-sheet" id="progressSheet" hidden>
+        <div class="backdrop"></div>
+        <div class="sheet-frame">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="progressTitle">
+                <div class="sheet-head">
+                    <svg class="icon sheet-icon progress-icon" aria-hidden="true" focusable="false"><use href="#i-star"></use></svg>
+                    <h2 class="sheet-title" id="progressTitle" tabindex="-1" data-i18n="progress.title">{{ t['progress.title'] }}</h2>
+                    <button type="button" class="sheet-x" data-sheet-close aria-label="{{ t['common.close'] }}" data-i18n-attr="aria-label:common.close">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+                    </button>
+                </div>
+                <div class="sheet-body">
+                    <h3 class="eyebrow progress-eyebrow" id="progressToday"></h3>
+                    <ul class="progress-stats">
+                        <li class="progress-stat"><b id="statPoints">0</b><span id="statPointsLabel"></span></li>
+                        <li class="progress-stat"><b id="statSentences">0</b><span id="statSentencesLabel"></span></li>
+                        <li class="progress-stat"><b id="statAverage">–</b><span data-i18n="progress.average">{{ t['progress.average'] }}</span></li>
+                    </ul>
+                    <p class="progress-streak">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-flame"></use></svg>
+                        <span id="progressStreak"></span>
+                    </p>
+                    <p class="progress-hint" id="progressStreakHint" hidden></p>
+                    <h3 class="eyebrow progress-eyebrow" data-i18n="progress.week">{{ t['progress.week'] }}</h3>
+                    <ol class="week" id="progressWeek"></ol>
+                    <h3 class="result-sub" id="reviewTitle" data-i18n="progress.review">{{ t['progress.review'] }}</h3>
+                    <div class="word-chips review-chips" id="reviewChips" role="group" aria-labelledby="reviewTitle" hidden></div>
+                    <p class="progress-hint" id="reviewHint"></p>
+                    <p class="progress-note" data-i18n="progress.local">{{ t['progress.local'] }}</p>
+                    <hr class="progress-sep">
+                    <button type="button" class="text-btn progress-new" id="btnNewLearner" aria-haspopup="dialog">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-person-add"></use></svg>
+                        <span data-i18n="progress.newLearner">{{ t['progress.newLearner'] }}</span>
+                    </button>
+                    <p class="progress-note" data-i18n="progress.newLearnerNote">{{ t['progress.newLearnerNote'] }}</p>
+                </div>
+                <div class="sheet-actions">
+                    <button type="button" class="btn btn-primary" data-sheet-close data-i18n="common.done">{{ t['common.done'] }}</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- "New learner" asks first (F4): an alertdialog over the progress sheet, focus on Cancel; the destructive
+         button has an icon and a heavier edge, never focus by default. -->
+    <div class="sheet-root confirm-root" id="confirmNewLearner" hidden>
+        <div class="backdrop"></div>
+        <div class="sheet-frame">
+            <div class="sheet confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+                <div class="sheet-head">
+                    <h2 class="sheet-title" id="confirmTitle" tabindex="-1" data-i18n="progress.confirmTitle">{{ t['progress.confirmTitle'] }}</h2>
+                </div>
+                <div class="sheet-body">
+                    <p class="confirm-text" id="confirmText" data-i18n="progress.confirmText">{{ t['progress.confirmText'] }}</p>
+                </div>
+                <div class="sheet-actions">
+                    <button type="button" class="btn btn-secondary" id="confirmCancel" data-confirm-cancel data-i18n="common.cancel">{{ t['common.cancel'] }}</button>
+                    <button type="button" class="btn btn-danger" id="confirmDelete">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"></use></svg>
+                        <span data-i18n="progress.confirmDelete">{{ t['progress.confirmDelete'] }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- The microphone check (design/wireframes/05-onboarding.html E5-E9): 3 s of level metering in the browser,
+         nothing recorded and nothing sent. miccheck.js runs it and names its state in data-state. -->
+    <div class="sheet-root mic-check" id="micCheck" data-state="idle" hidden>
+        <div class="backdrop"></div>
+        <div class="sheet-frame">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="micTitle">
+                <div class="sheet-head">
+                    <span class="rec-dot is-live" id="micDot" aria-hidden="true" hidden></span>
+                    <svg class="icon sheet-icon mic-check-icon" id="micIcon" aria-hidden="true" focusable="false"><use id="micIconUse" href="#i-mic"></use></svg>
+                    <h2 class="sheet-title" id="micTitle" tabindex="-1"></h2>
+                    <span class="rec-timer" id="micTimer" hidden></span>
+                    <button type="button" class="sheet-x" data-sheet-close aria-label="{{ t['common.close'] }}" data-i18n-attr="aria-label:common.close">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+                    </button>
+                </div>
+                <div class="sheet-body">
+                    <span class="mic-check-done" id="micDoneMark" aria-hidden="true" hidden><svg class="icon" focusable="false"><use href="#i-check"></use></svg></span>
+                    <p class="mic-check-msg" id="micMsg" hidden></p>
+                    <div class="meter" id="micMeter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                    <p class="rec-hint" id="micHint"></p>
+                    <ul class="rec-steps mic-tips" id="micTips" hidden></ul>
+                    <div class="rec-message" id="micMessage" hidden>
+                        <p class="rec-lead" id="micLead"></p>
+                        <p class="rec-text" id="micText"></p>
+                        <ol class="rec-steps" id="micSteps" hidden></ol>
+                        <div class="rec-copy" id="micCopyHelp" hidden>
+                            <p class="rec-copy-text" data-i18n="notice.copyBlocked.text">{{ t['notice.copyBlocked.text'] }}</p>
+                        </div>
+                    </div>
+                    <p class="visually-hidden" id="micStatus" role="status"></p>
+                    <p class="visually-hidden" id="micAlert" role="alert"></p>
+                </div>
+                <div class="sheet-actions" id="micActions">
+                    <button type="button" class="btn btn-secondary" id="micSkip" data-i18n="common.skip">{{ t['common.skip'] }}</button>
+                    <button type="button" class="btn btn-primary" id="micStart">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg>
+                        <span data-i18n="mic.start">{{ t['mic.start'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-primary" id="micTryAgain" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"></use></svg>
+                        <span data-i18n="common.tryAgain">{{ t['common.tryAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-primary" id="micPractise" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+                        <span data-i18n="mic.startPractising">{{ t['mic.startPractising'] }}</span>
+                    </button>
+                    <a class="btn btn-primary" id="micOpenChrome" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-open"></use></svg>
+                        <span data-i18n="inapp.openChrome">{{ t['inapp.openChrome'] }}</span>
+                    </a>
+                    <button type="button" class="btn btn-secondary" id="micCopyLink" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use id="micCopyIcon" href="#i-copy"></use></svg>
+                        <span id="micCopyLabel" data-i18n="notice.copyLink">{{ t['notice.copyLink'] }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- The tour (design/wireframes/05-onboarding.html E1-E4): a spotlight on the real control with the rest dimmed,
+         and a callout that is a modal dialog for assistive technology. tour.js names the step in data-step. -->
+    <div class="tour" id="tour" hidden>
+        <div class="tour-shield"></div>
+        <div class="tour-spot" id="tourSpot" aria-hidden="true"></div>
+        <div class="tour-callout" id="tourCallout" role="dialog" aria-modal="true" aria-labelledby="tourTitle" aria-describedby="tourText">
+            <p class="tour-step" id="tourStep"></p>
+            <h2 class="tour-title" id="tourTitle" tabindex="-1"></h2>
+            <p class="tour-text" id="tourText"></p>
+            <div class="tour-actions">
+                <button type="button" class="text-btn tour-skip" id="tourSkip" data-i18n="common.skip">{{ t['common.skip'] }}</button>
+                <span class="tour-pips" aria-hidden="true"><i></i><i></i><i></i></span>
+                <button type="button" class="btn btn-primary btn-sm" id="tourNext">
+                    <svg class="icon" aria-hidden="true" focusable="false"><use id="tourNextIcon" href="#i-next"></use></svg>
+                    <span id="tourNextLabel" data-i18n="tour.next">{{ t['tour.next'] }}</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <!-- The page's one polite live region (design-system §4); outside .app, which a sheet makes inert. -->
+    <div class="visually-hidden" id="pageStatus" role="status" aria-live="polite"></div>
 </body>
 
 </html>

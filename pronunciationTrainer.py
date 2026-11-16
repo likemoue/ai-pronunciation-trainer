@@ -91,14 +91,20 @@ class PronunciationTrainer:
         pronunciation_accuracy, current_words_pronunciation_accuracy = self.getPronunciationAccuracy(
             matches)
 
+        # The typical mistake each word was heard with ('ending', 'th', 'sh'),
+        # or '' for none: it caps the word at Almost, and the page says what
+        # to fix.
+        mistake_kinds = [wm.known_mistake(match.real_canonical, match.heard_canonical) for match in matches]
+
         pronunciation_categories = self.getWordsPronunciationCategory(
-            current_words_pronunciation_accuracy, matches)
+            current_words_pronunciation_accuracy, mistake_kinds)
 
         result = {'recording_transcript': recording_transcript,
                   'real_and_transcribed_words': real_and_transcribed_words,
                   'recording_ipa': recording_ipa, 'start_time': start_time, 'end_time': end_time,
                   'real_and_transcribed_words_ipa': real_and_transcribed_words_ipa, 'pronunciation_accuracy': pronunciation_accuracy,
                   'pronunciation_categories': pronunciation_categories,
+                  'mistake_kinds': mistake_kinds,
                   'timings_ms': {'asr': round(asr_ms), 'match': round(match_ms)}}
 
         return result
@@ -184,17 +190,17 @@ class PronunciationTrainer:
 
         return np.round(percentage_of_correct_pronunciations), current_words_pronunciation_accuracy
 
-    def getWordsPronunciationCategory(self, accuracies, matches=None) -> list:
+    def getWordsPronunciationCategory(self, accuracies, mistake_kinds=None) -> list:
         """0 (Correct), 1 (Almost) or 2 (Needs work) per word, from its share
         of letters heard as written. A word heard with a learner's typical
-        mistake (WordMatching.known_mistake: an ending left out, th said as t,
-        sh as s) is at best Almost, however many of its letters were heard."""
+        mistake (mistake_kinds: WordMatching.known_mistake of each word, '' for
+        none; an ending left out, th said as t, sh as s) is at best Almost,
+        however many of its letters were heard."""
         categories = []
 
         for index, accuracy in enumerate(accuracies):
             category = int(self.getPronunciationCategoryFromAccuracy(accuracy))
-            if category == 0 and matches is not None and wm.known_mistake(
-                    matches[index].real_canonical, matches[index].heard_canonical):
+            if category == 0 and mistake_kinds is not None and mistake_kinds[index]:
                 category = 1
             categories.append(category)
 

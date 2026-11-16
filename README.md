@@ -14,14 +14,29 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
   screened for school use, in three levels (up to 8 words, 9-20 words, longer).
 - **Your own text**: up to 300 characters or 60 words of English; the server gives its reference IPA.
 - **Recording popup** with a live waveform and timer. It warns when it hears nothing, stops after 30 seconds
-  and shows progress while the recording is scored.
-- **Feedback**: a score for the sentence, a colour for every letter, and for each word the reference IPA,
-  what was heard, and both sounds to compare (with slow playback).
+  and shows progress while the recording is scored. A busy server gets the same recording again by itself;
+  when the connection or the server fails, or the browser is offline, the recording stays on the page to send
+  again. Each microphone problem says what to do: the steps to unblock it in the browser at hand, or, inside
+  Zalo, Facebook or Messenger, how to open the page in Chrome or Safari.
+- **Feedback**: a score for the sentence in words (Excellent, Well done, Almost there, Keep practising, or "That
+  sounds like a different sentence"), the letters heard as written in one colour and the others bold and dotted,
+  a mark after each word marked Almost or Needs work, and the words to practise first. For each word: the
+  reference IPA with the server's voice reading it, what was heard with that part of the recording; for a word
+  heard with a typical mistake (an ending left out, "th" or "sh" said otherwise), what to fix and both words to
+  listen to.
 - **Reference voice**: [Piper](https://github.com/OHF-voice/piper1-gpl) with the public-domain LJ Speech voice
   (`en_US-ljspeech-medium`), synthesised on the server. Bank sentences come as MP3 files that browsers and
   Cloudflare cache; if the server has no voice, the browser's voice is used.
-- **Privacy**: recordings and typed text are never stored, and student audio is never sent to third-party
-  speech services. Logs hold timings and outcomes, never the text or the audio.
+- **Progress**, kept in the learner's browser only: today's points (each sentence once a day, at its best attempt,
+  times its level: Easy x1, Medium x1.3, Hard x1.6), the streak and the last 7 days in Vietnam time, and the words
+  to review, each practised on its own. "New learner" clears it on a shared phone or computer.
+- **First visit**: a three-step tour over the real controls, then a 3-second microphone check in the browser
+  (nothing recorded or sent), so the browser's permission prompt comes with an explanation; both again from How
+  it works.
+- **In-app browsers**: in Zalo, Facebook, Messenger, Instagram, LINE and other Android WebViews, a banner gets the
+  learner to a real browser: Open in Chrome on Android, the app's ••• menu on iPhone, and Copy link.
+- **Privacy**: recordings and typed text are never stored on the server, and student audio is never sent to
+  third-party speech services. Logs hold timings and outcomes, never the text or the audio.
 
 ## How scoring works
 
@@ -95,11 +110,12 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
   With faster-whisper a recording holds the model for about a second on a CPU with AVX2, and for about 1.8 s on
   the production server, an Ivy Bridge Xeon without AVX2: there a class of 40 sending at once waits 21 s at the
   median and 40 s at most.
-- Static files are named by version: the page asks for its stylesheet and script with `?v=` and a hash of their
-  content, and browsers and Cloudflare keep those, the fonts and the bank-sentence MP3s for a year. The page itself
-  is checked on every load, and API answers are never stored. The page loads nothing from another site: its fonts
-  (Inter, Noto Sans with its Greek subset for the IPA's θ) are served by the app, and the result chime is
-  synthesised in the browser.
+- Static files are named by version: the page asks for its stylesheets and scripts (every file under `static/css`
+  and `static/javascript`, through `asset_url` in the template) with `?v=` and a hash of them all, and browsers
+  and Cloudflare keep those, the fonts and the bank-sentence MP3s for a year. The page itself is checked on every
+  load, and API answers are never stored. The page loads nothing from another site: its fonts
+  (Inter with its Vietnamese subset, Noto Sans with its Greek subset for the IPA's θ) are served by the app, and the
+  result chime is synthesised in the browser.
 - Caddy receives each request in full before the app sees it, so a slow or stalled upload holds no app thread.
   It holds the bodies in up to 1 GB of memory, which held about 110 uploads of 4.9 MB at once in a test. More
   than that at once can make the kernel kill Caddy, which cuts every request in flight until docker has
@@ -186,16 +202,17 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 
 ## HTTP API
 
-The page is `GET /`. The API routes take a JSON object (`Content-Type: application/json`; anything else gets
-415) and answer JSON. `language` is optional and must be an enabled language (`en`).
+The page is `GET /`, in English, or in Vietnamese when its `lang` cookie is `vi` (`Vary: Cookie`). The API routes
+take a JSON object (`Content-Type: application/json`; anything else gets 415) and answer JSON. `language` is
+optional and must be an enabled language (`en`).
 
 | Route | Request | Response |
 |---|---|---|
-| `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty), `tts_url` |
-| `POST /getCustomSample` | `text` | the same, for the user's text |
+| `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty), `tts_url`, `category` (the sentence's own level as a number, 1, 2 or 3, also when 0 was asked for) |
+| `POST /getCustomSample` | `text` | `real_transcript`, `ipa_transcript`, `transcript_translation`, for the user's text (no `tts_url` or `category`) |
 | `POST /getAudioFromText` | `value`: the text to read | `wavBase64`: a WAV file |
 | `GET /tts/<language>/<key>.mp3` | | A bank sentence read aloud (MP3); `/getSample` gives the URL as `tts_url`. The key is a hash of the voice, the MP3 bitrate and the sentence, so the file never changes and is cached for a year; any other key is 404 |
-| `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
+| `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `mistake_kinds` (per word, in the same order: `ending`, `th` or `sh` when the word was heard with that typical mistake, which keeps it from 0, else `-`; "Mary has written three books." heard as "Mary has written tree book." gives `- - - th ending`), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
 | `GET /healthz` | | `{"status": "ok", "uptime_s": …}`: the worker answers HTTP |
 | `GET /readyz` | | 200 once every worker has warmed up, else 503: `ready_workers`, `expected_workers` |
 | `GET /version` | | `git_sha`, `git_date` |
@@ -209,7 +226,7 @@ Errors are JSON too: `{"error": "<message for the user>", "code": "<code>"}`, wi
 | `bad_category` | 400 | `category` is not 0-3 |
 | `text_too_long` | 400 | More than 300 characters or 60 words, or too long to read aloud |
 | `text_not_english` | 400 | Less than 90% Latin letters |
-| `text_bad_characters` | 400 | Control characters or lone surrogates |
+| `text_bad_characters` | 400 | Control characters or lone surrogates (Windows-1252's quotes, dashes and ellipsis read as Latin-1 count as that punctuation; zero-width characters and soft hyphens are dropped) |
 | `no_audio` / `bad_audio` | 400 | No recording, or one that cannot be decoded |
 | `audio_too_long` | 413 | A recording over 35 s |
 | `request_entity_too_large` | 413 | A body over 4 MB (over 5 MB, the proxy answers it) |

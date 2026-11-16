@@ -6,6 +6,104 @@ release without downtime, except the first deploy with the phase-1 deploy.sh, wh
 `deploy.sh --rollback-legacy` undoes that one, with downtime. "Auto" means a test, a CI job or a deploy step
 already checks it on every change.
 
+## Phase 4: frontend, mobile, accessibility, in-app browsers (2026-11)
+
+Built from the approved wireframes (`design/wireframes/`) and `context/design-system.md`. The page is rebuilt; the
+API gains two fields (the scoring's `mistake_kinds`, getSample's `category`) and the page's language; scores
+and labels do not change. Check every learner flow on a phone
+(Chrome Android, Safari iOS) and in Zalo, Facebook and Messenger on both, and on Chrome 109 (Windows 7 labs),
+in English and Vietnamese, light and dark.
+
+### Learner flows
+- [ ] First visit: the 3-step tour over the real controls, then the 3-second microphone check (nothing uploaded);
+      Skip at every step; Escape skips; the tour never comes back by itself; "Show the tour again" and "Check my
+      microphone" from How it works (phones) or the header (desktop). It does not start by itself inside an app's
+      browser (the banner speaks first), in a browser that cannot record, where the browser keeps nothing
+      (private modes that refuse storage), or while a sheet is open; its flag is `aipt.tour` in localStorage.
+- [ ] Microphone check: the browser's prompt explained first ("tap Allow", not shown when already allowed), 3 s
+      with a moving meter, then "Your microphone works" (Start practising: focus on Listen), "We didn't hear
+      anything" with three things to check, or the recording sheet's own steps (blocked in Chrome Android, Safari
+      iOS, desktop; no microphone; busy), and inside an app its way out (Open in Chrome, Copy link, the ••• steps).
+      The microphone light goes off when it ends; Cancel, ✕ and Escape at every step.
+- [ ] Choose a level: the chip is a radio group (arrow keys), the card shows a skeleton, the sentence comes in its
+      level; a chip chosen while loading cancels the first request; a failed load shows the error in the card with
+      Try again (or a notice above the bar when a sentence is already shown); getSample gives up after 15 s.
+- [ ] Listen: the bank sentence's MP3, Stop while it plays, Slow at 0.75x; tapping the mic stops the voice and a
+      voice still loading never plays into the recording; a busy or failing voice falls back to a local browser
+      voice, and with none a notice says so.
+- [ ] Record, phone and desktop: the sheet (phone) or dialog (desktop) with its fixed header and actions; "We can't
+      hear you" after 3.5 s of silence; the 5 s countdown and the stop at 30 s; Checking, Still checking, the busy
+      server sending again by itself (3 times); the score. The backdrop never closes it; ✕, Cancel and Escape do;
+      Space and Enter act on the focused button only; holding Space does not stop at once.
+- [ ] Failures: a server or network failure and the 100 s timeout keep the recording (Send again, Record again,
+      Close); offline keeps it too and says when the connection is back; no speech (422), too short, interrupted
+      (tab hidden, a call, a headset unplugged: nothing is sent); the microphone blocked (steps for Chrome Android,
+      Safari iOS, desktop Chrome/Edge), none, busy, other errors. A silent take of 1-4 s says "We couldn't hear any
+      words" and is not sent (Chrome makes it smaller than 1 KB, which used to read as too short); under 0.6 s is
+      too short.
+- [ ] Recording sheet, edge cases: Cancel while the browser still asks for the microphone, then the mic again: the
+      new take records (the late answer is let go); a double tap on the mic or on Stop never lands on the buttons
+      that replace them; a recording the server cannot read (400) asks for a new take; a microphone blocked in the
+      site's settings opens the sheet on the steps at once; turning a tablet redraws the state (tap or click).
+- [ ] Result: ring and title by tier (90/70/60; Excellent, Well done, Almost there, Keep practising), the meaning
+      line, "Words to practise" (at most 4, "+N more"), the worst word opened, the word detail (Correct and Heard
+      IPA, Listen and Replay; "not heard" disables Replay), My recording, the "Heard" line (3 lines, then "more"),
+      the legend; ~ and ✗ marks only on Almost and Needs-work words, and the sentence's line height unchanged by
+      them; wrong letters bold and dotted; fewer than 35% of the words heard gives "That sounds like a different
+      sentence" (no chips); the chime by tier (70/60), none when the score comes late or a recording starts; on
+      desktop Try again and Next sentence on the card. Focus goes to the result's title and one sentence is
+      announced ("Score 79%. 3 words to practise: written, three, books.").
+- [ ] A text read past 30 s: the take stops by itself and the result says the end was not recorded.
+- [ ] Typical mistakes: "book" for "books", "tree" for "three", "sip" for "ship" give an Almost word whose detail
+      says what to fix, with Listen buttons for both words (EN and VI).
+- [ ] My text: the counters count the text as the server will (300 characters, 60 words), the reading time and
+      the warning above about 26 s; too long, not English, unreadable characters stop before sending; text pasted
+      from Word (curly quotes, cp1252 characters, zero-width spaces) is accepted; the draft comes back; Ctrl/⌘+Enter
+      sends; the card says "My text" with Edit; a chip or Next goes back to the bank.
+- [ ] Language: EN | VI in the header switches every text in place, is remembered on the device, and the next visit
+      opens in that language with no English first (`lang` cookie); the sentence and IPA stay English; numbers and
+      dates follow the language; no server message is shown as it comes.
+- [ ] Progress: the ★ chip shows today's points (12.5K from 10,000; "245 today · 3 days" from 768 px); the sheet
+      shows today, the streak and the last 7 days in Vietnam time (a day starts at midnight in Vietnam, whatever
+      the device's zone), words to review (✗ first, at most 12, then Show all); tapping a word practises it alone
+      ("Word to review", Back to sentences; a level chip or Next go back too) and its result updates the list; a
+      word leaves after two Correct readings; each sentence counts once a day with its best attempt, at its own
+      level's multiplier (Random no longer pays x1.3; an older server without getSample's category: the level asked
+      for, or Random by word count), and sending the same text again pays nothing more; "That sounds like a
+      different sentence" counts for nothing; "New learner" asks first (focus on Cancel), then clears points,
+      streak, words, the draft and the tour flag, keeps the language and shows "Progress deleted" with the tour one
+      tap away. Two tabs keep one record (`aipt.progress.v1`); a damaged or older record starts again quietly.
+- [ ] In-app browsers: the banner names Zalo, Facebook, Messenger, Instagram, LINE or a WebView; Open in Chrome
+      (Android intent link), Copy link ("Copied" for 4 s, said once; the address to copy by hand when the
+      clipboard is refused), ✕, or Not now where an arrow points at the app's ••• or ⋮ menu, for the visit; when
+      recording fails inside an app, the sheet repeats that guidance instead of browser steps.
+- [ ] Offline: a notice above the controls, Next disabled, the mic usable; a recording made offline can be sent
+      once back online. A browser that cannot record says so before the first tap, with the mic disabled.
+
+### Layout, accessibility, browsers
+- [ ] 320, 360 and 390 px wide: no horizontal scroll, sentence and mic in the first screen at 360 x 640, the bar
+      fixed with the safe area, and not fixed when the screen is under 480 px tall; 360 x 560 (Zalo's bar).
+- [ ] 768 px: inline controls, centred dialogs; 1024 and 1280 px: two columns, the result beside the sentence.
+- [ ] Light and dark, every state; reduced motion stops the ring, the count-up and the pulses; 200% text size.
+- [ ] Keyboard only: focus order banner, header, chips, sentence, controls, result; sheets trap focus and give it
+      back; Space starts recording only when focus is not on a control. Screen reader: one announcement per phase,
+      the result in one sentence, marks read as words.
+- [ ] Chrome 109 and iOS 15: the focus outline, the sheet overlay and the marks all show (no `color-mix()`, `inert`
+      fallback, `:focus-visible` fallback, `100vh` before `100dvh`).
+
+### API and operations
+- [ ] The scoring answer has `mistake_kinds`, one per word; scores and labels are unchanged. Auto:
+      `tests/test_word_matching.py`, `tests/test_evaluation.py`.
+- [ ] `/getSample` answers the sentence's own `category` (1-3), also for Random (0). Auto: `tests/test_api.py`.
+- [ ] The page is rendered in the `lang` cookie's language (`Vary: Cookie`); its strings come from `i18n/`; the CSP
+      still allows no inline script (the strings are a JSON data block). Auto: `tests/test_i18n.py`.
+- [ ] Every script and the stylesheet are versioned by content and cached for a year only under the current
+      version. Auto: `tests/test_assets.py`, `tests/test_static.py`.
+- [ ] A learner who keeps an old page open across the deploy can still record and get a score (the API only gained
+      fields); a new page after `deploy.sh --rollback` still works without them.
+- [ ] CI runs ESLint and the Playwright tests (a fake microphone plays the app's own voice into the real image);
+      the Node tools stay out of the image. Auto: `ci.yml`, `tests/test_build.py`.
+
 ## Phase 3: scoring accuracy (2026-11)
 
 ### Step 1: the evaluation harness (`evaluation/`)

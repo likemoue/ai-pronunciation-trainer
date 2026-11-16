@@ -13,6 +13,7 @@ import wave
 import numpy as np
 import pytest
 
+import lambdaGetSample
 from conftest import make_audio, requires_ffmpeg
 
 API_ROUTES = ['/getSample', '/getCustomSample', '/GetAccuracyFromRecordedAudio', '/getAudioFromText']
@@ -60,6 +61,30 @@ def test_get_sample_respects_category(client, category, low, high, as_string):
         assert response.mimetype == 'application/json'
         sentence = response.get_json()['real_transcript'][0]
         assert low < len(sentence.split()) <= high
+
+
+@pytest.mark.parametrize('asked,level', [(1, 1), (2, 2), (3, 3), ('3', 3)])
+def test_get_sample_answers_the_level_asked_for(client, asked, level):
+    for _ in range(5):
+        response = client.post('/getSample', json={'category': asked, 'language': 'en'})
+        assert response.status_code == 200, response.get_data(as_text=True)
+        answered = response.get_json()['category']
+        assert type(answered) is int and answered == level  # a number, also when asked with a string
+
+
+def test_get_sample_answers_the_level_of_a_random_sentence(client):
+    # Random (0) gives a sentence of any level, with the level the bank files it
+    # under: the page pays the sentence's points at that level's multiplier.
+    levels = set()
+    for _ in range(60):
+        response = client.post('/getSample', json={'category': 0, 'language': 'en'})
+        assert response.status_code == 200, response.get_data(as_text=True)
+        data = response.get_json()
+        assert type(data['category']) is int
+        assert data['category'] == lambdaGetSample.getSentenceCategory(data['real_transcript'][0])
+        levels.add(data['category'])
+    # A quarter of the bank is not easy: 60 easy sentences in a row is about 1 in 20 million.
+    assert levels <= {1, 2, 3} and len(levels) > 1
 
 
 def test_get_sample_rejects_disabled_language(client):
@@ -346,6 +371,17 @@ def test_scoring_happy_path(client, fake_asr, fmt, mime):
     body = response.get_json()
     assert body['pronunciation_accuracy'] == '100'
     assert body['real_transcripts'] == 'Hello world'
+
+
+@requires_ffmpeg
+def test_scoring_names_the_typical_mistake_of_each_word(client, fake_asr):
+    # For the page's hint: one token per word, in the order of pair_accuracy_category.
+    fake_asr.transcript = 'Mary has written tree book.'
+    response = score(client, 'Mary has written three books.', make_audio('webm'))
+    assert response.status_code == 200, response.get_data(as_text=True)
+    body = response.get_json()
+    assert body['mistake_kinds'] == '- - - th ending'
+    assert body['pair_accuracy_category'] == '0 0 0 1 1'
 
 
 @requires_ffmpeg

@@ -1,1090 +1,699 @@
 'use strict';
 
+// The page itself (design/wireframes 01, 06, 07, 08): the level chips, the
+// sentence card with Listen · Mic · Next (a bar fixed at the bottom of phones,
+// inline from 768 px), the notices docked above them, the My text sheet, a
+// word of the progress sheet practised alone, How it works, the language
+// switch and the Space shortcut. Loaded last: it wires the parts the other
+// scripts provide.
 (() => {
-    // ---------------------------------------------------------------- config
-    const LANGUAGE = 'en';
-    const API = {
-        sample: '/getSample',
-        custom: '/getCustomSample',
-        score: '/GetAccuracyFromRecordedAudio',
-        tts: '/getAudioFromText',
-    };
-    const MAX_RECORDING_SECONDS = 30; // one Whisper window
-    const SILENCE_RMS = 0.003;
-    const MIN_RECORDING_MS = 600;
-    const CUSTOM_MAX_CHARS = 300;
-    const CUSTOM_MAX_WORDS = 60;
-    // Cloudflare gives up after 125 s (error 524), so stop waiting before that.
-    const SCORE_TIMEOUT_MS = 100000;
-    // A busy server answers 503 with Retry-After; the recording is sent again
-    // by itself this many times, a little after the time the server gave.
-    const BUSY_RETRIES = 3;
-    // Opus at 32 kbps is plenty for speech recognition and a quarter of the
-    // browsers' default: a 30 s recording is about 120 KB.
-    const RECORDING_BITS_PER_SECOND = 32000;
-    const CATEGORY_MULTIPLIER = { 0: 1.3, 1: 1, 2: 1.3, 3: 1.6, custom: 1 };
-    const CATEGORY_TEXT = ['Correct', 'Almost', 'Needs work'];
+    const { $, i18n, ui, storage, env } = AIPT;
+    const { t } = i18n;
 
-    // ---------------------------------------------------------------- dom
-    const $ = (id) => document.getElementById(id);
+    const SAMPLE_TIMEOUT_MS = 15000;
+    const LONG_TEXT_WORDS = 20;
+    const WORDS_PER_MINUTE = 110;
+    // The recording stops at 30 s; above about 26 s of reading the text may not fit.
+    const LONG_READ_SECONDS = 26;
+    const DRAFT_KEY = 'aipt.draft';
+
     const els = {
-        app: document.querySelector('.app'),
-        statPoints: $('statPoints'),
-        statSentences: $('statSentences'),
-        statAverage: $('statAverage'),
-        tabPractice: $('tabPractice'),
-        tabCustom: $('tabCustom'),
-        panePractice: $('panePractice'),
-        paneCustom: $('paneCustom'),
-        chips: Array.from(document.querySelectorAll('.chip')),
-        btnNext: $('btnNext'),
-        customText: $('customText'),
-        customCounter: $('customCounter'),
-        btnUseCustom: $('btnUseCustom'),
-        customError: $('customError'),
-        status: $('statusLine'),
+        app: $('app'),
+        levels: $('levels'),
+        card: $('sentenceCard'),
+        cardLabel: $('cardLabel'),
+        cardLabelIcon: $('cardLabelIcon'),
+        cardLabelText: $('cardLabelText'),
+        btnMyText: $('btnMyText'),
+        myTextIcon: $('myTextIcon'),
+        myTextLabel: $('myTextLabel'),
+        skeleton: $('sentenceSkeleton'),
         sentence: $('sentence'),
-        ipaReference: $('ipaReference'),
-        ipaSpokenRow: $('ipaSpokenRow'),
-        ipaSpoken: $('ipaSpoken'),
-        wordDetail: $('wordDetail'),
-        wdWord: $('wdWord'),
-        wdBadge: $('wdBadge'),
-        wdRefIpa: $('wdRefIpa'),
-        wdYourIpa: $('wdYourIpa'),
-        wdPlayRef: $('wdPlayRef'),
-        wdPlayYours: $('wdPlayYours'),
-        btnListen: $('btnListen'),
+        ipa: $('ipa'),
+        loadError: $('loadError'),
+        btnRetryLoad: $('btnRetryLoad'),
         slowToggle: $('slowToggle'),
+        btnShowIpa: $('btnShowIpa'),
+        showIpaLabel: $('showIpaLabel'),
+        playingNote: $('playingNote'),
+        playingText: $('playingText'),
+        zone: $('controlZone'),
+        dock: $('dock'),
+        btnListen: $('btnListen'),
+        listenLabel: $('listenLabel'),
         btnRecord: $('btnRecord'),
-        btnPlayback: $('btnPlayback'),
-        resultBox: $('resultBox'),
-        scoreRing: $('scoreRing'),
-        scoreValue: $('scoreValue'),
-        resultTitle: $('resultTitle'),
-        resultSub: $('resultSub'),
-        modal: $('recordModal'),
-        recDot: $('recDot'),
-        recTitle: $('recTitle'),
-        recTimer: $('recTimer'),
-        recSentence: $('recSentence'),
-        waveCanvas: $('waveCanvas'),
-        waveOverlay: $('waveOverlay'),
-        waveOverlayText: $('waveOverlayText'),
-        recHint: $('recHint'),
-        recCancel: $('recCancel'),
-        recStop: $('recStop'),
-        recRetry: $('recRetry'),
-        toast: $('toast'),
+        micLabel: $('micLabel'),
+        btnNext: $('btnNext'),
+        langButtons: Array.from(document.querySelectorAll('.lang-btn')),
+        // How it works (E10, H1)
+        btnHowHeader: $('btnHowHeader'),
+        btnTourAgain: $('btnTourAgain'),
+        btnMicCheck: $('btnMicCheck'),
+        // My text
+        myTextSheet: $('myTextSheet'),
+        field: $('customText'),
+        countChars: $('countChars'),
+        countWords: $('countWords'),
+        countTime: $('countTime'),
+        message: $('customMessage'),
+        messageIcon: $('customMessageIcon'),
+        messageText: $('customMessageText'),
+        myTextStatus: $('myTextStatus'),
+        myTextAlert: $('myTextAlert'),
+        btnUseCustom: $('btnUseCustom'),
+        useCustomLabel: $('useCustomLabel'),
     };
 
-    // ---------------------------------------------------------------- state
     const state = {
-        mode: 'practice',
-        category: 1,
-        sentenceCategory: 1,
+        category: '1', // the level asked for: '1' easy, '2' medium, '3' hard, '0' random
+        mode: 'bank', // 'bank', 'custom' (My text) or 'word' (a word to review, practised alone)
         text: '',
         ipa: '',
-        ttsUrl: '', // the bank sentence's MP3, if it is one
+        level: 1, // the bank sentence's own level (1-3): its points follow it (progress.js)
+        ttsUrl: '', // the bank sentence's MP3
+        ipaOpen: true,
         loading: false,
-        result: null,
-        selectedWord: -1,
-        bestForSentence: null,
-        recordingBuffer: null,
-        stats: { points: 0, sentences: 0, accuracySum: 0 },
+        loadController: null,
+        loadFailed: false,
+        wordController: null, // the request for the IPA of a word practised alone
+        offline: navigator.onLine === false,
+        listen: 'idle', // the Listen button: 'idle', 'loading' or 'playing'
     };
 
-    let audioCtx = null;
-    let serverTts = true;
-    const ttsCache = new Map();
-    let activePlayback = null; // { stop(), button }
+    const words = (text) => (text ? text.split(' ').length : 0);
 
-    // ---------------------------------------------------------------- utils
-    const normalizeText = (text) => text
-        .replace(/[‘’‛′]/g, "'")
-        .replace(/[“”‟″]/g, '"')
-        .replace(/[–—−]/g, ' - ')
-        .replace(/…/g, '...')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .split(' ')
-        .filter((token) => /[\p{L}\p{N}]/u.test(token))
-        .join(' ');
+    // ---------------------------------------------------------------- notices
+    // One docked notice at a time (design-system §2.9): a failed new sentence
+    // (the learner just asked for it), the welcome after "New learner" (it
+    // goes at the next action), then cannot record > offline > no voice.
+    const dock = new ui.Dock(els.dock, ['loadFailed', 'welcome', 'cannotRecord', 'offline', 'noVoice']);
 
-    const stripPunctuation = (word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-
-    async function postJSON(url, body, { signal } = {}) {
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal,
+    // Copy link in a notice (AIPT.inApp.copyControl): "Link copied" for 4 s,
+    // then back to what it said; where the clipboard is refused, the address
+    // in a selected read-only field to copy by hand (§6). The dock is a polite
+    // live region: the new words are read as they change.
+    function copyLinkAction(getItem, base) {
+        const label = () => getItem().el.querySelector('.notice-actions .btn span');
+        const copier = AIPT.inApp.copyControl({
+            onCopied: () => {
+                getItem().set({ ...base, kind: 'success', icon: 'check', title: 'notice.linkCopied.title', text: 'notice.linkCopied.text' });
+                if (label()) i18n.text(label(), 'notice.copied');
+            },
+            onReset: () => {
+                getItem().set(base);
+                if (label()) i18n.text(label(), 'notice.copyLink');
+            },
+            onRefused: () => {
+                const field = AIPT.inApp.addressField('notice-field');
+                getItem().set({ ...base, title: 'notice.copyBlocked.title', text: 'notice.copyBlocked.text', actions: [], extra: field });
+                AIPT.inApp.selectAddress(field);
+            },
         });
-        const raw = await res.text();
-        let data = null;
-        try {
-            data = raw ? JSON.parse(raw) : null;
-        } catch (_) {
-            data = null;
-        }
-        if (!res.ok) {
-            const err = new Error((data && data.error) || `Server error (${res.status})`);
-            err.status = res.status;
-            err.code = (data && data.code) || '';
-            const retryAfter = Number(res.headers.get('Retry-After') || (data && data.retry_after));
-            err.retryAfter = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter, 60) : 0;
-            throw err;
-        }
-        return data;
+        return { label: 'notice.copyLink', icon: 'copy', onClick: () => copier.run() };
     }
 
-    const sleep = (ms, signal) => new Promise((resolve, reject) => {
-        if (signal && signal.aborted) {
-            reject(new DOMException('Aborted', 'AbortError'));
-            return;
-        }
-        const timer = setTimeout(resolve, ms);
-        if (signal) {
-            signal.addEventListener('abort', () => {
-                clearTimeout(timer);
-                reject(new DOMException('Aborted', 'AbortError'));
-            }, { once: true });
-        }
+    function cannotRecordNotice() {
+        const base = env.secure
+            ? { kind: 'warning', icon: 'mic-off', title: 'notice.cantRecord.title', text: 'notice.cantRecord.text' }
+            : { kind: 'warning', icon: 'mic-off', title: 'notice.insecure.title', text: 'notice.insecure.text' };
+        // The action reads `item` when tapped, once it exists.
+        const item = ui.notice({ ...base, actions: env.secure ? [copyLinkAction(() => item, base)] : [] });
+        return item;
+    }
+
+    const offlineNotice = () => ui.notice({
+        kind: 'warning', icon: 'wifi-off', title: 'notice.offline.title', text: 'notice.offline.text',
     });
 
-    function getAudioContext() {
-        if (!audioCtx) {
-            const Ctx = window.AudioContext || window.webkitAudioContext;
-            audioCtx = new Ctx();
-        }
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        return audioCtx;
-    }
+    const noVoiceNotice = () => ui.notice({
+        kind: 'info', icon: 'info', title: 'notice.noVoice.title', text: 'notice.noVoice.text',
+    });
 
-    let toastTimer = null;
-    function toast(message) {
-        els.toast.textContent = message;
-        els.toast.hidden = false;
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => { els.toast.hidden = true; }, 3800);
-    }
+    const loadFailedNotice = () => ui.notice({
+        kind: 'error', icon: 'wifi-off', title: 'notice.loadFailed.title', text: 'notice.loadFailed.text',
+        actions: [{ label: 'common.tryAgain', icon: 'refresh', onClick: () => loadSentence() }],
+    });
 
-    function setStatus(message, isError = false) {
-        els.status.textContent = message;
-        els.status.classList.toggle('is-error', isError);
-    }
+    // F5: after "New learner", with the tour one tap away.
+    const welcomeNotice = () => ui.notice({
+        kind: 'success', icon: 'check', title: 'notice.welcome.title', text: 'notice.welcome.text',
+        actions: [{
+            label: 'notice.welcome.tour',
+            icon: 'help',
+            onClick: () => {
+                dock.hide('welcome');
+                AIPT.tour.start(null);
+            },
+        }],
+    });
 
-    const formatTime = (seconds) => {
-        const s = Math.floor(seconds);
-        return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    // ---------------------------------------------------------------- the card
+    // The card's label and the button at its top right, by what it holds: a
+    // bank sentence ("Read this aloud", My text), the learner's own text (a
+    // "My text" badge, Edit) or a word to review (a badge, Back to sentences:
+    // wireframes F6).
+    const CARD_LABELS = {
+        bank: { label: 'card.eyebrow', icon: 'edit', button: 'card.myText', buttonIcon: 'edit' },
+        custom: { label: 'card.myText', icon: 'edit', button: 'card.edit', buttonIcon: 'edit', badge: true },
+        word: { label: 'card.wordToReview', icon: 'target', button: 'card.backToSentences', buttonIcon: 'close', badge: true },
     };
 
-    // ---------------------------------------------------------------- stats
-    function renderStats() {
-        const { points, sentences, accuracySum } = state.stats;
-        els.statPoints.textContent = Math.round(points).toLocaleString('en-US');
-        els.statSentences.textContent = sentences;
-        els.statAverage.textContent = sentences ? `${Math.round(accuracySum / sentences)}%` : '–';
+    function renderCard() {
+        const look = CARD_LABELS[state.mode] || CARD_LABELS.bank;
+        els.cardLabel.classList.toggle('is-badge', Boolean(look.badge));
+        els.cardLabelIcon.setAttribute('href', `#i-${look.icon}`);
+        i18n.text(els.cardLabelText, look.label);
+        els.myTextIcon.setAttribute('href', `#i-${look.buttonIcon}`);
+        i18n.text(els.myTextLabel, look.button);
+        i18n.attr(els.btnMyText, 'aria-label', state.mode === 'custom' ? 'card.editLabel' : null);
+
+        const hasText = Boolean(state.text);
+        els.card.setAttribute('aria-busy', String(state.loading));
+        els.skeleton.hidden = !state.loading;
+        els.sentence.hidden = state.loading || !hasText;
+        const long = words(state.text) > LONG_TEXT_WORDS;
+        els.btnShowIpa.hidden = state.loading || !hasText || !long || !state.ipa;
+        els.btnShowIpa.setAttribute('aria-expanded', String(state.ipaOpen));
+        i18n.text(els.showIpaLabel, state.ipaOpen ? 'card.hideIpa' : 'card.showIpa');
+        els.ipa.hidden = state.loading || !hasText || !state.ipa || (long && !state.ipaOpen);
+        els.loadError.hidden = state.loading || hasText || !state.loadFailed;
+        // No sentence could load: nothing to play slowly (wireframes A3).
+        els.slowToggle.closest('.toggle').hidden = !state.loading && !hasText;
     }
 
-    // Each sentence counts once, with its best attempt.
-    function recordAttempt(accuracy) {
-        const multiplier = CATEGORY_MULTIPLIER[state.sentenceCategory] || 1;
-        const best = state.bestForSentence;
-        if (best === null) {
-            state.stats.sentences += 1;
-            state.stats.accuracySum += accuracy;
-            state.stats.points += accuracy * multiplier;
-            state.bestForSentence = accuracy;
-        } else if (accuracy > best) {
-            state.stats.accuracySum += accuracy - best;
-            state.stats.points += (accuracy - best) * multiplier;
-            state.bestForSentence = accuracy;
-        }
-        renderStats();
-    }
-
-    // ---------------------------------------------------------------- sentence
-    function updateControls() {
-        const hasText = Boolean(state.text) && !state.loading;
-        els.btnListen.disabled = !hasText;
-        els.btnRecord.disabled = !hasText;
-        els.btnPlayback.disabled = !state.recordingBuffer || state.loading;
-        els.btnNext.disabled = state.loading;
-        els.btnUseCustom.disabled = state.loading || !normalizeText(els.customText.value);
-    }
-
-    function setLoading(loading) {
-        state.loading = loading;
-        els.sentence.classList.toggle('is-loading', loading);
-        updateControls();
-    }
-
-    function setSentence(text, ipa, category, ttsUrl) {
-        stopPlayback();
-        state.text = normalizeText(text);
-        state.ipa = ipa || '';
-        state.ttsUrl = ttsUrl || '';
-        state.sentenceCategory = category;
-        state.result = null;
-        state.selectedWord = -1;
-        state.bestForSentence = null;
-        state.recordingBuffer = null;
-
+    function renderSentence() {
         els.sentence.textContent = state.text;
-        els.ipaReference.textContent = state.ipa ? `/ ${state.ipa} /` : '';
-        els.ipaSpokenRow.hidden = true;
-        els.wordDetail.hidden = true;
-        els.resultBox.hidden = true;
-        updateControls();
+        els.sentence.classList.toggle('is-long', words(state.text) > LONG_TEXT_WORDS);
+        els.ipa.textContent = state.ipa ? `/ ${state.ipa} /` : '';
     }
 
-    async function loadPracticeSentence() {
-        if (state.loading) return;
-        setLoading(true);
-        setStatus('Loading a new sentence…');
-        try {
-            const data = await postJSON(API.sample, { category: String(state.category), language: LANGUAGE });
-            setSentence(data.real_transcript[0], data.ipa_transcript, state.category, data.tts_url);
-            setStatus('Listen first, then tap the microphone and read the sentence aloud.');
-        } catch (err) {
-            console.error(err);
-            setStatus('Could not load a sentence. Check your connection and try again.', true);
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    async function useCustomText() {
-        const text = normalizeText(els.customText.value);
-        els.customError.hidden = true;
-        if (!text) {
-            showCustomError('Please type at least one English word.');
-            return;
-        }
-        if (text.length > CUSTOM_MAX_CHARS) {
-            showCustomError(`Please keep it under ${CUSTOM_MAX_CHARS} characters.`);
-            return;
-        }
-        if (text.split(' ').length > CUSTOM_MAX_WORDS) {
-            showCustomError(`Please keep it under ${CUSTOM_MAX_WORDS} words.`);
-            return;
-        }
-        if (state.loading) return;
-        setLoading(true);
-        setStatus('Preparing your text…');
-        try {
-            const data = await postJSON(API.custom, { text, language: LANGUAGE });
-            setSentence(data.real_transcript[0], data.ipa_transcript, 'custom');
-            setStatus('Your text is ready. Listen first, then tap the microphone and read it aloud.');
-            els.sentence.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } catch (err) {
-            console.error(err);
-            showCustomError(err.status === 400 ? err.message : 'Could not prepare this text. Please try again.');
-            setStatus('');
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    function showCustomError(message) {
-        els.customError.textContent = message;
-        els.customError.hidden = false;
-    }
-
-    // ---------------------------------------------------------------- results
-    function tierFor(accuracy) {
-        if (accuracy >= 80) return { cls: '', title: 'Excellent!', sub: 'Native-like pronunciation. Try a harder sentence.' };
-        if (accuracy >= 60) return { cls: 'tier-ok', title: 'Good job', sub: 'Check the orange and red words and try again.' };
-        return { cls: 'tier-bad', title: 'Keep practising', sub: 'Listen to the red words, then record again.' };
-    }
-
-    function renderResult(data) {
-        const accuracy = Math.max(0, Math.min(100, parseInt(data.pronunciation_accuracy, 10) || 0));
-        const words = state.text.split(' ');
-        const letterFlags = (data.is_letter_correct_all_words || '').trim().split(' ');
-        const realIpa = (data.real_transcripts_ipa || '').split(' ');
-        const spokenIpa = (data.matched_transcripts_ipa || '').split(' ');
-        const categories = (data.pair_accuracy_category || '').split(' ');
-        const startTimes = (data.start_time || '').split(' ').map(parseFloat);
-        const endTimes = (data.end_time || '').split(' ').map(parseFloat);
-
-        state.result = { accuracy, words, realIpa, spokenIpa, categories, startTimes, endTimes };
-        state.selectedWord = -1;
-
-        const fragment = document.createDocumentFragment();
-        words.forEach((word, index) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = `word cat-${categories[index] || '2'}`;
-            button.dataset.index = String(index);
-            button.setAttribute('aria-label', `${word}: ${CATEGORY_TEXT[categories[index]] || 'Needs work'}. Show details`);
-            const flags = letterFlags[index] || '';
-            for (let i = 0; i < word.length; i += 1) {
-                const span = document.createElement('span');
-                span.textContent = word[i];
-                span.className = flags[i] === '1' ? 'l-good' : 'l-bad';
-                button.appendChild(span);
-            }
-            fragment.appendChild(button);
-            if (index < words.length - 1) fragment.appendChild(document.createTextNode(' '));
-        });
-        els.sentence.replaceChildren(fragment);
-
-        els.ipaReference.textContent = data.real_transcripts_ipa ? `/ ${data.real_transcripts_ipa} /` : els.ipaReference.textContent;
-        els.ipaSpoken.textContent = data.ipa_transcript ? `/ ${data.ipa_transcript} /` : '(no speech recognised)';
-        els.ipaSpokenRow.hidden = false;
-        els.wordDetail.hidden = true;
-
-        const tier = tierFor(accuracy);
-        els.scoreRing.classList.remove('tier-ok', 'tier-bad');
-        if (tier.cls) els.scoreRing.classList.add(tier.cls);
-        els.resultTitle.textContent = tier.title;
-        const heard = (data.real_transcript || '').trim();
-        els.resultSub.textContent = heard ? `${tier.sub} We heard: “${heard}”` : tier.sub;
-        els.resultBox.hidden = false;
-        els.scoreRing.style.setProperty('--value', '0');
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            els.scoreRing.style.setProperty('--value', String(accuracy));
-        }));
-        animateNumber(els.scoreValue, accuracy);
-
-        recordAttempt(accuracy);
-        setStatus('Tap any word to compare your sound with the correct one.');
-        playFeedbackSound(accuracy);
-    }
-
-    function animateNumber(el, target) {
-        const start = performance.now();
-        const duration = 800;
-        const step = (now) => {
-            const t = Math.min(1, (now - start) / duration);
-            el.textContent = String(Math.round(target * (1 - Math.pow(1 - t, 3))));
-            if (t < 1) requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
-    }
-
-    function selectWord(index) {
-        const r = state.result;
-        if (!r) return;
-        state.selectedWord = index;
-        els.sentence.querySelectorAll('.word').forEach((w) => {
-            w.classList.toggle('is-selected', Number(w.dataset.index) === index);
-        });
-        const category = r.categories[index] || '2';
-        const spoken = r.spokenIpa[index];
-        const heard = spoken && spoken !== '-';
-        els.wdWord.textContent = r.words[index];
-        els.wdBadge.textContent = CATEGORY_TEXT[category] || 'Needs work';
-        els.wdBadge.className = `badge cat-${category}`;
-        els.wdRefIpa.textContent = r.realIpa[index] ? `/${r.realIpa[index]}/` : '—';
-        els.wdYourIpa.textContent = heard ? `/${spoken}/` : 'not heard';
-        const hasTiming = heard && Number.isFinite(r.startTimes[index]) && Number.isFinite(r.endTimes[index]);
-        els.wdPlayYours.disabled = !(hasTiming && state.recordingBuffer);
-        els.wordDetail.hidden = false;
-    }
-
-    // ---------------------------------------------------------------- playback
-    function stopPlayback() {
-        if (activePlayback) {
-            const current = activePlayback;
-            activePlayback = null;
-            try { current.stop(); } catch (_) { /* already stopped */ }
-            if (current.button) current.button.classList.remove('is-playing');
-        }
-        if (window.speechSynthesis) window.speechSynthesis.cancel();
-    }
-
-    function trackPlayback(stop, button) {
-        stopPlayback();
-        activePlayback = { stop, button };
-        if (button) button.classList.add('is-playing');
-        return () => {
-            if (activePlayback && activePlayback.stop === stop) {
-                activePlayback = null;
-                if (button) button.classList.remove('is-playing');
-            }
-        };
-    }
-
-    async function speak(text, button) {
-        const clean = text.trim();
-        if (!clean) return;
-        const slow = els.slowToggle.checked;
-        stopPlayback();
-
-        if (serverTts) {
-            try {
-                let url = ttsCache.get(clean);
-                if (!url) {
-                    if (button) button.classList.add('is-playing');
-                    // A bank sentence has its own MP3 that browsers and Cloudflare
-                    // cache; any other text (a single word, your own text) is read
-                    // on request.
-                    let blob = clean === state.text && state.ttsUrl ? await fetchAudio(state.ttsUrl) : null;
-                    if (!blob) {
-                        const data = await postJSON(API.tts, { value: clean, language: LANGUAGE });
-                        const bytes = Uint8Array.from(atob(data.wavBase64), (c) => c.charCodeAt(0));
-                        blob = new Blob([bytes], { type: 'audio/wav' });
-                    }
-                    url = URL.createObjectURL(blob);
-                    ttsCache.set(clean, url);
-                    if (ttsCache.size > 40) {
-                        const [oldKey, oldUrl] = ttsCache.entries().next().value;
-                        URL.revokeObjectURL(oldUrl);
-                        ttsCache.delete(oldKey);
-                    }
-                }
-                const audio = new Audio(url);
-                audio.playbackRate = slow ? 0.75 : 1;
-                if ('preservesPitch' in audio) audio.preservesPitch = true;
-                const done = trackPlayback(() => audio.pause(), button);
-                audio.addEventListener('ended', done);
-                audio.addEventListener('pause', done);
-                await audio.play();
-                return;
-            } catch (err) {
-                if (button) button.classList.remove('is-playing');
-                // Only a permanent "no server voice" switches to the browser voice for
-                // good; a temporary failure falls back for this text only.
-                if (err.code === 'tts_unavailable' || err.status === 404) serverTts = false;
-                console.warn('Server TTS failed, using the browser voice.', err);
-            }
-        }
-        speakWithBrowser(clean, slow, button);
-    }
-
-    async function fetchAudio(url) {
-        try {
-            const res = await fetch(url);
-            return res.ok ? await res.blob() : null;
-        } catch (err) {
-            console.warn('Could not fetch the recording of the sentence.', err);
-            return null;
-        }
-    }
-
-    let browserVoice = null;
-    function pickBrowserVoice() {
-        if (!window.speechSynthesis) return null;
-        const voices = window.speechSynthesis.getVoices();
-        const preferred = ['Google US English', 'Microsoft Aria Online (Natural) - English (United States)',
-            'Microsoft Jenny Online (Natural) - English (United States)', 'Samantha', 'Alex'];
-        for (const name of preferred) {
-            const v = voices.find((voice) => voice.name === name);
-            if (v) return v;
-        }
-        return voices.find((v) => v.lang === 'en-US') || voices.find((v) => v.lang && v.lang.startsWith('en')) || null;
-    }
-    if (window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = () => { browserVoice = pickBrowserVoice(); };
-    }
-
-    function speakWithBrowser(text, slow, button) {
-        if (!window.speechSynthesis) {
-            toast('This browser cannot play the sample voice.');
-            return;
-        }
-        browserVoice = browserVoice || pickBrowserVoice();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'en-US';
-        if (browserVoice) utterance.voice = browserVoice;
-        utterance.rate = slow ? 0.65 : 0.9;
-        const done = trackPlayback(() => window.speechSynthesis.cancel(), button);
-        utterance.onend = done;
-        utterance.onerror = done;
-        window.speechSynthesis.speak(utterance);
-    }
-
-    function playBuffer(buffer, button, offset = 0, duration = undefined) {
-        const ctx = getAudioContext();
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        const done = trackPlayback(() => source.stop(), button);
-        source.onended = done;
-        source.start(0, Math.max(0, offset), duration);
-    }
-
-    function playRecording() {
-        if (!state.recordingBuffer) return;
-        playBuffer(state.recordingBuffer, els.btnPlayback);
-    }
-
-    function playRecordedWord(index) {
-        const r = state.result;
-        if (!r || !state.recordingBuffer) return;
-        const start = r.startTimes[index];
-        const end = r.endTimes[index];
-        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
-        playBuffer(state.recordingBuffer, els.wdPlayYours, start, end - start);
-    }
-
-    // The result chime is synthesised, so the page downloads no sound file:
-    // [frequency in Hz, start in s, length in s] for each note.
-    const FEEDBACK_NOTES = {
-        good: [[784, 0, 0.14], [1047, 0.12, 0.28]], // G5 then C6, rising
-        okay: [[659, 0, 0.24]], // E5
-        bad: [[392, 0, 0.16], [330, 0.14, 0.3]], // G4 then E4, falling
-    };
-
-    function playFeedbackSound(accuracy) {
-        const notes = FEEDBACK_NOTES[accuracy >= 70 ? 'good' : accuracy >= 30 ? 'okay' : 'bad'];
-        let ctx;
-        try {
-            ctx = getAudioContext();
-        } catch (err) {
-            console.warn('No audio for the feedback sound', err);
-            return;
-        }
-        const now = ctx.currentTime + 0.02;
-        notes.forEach(([frequency, start, length]) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = frequency;
-            // A soft bell: a quick rise, then an exponential fade.
-            gain.gain.setValueAtTime(0.0001, now + start);
-            gain.gain.exponentialRampToValueAtTime(0.18, now + start + 0.015);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + start + length);
-            osc.connect(gain).connect(ctx.destination);
-            osc.start(now + start);
-            osc.stop(now + start + length + 0.02);
-        });
-    }
-
-    // ---------------------------------------------------------------- recorder
-    const rec = {
-        phase: 'idle', // idle | preparing | recording | processing | error
-        attempt: 0,
-        stream: null,
-        recorder: null,
-        cancelled: false,
-        startedAt: 0,
-        analyser: null,
-        source: null,
-        levels: [],
-        maxRms: 0,
-        lastLoudAt: 0,
-        smoothed: 0,
-        raf: 0,
-        timer: 0,
-        sampler: 0,
-        abort: null,
-        slowTimer: 0,
-        returnFocus: null,
-    };
-
-    function setModalPhase(phase, message) {
-        rec.phase = phase;
-        const recording = phase === 'recording';
-        els.recDot.classList.toggle('is-live', recording);
-        els.recStop.hidden = phase === 'error' || phase === 'processing';
-        els.recStop.disabled = !recording;
-        els.recRetry.hidden = phase !== 'error';
-        els.recCancel.textContent = phase === 'error' ? 'Close' : 'Cancel';
-        els.waveOverlay.hidden = phase === 'recording' || phase === 'idle';
-        els.waveOverlay.classList.toggle('is-error', phase === 'error');
-        els.recHint.classList.remove('is-warning');
-        const spinner = els.waveOverlay.querySelector('.spinner');
-        spinner.hidden = phase === 'error';
-
-        switch (phase) {
-            case 'preparing':
-                els.recTitle.textContent = 'Getting the microphone ready…';
-                els.waveOverlayText.textContent = 'Allow microphone access if your browser asks.';
-                els.recHint.textContent = '';
-                break;
-            case 'recording':
-                els.recTitle.textContent = 'Recording';
-                els.recHint.innerHTML = 'Speak clearly at a normal pace, then tap <strong>Stop</strong> when you finish<span class="desk-only"> (or press <kbd>Space</kbd>)</span>.';
-                break;
-            case 'processing':
-                els.recTitle.textContent = 'Checking your pronunciation';
-                els.waveOverlayText.textContent = 'Analysing your pronunciation…';
-                els.recHint.textContent = 'This usually takes a few seconds.';
-                break;
-            case 'error':
-                els.recTitle.textContent = 'Something went wrong';
-                els.waveOverlayText.textContent = message || 'Please try again.';
-                els.recHint.textContent = '';
-                break;
-            default:
-                break;
-        }
-    }
-
-    function openModal() {
-        rec.returnFocus = document.activeElement;
-        els.recSentence.textContent = state.text;
-        els.recTimer.textContent = '0:00';
-        rec.levels = [];
-        els.modal.hidden = false;
-        els.app.inert = true;
-        document.body.classList.add('modal-open');
-        sizeCanvas();
-        drawWave();
-    }
-
-    function closeModal() {
-        cleanupRecorder();
-        if (rec.abort) {
-            rec.abort.abort();
-            rec.abort = null;
-        }
-        clearTimeout(rec.slowTimer);
-        rec.phase = 'idle';
-        els.modal.hidden = true;
-        els.app.inert = false;
-        document.body.classList.remove('modal-open');
-        const target = rec.returnFocus && document.contains(rec.returnFocus) ? rec.returnFocus : els.btnRecord;
-        if (target && typeof target.focus === 'function') target.focus();
-    }
-
-    function cleanupRecorder() {
-        cancelAnimationFrame(rec.raf);
-        clearInterval(rec.timer);
-        clearInterval(rec.sampler);
-        if (rec.source) {
-            try { rec.source.disconnect(); } catch (_) { /* noop */ }
-        }
-        rec.source = null;
-        rec.analyser = null;
-        if (rec.stream) rec.stream.getTracks().forEach((t) => t.stop());
-        rec.stream = null;
-    }
-
-    function pickMimeType() {
-        if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
-        const candidates = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'];
-        return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
-    }
-
-    async function startRecording() {
-        if (!state.text || state.loading || rec.phase !== 'idle') return;
-        stopPlayback();
-
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-            toast(window.isSecureContext
-                ? 'This browser cannot record audio. Please use Chrome, Edge, Firefox or Safari.'
-                : 'Recording needs a secure (https) connection.');
-            return;
-        }
-
-        openModal();
-        setModalPhase('preparing');
-        rec.cancelled = false;
-        rec.attempt += 1;
-        const attempt = rec.attempt;
-        const ctx = getAudioContext();
-
-        let stream;
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
-        } catch (err) {
-            console.error(err);
-            const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
-            setModalPhase('error', denied
-                ? 'Microphone access is blocked. Allow it from the icon in the address bar, then try again.'
-                : 'No microphone was found. Connect one and try again.');
-            return;
-        }
-        if (rec.phase !== 'preparing' || attempt !== rec.attempt) {
-            // Popup was closed while waiting for permission.
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-        }
-
-        rec.stream = stream;
-        rec.source = ctx.createMediaStreamSource(stream);
-        rec.analyser = ctx.createAnalyser();
-        rec.analyser.fftSize = 2048;
-        rec.source.connect(rec.analyser);
-
-        const mimeType = pickMimeType();
-        const options = { audioBitsPerSecond: RECORDING_BITS_PER_SECOND };
-        if (mimeType) options.mimeType = mimeType;
-        try {
-            rec.recorder = new MediaRecorder(stream, options);
-        } catch (_) {
-            rec.recorder = new MediaRecorder(stream);
-        }
-        const chunks = [];
-        const recorder = rec.recorder;
-        recorder.ondataavailable = (event) => {
-            if (event.data && event.data.size) chunks.push(event.data);
-        };
-        recorder.onstop = () => onRecorderStop(attempt, recorder, chunks);
-        recorder.start();
-
-        rec.startedAt = performance.now();
-        rec.lastLoudAt = rec.startedAt;
-        rec.levels = [];
-        rec.smoothed = 0;
-        rec.maxRms = 0;
-        setModalPhase('recording');
-        els.recStop.focus();
-
-        rec.timer = setInterval(() => {
-            const elapsed = (performance.now() - rec.startedAt) / 1000;
-            els.recTimer.textContent = formatTime(elapsed);
-            const remaining = MAX_RECORDING_SECONDS - elapsed;
-            if (remaining <= 0) {
-                stopRecording();
-            } else if (remaining <= 5) {
-                els.recHint.textContent = `Stopping automatically in ${Math.ceil(remaining)}s…`;
-                els.recHint.classList.add('is-warning');
-            } else if (performance.now() - rec.lastLoudAt > 3500) {
-                els.recHint.textContent = "We can't hear you – speak a little louder or move closer to the microphone.";
-                els.recHint.classList.add('is-warning');
-            } else if (els.recHint.classList.contains('is-warning')) {
-                setModalPhase('recording');
-            }
-        }, 250);
-
-        rec.sampler = setInterval(sampleLevel, 45);
-        loop();
-    }
-
-    function stopRecording() {
-        if (rec.phase !== 'recording' || !rec.recorder) return;
-        clearInterval(rec.timer);
-        clearInterval(rec.sampler);
-        setModalPhase('processing');
-        if (rec.recorder.state !== 'inactive') rec.recorder.stop();
-    }
-
-    function cancelRecording() {
-        rec.cancelled = true;
-        if (rec.recorder && rec.recorder.state !== 'inactive') rec.recorder.stop();
-        closeModal();
-    }
-
-    async function onRecorderStop(attempt, recorder, chunks) {
-        if (attempt !== rec.attempt || rec.cancelled) return;
-        const durationMs = performance.now() - rec.startedAt;
-        const type = recorder.mimeType || 'audio/webm';
-        const blob = new Blob(chunks, { type });
-        rec.recorder = null;
-        cleanupRecorder();
-        drawWave(true);
-
-        if (durationMs < MIN_RECORDING_MS || blob.size < 1000) {
-            setModalPhase('error', 'That recording was too short. Tap “Try again” and read the whole sentence.');
-            return;
-        }
-        if (rec.maxRms < SILENCE_RMS) {
-            setModalPhase('error', "We couldn't hear anything. Check that the right microphone is selected and not muted.");
-            return;
-        }
-
-        // Closing the popup aborts everything (closeModal); each attempt also has
-        // its own time limit, which the waits between attempts do not use up.
-        const abort = new AbortController();
-        rec.abort = abort;
-
-        try {
-            const [base64Audio, buffer] = await Promise.all([
-                blobToDataUrl(blob),
-                blob.arrayBuffer().then((ab) => getAudioContext().decodeAudioData(ab)).catch(() => null),
-            ]);
-            const body = { title: state.text, base64Audio, language: LANGUAGE };
-            let data;
-            for (let attempt = 0; ; attempt += 1) {
-                try {
-                    data = await sendRecording(body, abort.signal);
-                    break;
-                } catch (err) {
-                    const busy = err.status === 503 || err.status === 429;
-                    if (!busy || attempt >= BUSY_RETRIES || abort.signal.aborted) throw err;
-                    await waitForBusyServer(err.retryAfter || 3, abort.signal);
-                }
-            }
-
-            if (!data || data.pronunciation_accuracy === undefined) {
-                throw Object.assign(new Error('empty'), { status: 422 });
-            }
-            // An answer for a popup that was closed in the meantime belongs to
-            // no take any more: it must not close a newer one.
-            if (abort.signal.aborted) return;
-            state.recordingBuffer = buffer;
-            closeModal();
-            renderResult(data);
-            updateControls();
-        } catch (err) {
-            // Only closeModal aborts this controller: the learner closed the
-            // popup, and the popup may already show a newer take.
-            if (abort.signal.aborted) return;
-            console.error(err);
-            let message = 'Could not check your recording. Please try again.';
-            if (err.name === 'AbortError') message = 'The server took too long to answer. Please try again.';
-            else if (err.status === 422) message = "We couldn't recognise any speech. Speak a little louder and try again.";
-            else if (err.status === 413) message = 'That recording is too long. Please keep it under 30 seconds.';
-            else if (err.status === 429 || err.status === 503) message = 'The server is busy right now. Please try again in a moment.';
-            else if (err.status === 502 || err.status === 504 || err.status === 524) message = 'The server took too long to answer. Please try again.';
-            else if (err.status === 400 && err.message) message = err.message;
-            setModalPhase('error', message);
-        } finally {
-            // closeModal cleared the timer of a closed popup; rec.slowTimer may
-            // belong to a newer take by now.
-            if (!abort.signal.aborted) clearTimeout(rec.slowTimer);
-            if (rec.abort === abort) rec.abort = null;
-        }
-    }
-
-    // One attempt to score the recording, given up after SCORE_TIMEOUT_MS (an
-    // AbortError) or when the popup is closed (the outer signal).
-    async function sendRecording(body, outer) {
-        // The popup can be closed while the recording is still being read, before
-        // the first attempt; an aborted signal never fires 'abort' again.
-        if (outer.aborted) throw new DOMException('The popup was closed.', 'AbortError');
-        const attempt = new AbortController();
-        const stop = () => attempt.abort();
-        outer.addEventListener('abort', stop, { once: true });
-        const timeout = setTimeout(stop, SCORE_TIMEOUT_MS);
-        clearTimeout(rec.slowTimer);
-        rec.slowTimer = setTimeout(() => {
-            if (rec.phase === 'processing') {
-                els.recHint.textContent = 'Still working – the first check after a server restart can take up to a minute.';
-            }
-        }, 8000);
-        try {
-            return await postJSON(API.score, body, { signal: attempt.signal });
-        } finally {
-            clearTimeout(timeout);
-            clearTimeout(rec.slowTimer);
-            outer.removeEventListener('abort', stop);
-        }
-    }
-
-    // Wait the time a busy server asked for, plus up to 2 s so that a class
-    // that was turned away together does not come back together, counting
-    // down in the popup. The recording is kept and sent again afterwards.
-    async function waitForBusyServer(seconds, signal) {
-        const until = performance.now() + (seconds + Math.random() * 2) * 1000;
-        els.recHint.textContent = 'Many people are practising right now.';
-        for (;;) {
-            const left = Math.ceil((until - performance.now()) / 1000);
-            if (left <= 0) break;
-            els.waveOverlayText.textContent = `The server is busy – sending your recording again in ${left} s…`;
-            await sleep(Math.min(1000, until - performance.now()), signal);
-        }
-        els.waveOverlayText.textContent = 'Analysing your pronunciation…';
-        els.recHint.textContent = 'This usually takes a few seconds.';
-    }
-
-    const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-    });
-
-    // ---------------------------------------------------------------- waveform
-    const wave = { width: 0, height: 0, dpr: 1, bar: 4, gap: 3 };
-    let sampleBuffer = null;
-
-    function sizeCanvas() {
-        const rect = els.waveCanvas.getBoundingClientRect();
-        wave.dpr = Math.min(window.devicePixelRatio || 1, 2);
-        wave.width = Math.max(1, Math.round(rect.width * wave.dpr));
-        wave.height = Math.max(1, Math.round(rect.height * wave.dpr));
-        els.waveCanvas.width = wave.width;
-        els.waveCanvas.height = wave.height;
-    }
-
-    function readSamples() {
-        const analyser = rec.analyser;
-        if (!sampleBuffer || sampleBuffer.length !== analyser.fftSize) sampleBuffer = new Float32Array(analyser.fftSize);
-        analyser.getFloatTimeDomainData(sampleBuffer);
-        return sampleBuffer;
-    }
-
-    // Level metering runs on a timer (not requestAnimationFrame) so silence
-    // detection keeps working even if the tab is in the background.
-    function sampleLevel() {
-        if (rec.phase !== 'recording' || !rec.analyser) return;
-        const samples = readSamples();
-        let sum = 0;
-        for (let i = 0; i < samples.length; i += 1) sum += samples[i] * samples[i];
-        const rms = Math.sqrt(sum / samples.length);
-        if (rms > rec.maxRms) rec.maxRms = rms;
-        const level = Math.min(1, Math.pow(rms * 6, 0.8));
-        rec.smoothed = Math.max(level, rec.smoothed * 0.8);
-        if (level > 0.06) rec.lastLoudAt = performance.now();
-        rec.levels.push(rec.smoothed);
-        const maxBars = Math.ceil(wave.width / ((wave.bar + wave.gap) * wave.dpr)) + 1;
-        if (rec.levels.length > maxBars) rec.levels.splice(0, rec.levels.length - maxBars);
-    }
-
-    function loop() {
-        if (rec.phase !== 'recording' || !rec.analyser) return;
-        drawWave(false, readSamples());
-        rec.raf = requestAnimationFrame(loop);
-    }
-
-    function cssVar(name) {
-        return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    }
-
-    function drawWave(frozen = false, samples = null) {
-        const ctx = els.waveCanvas.getContext('2d');
-        const { width, height, dpr } = wave;
-        ctx.clearRect(0, 0, width, height);
-        const mid = height / 2;
-        const primary = cssVar('--primary') || '#4f46e5';
-        const muted = cssVar('--border') || '#e3e6f0';
-
-        // centre line
-        ctx.fillStyle = muted;
-        ctx.fillRect(0, mid - dpr / 2, width, dpr);
-
-        // live oscilloscope trace behind the bars
-        if (samples && !frozen) {
-            ctx.beginPath();
-            ctx.lineWidth = 1.5 * dpr;
-            ctx.strokeStyle = primary;
-            ctx.globalAlpha = 0.25;
-            const step = samples.length / width;
-            for (let x = 0; x < width; x += 2) {
-                const v = samples[Math.floor(x * step)] || 0;
-                const y = mid + v * mid * 0.9;
-                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            }
-            ctx.stroke();
-            ctx.globalAlpha = 1;
-        }
-
-        // scrolling amplitude bars (newest on the right)
-        const bar = wave.bar * dpr;
-        const gap = wave.gap * dpr;
-        const levels = rec.levels;
-        ctx.fillStyle = primary;
-        for (let i = levels.length - 1, x = width - bar - gap; i >= 0 && x > -bar; i -= 1, x -= bar + gap) {
-            const h = Math.max(2 * dpr, levels[i] * (height - 16 * dpr));
-            const age = (levels.length - 1 - i) / Math.max(levels.length, 1);
-            ctx.globalAlpha = frozen ? 0.35 : Math.max(0.35, 1 - age * 0.8);
-            roundRect(ctx, x, mid - h / 2, bar, h, bar / 2);
-        }
-        ctx.globalAlpha = 1;
-    }
-
-    function roundRect(ctx, x, y, w, h, r) {
-        const radius = Math.min(r, h / 2, w / 2);
-        ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.arcTo(x + w, y, x + w, y + h, radius);
-        ctx.arcTo(x + w, y + h, x, y + h, radius);
-        ctx.arcTo(x, y + h, x, y, radius);
-        ctx.arcTo(x, y, x + w, y, radius);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    window.addEventListener('resize', () => {
-        if (!els.modal.hidden) {
-            sizeCanvas();
-            drawWave(rec.phase !== 'recording');
-        }
-    });
-
-    // ---------------------------------------------------------------- tabs
-    function selectTab(mode) {
+    function setSentence({ text, ipa, ttsUrl = '', mode, level = 1 }) {
+        AIPT.audio.stop();
+        AIPT.result.clear();
+        if (state.wordController) state.wordController.abort();
+        state.wordController = null;
+        state.text = AIPT.normalizeText(text || '');
+        state.ipa = ipa || '';
+        state.ttsUrl = ttsUrl;
         state.mode = mode;
-        const practice = mode === 'practice';
-        els.tabPractice.classList.toggle('is-active', practice);
-        els.tabCustom.classList.toggle('is-active', !practice);
-        els.tabPractice.setAttribute('aria-selected', String(practice));
-        els.tabCustom.setAttribute('aria-selected', String(!practice));
-        els.tabPractice.tabIndex = practice ? 0 : -1;
-        els.tabCustom.tabIndex = practice ? -1 : 0;
-        els.panePractice.hidden = !practice;
-        els.paneCustom.hidden = practice;
-        if (!practice) els.customText.focus();
+        state.level = level;
+        // Above 20 words the IPA starts folded, so the text stays near the top.
+        state.ipaOpen = words(state.text) <= LONG_TEXT_WORDS;
+        renderSentence();
+        renderCard();
+        renderControls();
+        // The first sentence of a first visit starts the tour (tour.js decides).
+        if (state.text) AIPT.tour.sentenceShown();
     }
 
-    function selectCategory(category) {
-        state.category = category;
-        els.chips.forEach((chip) => {
-            const active = Number(chip.dataset.category) === category;
-            chip.classList.toggle('is-active', active);
-            chip.setAttribute('aria-checked', String(active));
-        });
-        loadPracticeSentence();
+    // The bank sentence's own level (1-3), which its points follow: the
+    // server names it (getSample's category, also for Random). An older server
+    // does not: then the level asked for, or for Random the bank's own rule
+    // (lambdaGetSample.getSentenceCategory): up to 8 words easy, up to 20
+    // medium, longer hard.
+    function sentenceLevel(given, text) {
+        const level = Number(given);
+        if (level === 1 || level === 2 || level === 3) return level;
+        if (state.category !== '0') return Number(state.category);
+        const count = String(text || '').split(/\s+/).filter(Boolean).length;
+        if (count <= 8) return 1;
+        return count <= 20 ? 2 : 3;
     }
 
-    // ---------------------------------------------------------------- events
-    els.tabPractice.addEventListener('click', () => selectTab('practice'));
-    els.tabCustom.addEventListener('click', () => selectTab('custom'));
-    [els.tabPractice, els.tabCustom].forEach((tab) => tab.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-            const next = tab === els.tabPractice ? els.tabCustom : els.tabPractice;
-            next.focus();
-            next.click();
+    // ---------------------------------------------------------------- the controls
+    function renderListen() {
+        const active = state.listen !== 'idle';
+        els.btnListen.dataset.state = state.listen;
+        els.btnListen.setAttribute('aria-pressed', String(active));
+        i18n.text(els.listenLabel, active ? 'controls.stop' : 'controls.listen');
+        const playing = state.listen === 'playing';
+        els.playingNote.hidden = !playing;
+        if (playing) {
+            if (els.slowToggle.checked) i18n.text(els.playingText, 'card.playingSlow', { rate: AIPT.audio.SLOW_RATE });
+            else i18n.text(els.playingText, 'card.playing');
         }
-    }));
+    }
 
-    els.chips.forEach((chip) => chip.addEventListener('click', () => selectCategory(Number(chip.dataset.category))));
-    els.btnNext.addEventListener('click', loadPracticeSentence);
+    function renderControls() {
+        const ready = Boolean(state.text) && !state.loading;
+        AIPT.setDisabled(els.btnListen, !ready);
+        AIPT.setDisabled(els.btnRecord, !ready || !env.canRecord);
+        AIPT.setDisabled(els.btnNext, state.loading || state.offline);
+        els.btnRecord.classList.toggle('is-blocked', !env.canRecord);
+        let mic = 'controls.speak';
+        if (!env.canRecord) mic = 'controls.cantRecord';
+        else if (AIPT.result.shown) mic = 'controls.tryAgain';
+        i18n.text(els.micLabel, mic);
+        renderListen();
+    }
 
-    els.customText.addEventListener('input', () => {
-        const length = els.customText.value.length;
-        els.customCounter.textContent = `${length} / ${CUSTOM_MAX_CHARS}`;
-        els.customError.hidden = true;
-        updateControls();
-    });
-    els.customText.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            useCustomText();
+    // ---------------------------------------------------------------- loading a sentence
+    // A bank sentence of the level asked for. A new choice cancels the request
+    // in flight; it gives up after 15 s. While it loads the card shows a
+    // skeleton; when it fails, the card says so (no sentence yet) or, when a
+    // sentence is shown, it stays and a notice docks above the controls.
+    async function loadSentence() {
+        if (state.loadController) state.loadController.abort();
+        const controller = new AbortController();
+        state.loadController = controller;
+        AIPT.audio.stop();
+        state.loading = true;
+        dock.hide('loadFailed');
+        renderCard();
+        renderControls();
+        ui.announce(t('card.loading'));
+        try {
+            const data = await AIPT.postJSON(AIPT.API.sample,
+                { category: state.category, language: AIPT.PRACTICE_LANGUAGE },
+                { signal: controller.signal, timeout: SAMPLE_TIMEOUT_MS });
+            if (state.loadController !== controller) return;
+            state.loading = false;
+            state.loadFailed = false;
+            const text = data.real_transcript[0];
+            setSentence({
+                text, ipa: data.ipa_transcript, ttsUrl: data.tts_url || '', mode: 'bank', level: sentenceLevel(data.category, text),
+            });
+            ui.announce(t('card.ready'));
+        } catch (err) {
+            if (state.loadController !== controller || (err && err.name === 'AbortError')) return;
+            console.error(err);
+            state.loading = false;
+            state.loadFailed = true;
+            // A sentence already shown stays (with its result); the error docks
+            // above the controls, unless being offline already says why.
+            if (state.text && !state.offline) dock.show('loadFailed', loadFailedNotice);
+            renderCard();
+            renderControls();
+        } finally {
+            if (state.loadController === controller) state.loadController = null;
         }
-    });
-    els.btnUseCustom.addEventListener('click', useCustomText);
+    }
 
-    els.btnListen.addEventListener('click', () => speak(state.text, els.btnListen));
-    els.btnRecord.addEventListener('click', startRecording);
-    els.btnPlayback.addEventListener('click', playRecording);
+    // Back to the bank, at the level last chosen (a chip, Next, or Try again).
+    function goToBank() {
+        levels.check(state.category);
+        loadSentence();
+    }
 
-    els.sentence.addEventListener('click', (e) => {
-        const word = e.target.closest('.word');
-        if (word) selectWord(Number(word.dataset.index));
-    });
-    els.wdPlayRef.addEventListener('click', () => {
-        const r = state.result;
-        if (r && state.selectedWord >= 0) speak(stripPunctuation(r.words[state.selectedWord]) || r.words[state.selectedWord], els.wdPlayRef);
-    });
-    els.wdPlayYours.addEventListener('click', () => {
-        if (state.selectedWord >= 0) playRecordedWord(state.selectedWord);
+    const levels = ui.radioGroup(els.levels, {
+        onChoose: (value) => {
+            state.category = value;
+            goToBank();
+        },
     });
 
-    els.recStop.addEventListener('click', stopRecording);
-    els.recRetry.addEventListener('click', () => {
-        closeModal();
-        startRecording();
-    });
-    els.modal.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', cancelRecording));
+    // ---------------------------------------------------------------- a word to review
+    // A word of the progress sheet's list, practised alone (wireframes F6):
+    // the word is the text to read at once (the voice and the scoring take a
+    // single word), and its IPA follows from the server. Its result updates
+    // the list. Back to sentences, a level chip or Next go back to the bank.
+    function practiseWord(word) {
+        const text = AIPT.normalizeText(word || '');
+        if (!text) return;
+        if (state.loadController) state.loadController.abort();
+        state.loadController = null;
+        state.loading = false;
+        state.loadFailed = false;
+        dock.hide('loadFailed');
+        setSentence({ text, ipa: '', mode: 'word' });
+        levels.check(null);
+        ui.focus(els.sentence);
+        ui.announce(t('card.wordReady', { word: text }));
+        fetchWordIpa(text);
+    }
 
-    document.addEventListener('keydown', (e) => {
-        if (!els.modal.hidden) {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                cancelRecording();
-            } else if ((e.key === ' ' || e.key === 'Enter') && rec.phase === 'recording') {
-                e.preventDefault();
-                stopRecording();
-            }
+    // The word's IPA, if it comes: without it the card shows the word alone.
+    async function fetchWordIpa(text) {
+        const controller = new AbortController();
+        state.wordController = controller;
+        try {
+            const data = await AIPT.postJSON(AIPT.API.custom, { text, language: AIPT.PRACTICE_LANGUAGE },
+                { signal: controller.signal, timeout: SAMPLE_TIMEOUT_MS });
+            if (state.wordController !== controller || state.mode !== 'word' || state.text !== text) return;
+            state.ipa = data.ipa_transcript || '';
+            // Only the IPA line: a result may already be on the word.
+            els.ipa.textContent = state.ipa ? `/ ${state.ipa} /` : '';
+            renderCard();
+        } catch (err) {
+            if (!err || err.name !== 'AbortError') console.warn('No IPA for this word', err);
+        } finally {
+            if (state.wordController === controller) state.wordController = null;
+        }
+    }
+
+    // ---------------------------------------------------------------- the controls' actions
+    // A control waiting for a sentence says why when tapped (it is aria-disabled).
+    function sayWhyNotReady() {
+        ui.announce(t(state.loading ? 'controls.wait' : 'card.loadFailed'));
+    }
+
+    function listen() {
+        if (AIPT.isDisabled(els.btnListen)) {
+            sayWhyNotReady();
             return;
         }
-        if (e.key !== ' ' || e.repeat) return;
-        const target = e.target;
-        const tag = target && target.tagName;
-        if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(tag))) return;
-        e.preventDefault();
-        startRecording();
+        if (state.listen !== 'idle') {
+            AIPT.audio.stop();
+            return;
+        }
+        AIPT.audio.speak(state.text, {
+            owner: 'listen',
+            slow: els.slowToggle.checked,
+            bankUrl: state.mode === 'bank' ? state.ttsUrl : '',
+        });
+    }
+
+    function record(opener) {
+        if (!env.canRecord) {
+            dock.reveal('cannotRecord');
+            return;
+        }
+        if (!state.text || state.loading) {
+            sayWhyNotReady();
+            return;
+        }
+        AIPT.audio.stop();
+        AIPT.recorder.start(opener || els.btnRecord);
+    }
+
+    function next() {
+        if (AIPT.isDisabled(els.btnNext)) {
+            if (state.offline) dock.reveal('offline');
+            else sayWhyNotReady();
+            return;
+        }
+        goToBank();
+    }
+
+    AIPT.audio.onChange((owner, audioState) => {
+        if (owner !== 'listen') return;
+        state.listen = audioState;
+        renderListen();
+        if (audioState === 'playing') {
+            dock.hide('noVoice');
+            ui.announce(t('card.playing'));
+        }
     });
+
+    AIPT.audio.onNoVoice(() => dock.show('noVoice', noVoiceNotice));
+
+    // ---------------------------------------------------------------- My text
+    const myText = {
+        sheet: new ui.Sheet(els.myTextSheet, { closeOnBackdrop: true, onDismiss: () => closeMyText() }),
+        controller: null,
+        loading: false,
+        problem: '', // what the message says now: a problem code, 'failed', 'long' (the warning) or ''
+        serverProblem: '', // the server's code for the text as it was sent (cleared when it changes)
+        failed: false, // the last try got no usable answer: the same text can be sent again
+    };
+
+    // The field grows with its text to about 40% of the screen (CSS
+    // max-height), then scrolls.
+    function autosize() {
+        const field = els.field;
+        const borders = field.offsetHeight - field.clientHeight;
+        field.style.setProperty('height', 'auto');
+        field.style.setProperty('height', `${field.scrollHeight + borders}px`);
+    }
+
+    function showMessage(kind, key, params) {
+        els.message.hidden = !kind;
+        els.message.classList.toggle('is-error', kind === 'error');
+        els.message.classList.toggle('is-warning', kind === 'warning');
+        if (!kind) {
+            els.messageText.textContent = '';
+            els.messageText.removeAttribute('data-i18n');
+            return;
+        }
+        els.messageIcon.setAttribute('href', kind === 'warning' ? '#i-clock' : '#i-warn');
+        i18n.text(els.messageText, key, params);
+    }
+
+    // The counters (after normalizeText, as the server counts), the reading
+    // time, and the warning or the first problem, checked in the page first.
+    function updateMyText() {
+        const check = AIPT.checkText(els.field.value);
+        const { chars, tooManyChars, tooManyWords } = check;
+        const count = check.words;
+        i18n.text(els.countChars, 'mytext.chars', { count: chars, max: AIPT.LIMITS.chars });
+        i18n.text(els.countWords, 'mytext.words', { count, max: AIPT.LIMITS.words });
+        els.countChars.classList.toggle('is-over', tooManyChars);
+        els.countWords.classList.toggle('is-over', tooManyWords);
+        const seconds = Math.round((count / WORDS_PER_MINUTE) * 60);
+        // The reading time, until the text is too long to send anyway.
+        els.countTime.hidden = !count || tooManyChars || tooManyWords;
+        if (count) i18n.text(els.countTime, 'mytext.readTime', { seconds: Math.max(1, seconds) });
+
+        const empty = !els.field.value.trim();
+        let problem = empty ? '' : check.problem || myText.serverProblem;
+        if (problem === 'text_too_long' && check.problem === 'text_too_long') {
+            showMessage('error', 'mytext.tooLong', {
+                chars: t('count.characters', { count: chars }),
+                words: t('count.words', { count }),
+                maxChars: AIPT.LIMITS.chars,
+                maxWords: AIPT.LIMITS.words,
+            });
+        } else if (problem === 'empty') {
+            showMessage('error', 'mytext.empty');
+        } else if (problem) {
+            showMessage('error', `error.${problem}`, { maxChars: AIPT.LIMITS.chars, maxWords: AIPT.LIMITS.words });
+        } else if (myText.failed && !empty) {
+            problem = 'failed';
+            showMessage('error', 'mytext.failed');
+        } else if (seconds > LONG_READ_SECONDS) {
+            problem = 'long';
+            showMessage('warning', 'mytext.longWarning');
+        } else {
+            showMessage('');
+        }
+
+        // A problem with the text itself; 'failed' (no answer) can be sent again.
+        const isError = Boolean(problem) && problem !== 'long' && problem !== 'failed';
+        els.field.setAttribute('aria-invalid', String(isError));
+        // Native disabled only while the field is empty (§2.2); a text with a
+        // problem keeps the button focusable, and a tap points to the problem.
+        els.btnUseCustom.disabled = empty && !myText.loading;
+        AIPT.setDisabled(els.btnUseCustom, isError && !myText.loading);
+        // A new message is read once, not at every key press.
+        if (problem !== myText.problem) {
+            myText.problem = problem;
+            if (problem === 'long') ui.announce(els.messageText.textContent, els.myTextStatus);
+            else if (problem) ui.announce(els.messageText.textContent, els.myTextAlert);
+        }
+        return { ...check, blocked: isError };
+    }
+
+    function setMyTextLoading(loading) {
+        myText.loading = loading;
+        els.field.readOnly = loading;
+        els.btnUseCustom.querySelector('.spinner').hidden = !loading;
+        i18n.text(els.useCustomLabel, loading ? 'mytext.preparing' : 'mytext.submit');
+        els.btnUseCustom.setAttribute('aria-busy', String(loading));
+    }
+
+    function openMyText() {
+        if (myText.sheet.isOpen || AIPT.ui.sheetOpen) return;
+        const draft = storage.get(DRAFT_KEY, '');
+        if (draft && !els.field.value) els.field.value = draft;
+        myText.serverProblem = '';
+        myText.failed = false;
+        myText.problem = '';
+        updateMyText();
+        if (!myText.sheet.open(els.btnMyText)) return;
+        autosize();
+    }
+
+    // Cancel, ✕, Escape or a backdrop tap: the draft stays (it is saved as typed).
+    function closeMyText(closeOptions) {
+        if (myText.controller) myText.controller.abort();
+        myText.controller = null;
+        setMyTextLoading(false);
+        myText.sheet.close({ fallback: els.btnMyText, ...closeOptions });
+    }
+
+    async function useMyText() {
+        if (myText.loading) return;
+        const check = updateMyText();
+        if (!check.text || check.blocked) {
+            ui.focus(els.field);
+            if (els.messageText.textContent) ui.announce(els.messageText.textContent, els.myTextAlert);
+            return;
+        }
+        const controller = new AbortController();
+        myText.controller = controller;
+        myText.failed = false;
+        setMyTextLoading(true);
+        updateMyText();
+        try {
+            const data = await AIPT.postJSON(AIPT.API.custom, { text: check.text, language: AIPT.PRACTICE_LANGUAGE },
+                { signal: controller.signal, timeout: SAMPLE_TIMEOUT_MS });
+            if (myText.controller !== controller) return;
+            myText.controller = null;
+            // A level chosen before may still be loading: this text wins.
+            if (state.loadController) state.loadController.abort();
+            state.loadController = null;
+            state.loading = false;
+            state.loadFailed = false;
+            dock.hide('loadFailed');
+            setSentence({ text: data.real_transcript[0], ipa: data.ipa_transcript, mode: 'custom' });
+            levels.check(null);
+            setMyTextLoading(false);
+            closeMyText({ focusTo: els.sentence });
+            ui.announce(t('mytext.ready'));
+        } catch (err) {
+            if (myText.controller !== controller || (err && err.name === 'AbortError')) return;
+            console.error(err);
+            myText.controller = null;
+            setMyTextLoading(false);
+            // The server's codes, in the page's words; anything else (no answer,
+            // a timeout, a server error): the same text can be sent again.
+            const known = ['text_too_long', 'text_not_english', 'text_bad_characters'];
+            if (known.includes(err.code)) myText.serverProblem = err.code;
+            else if (err.code === 'invalid_request') myText.serverProblem = 'empty';
+            else myText.failed = true;
+            myText.problem = '';
+            updateMyText();
+            ui.focus(myText.failed ? els.btnUseCustom : els.field);
+        }
+    }
+
+    els.field.addEventListener('input', () => {
+        storage.set(DRAFT_KEY, els.field.value);
+        myText.serverProblem = '';
+        myText.failed = false;
+        updateMyText();
+        autosize();
+    });
+    els.field.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            useMyText();
+        }
+    });
+    els.btnUseCustom.addEventListener('click', useMyText);
+    // My text, or Back to sentences while a word is practised alone (F6).
+    els.btnMyText.addEventListener('click', () => {
+        if (state.mode === 'word') goToBank();
+        else openMyText();
+    });
+    window.addEventListener('resize', () => {
+        if (myText.sheet.isOpen) autosize();
+    });
+
+    // ---------------------------------------------------------------- wiring
+    els.btnListen.addEventListener('click', listen);
+    els.btnRecord.addEventListener('click', () => record(els.btnRecord));
+    els.btnNext.addEventListener('click', next);
+    els.btnRetryLoad.addEventListener('click', () => loadSentence());
+    els.slowToggle.addEventListener('change', () => {
+        if (state.listen === 'playing') renderListen();
+    });
+    els.btnShowIpa.addEventListener('click', () => {
+        state.ipaOpen = !state.ipaOpen;
+        renderCard();
+    });
+
+    AIPT.recorder.init({
+        getText: () => state.text,
+        fallbackFocus: els.btnRecord,
+        // The score of the text on the card: a bank sentence (at its own
+        // level), My text or a word to review (state.mode).
+        onResult: (data, buffer, text, take) => {
+            AIPT.result.render(data, { ...take, text, buffer, source: state.mode, level: state.level });
+            renderControls();
+        },
+    });
+    AIPT.result.init({ onRetry: (button) => record(button), onNext: next });
+
+    // Space starts recording when focus is not on a control (sheets and the
+    // tour handle their own keys).
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== ' ' || event.repeat || event.defaultPrevented) return;
+        if (ui.sheetOpen || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (AIPT.isControl(event.target)) return;
+        event.preventDefault();
+        dock.hide('welcome');
+        record(els.btnRecord);
+    });
+
+    // ---------------------------------------------------------------- progress, the tour, the microphone check
+    AIPT.progress.init({ onPractiseWord: practiseWord });
+    // "New learner" (F4, F5): the My text draft goes too, the language stays;
+    // the welcome docks above the controls, with the tour one tap away.
+    AIPT.progress.onReset(() => {
+        storage.remove(DRAFT_KEY);
+        els.field.value = '';
+        dock.show('welcome', welcomeNotice);
+        dock.reveal('welcome');
+    });
+    // The welcome goes at the learner's next action on the page.
+    els.app.addEventListener('click', (event) => {
+        const welcome = dock.get('welcome');
+        if (welcome && AIPT.isControl(event.target) && !welcome.el.contains(event.target)) dock.hide('welcome');
+    }, true);
+
+    // How it works (E10, H1): the tour again, and the microphone check, which
+    // a browser that cannot record does not have (its notice says why, §2.2).
+    function checkMicrophone(button) {
+        if (!env.canRecord) {
+            dock.reveal('cannotRecord');
+            return;
+        }
+        AIPT.micCheck.open(button);
+    }
+    AIPT.setDisabled(els.btnMicCheck, !env.canRecord);
+    els.btnMicCheck.addEventListener('click', () => checkMicrophone(els.btnMicCheck));
+    els.btnTourAgain.addEventListener('click', () => AIPT.tour.start(els.btnTourAgain));
+    els.btnHowHeader.addEventListener('click', () => AIPT.tour.start(els.btnHowHeader));
+
+    // Offline: a notice above the controls; Next waits for the connection,
+    // the mic stays usable.
+    function setOffline(offline) {
+        const wasOffline = state.offline;
+        state.offline = offline;
+        if (offline) {
+            dock.hide('loadFailed');
+            dock.show('offline', offlineNotice);
+        } else {
+            dock.hide('offline');
+        }
+        renderControls();
+        // Back online with no sentence on the card: fetch one.
+        if (wasOffline && !offline && !state.text && !state.loading) loadSentence();
+    }
+    window.addEventListener('offline', () => setOffline(true));
+    window.addEventListener('online', () => setOffline(false));
+
+    // EN | VI: the whole page switches in place (i18n.setLanguage).
+    function renderLanguage() {
+        els.langButtons.forEach((button) => {
+            button.setAttribute('aria-pressed', String(button.dataset.lang === i18n.lang));
+        });
+    }
+    els.langButtons.forEach((button) => {
+        button.addEventListener('click', () => i18n.setLanguage(button.dataset.lang));
+    });
+    i18n.onChange(() => {
+        renderLanguage();
+        if (myText.sheet.isOpen) updateMyText();
+    });
+
+    // The page keeps room for the fixed bar and any notice docked above it,
+    // and focus scrolls clear of them (--bar-space, style.css).
+    function measureBar() {
+        const fixed = getComputedStyle(els.zone).position === 'fixed';
+        const height = fixed ? Math.ceil(els.zone.getBoundingClientRect().height) : 0;
+        document.documentElement.style.setProperty('--bar-space', `${height}px`);
+    }
+    if (window.ResizeObserver) new ResizeObserver(measureBar).observe(els.zone);
+    window.addEventListener('resize', measureBar);
 
     // ---------------------------------------------------------------- start
-    renderStats();
-    loadPracticeSentence();
+    renderLanguage();
+    if (!env.canRecord) dock.show('cannotRecord', cannotRecordNotice);
+    if (state.offline) setOffline(true);
+    renderCard();
+    renderControls();
+    measureBar();
+    loadSentence();
 })();

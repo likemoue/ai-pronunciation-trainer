@@ -1,9 +1,10 @@
 /* ============ Fonts ============ */
 /* Served by the app (static/fonts, SIL Open Font License 1.1, see the OFL-*.txt
    files there), so the page makes no request to another site. Each file is the
-   variable font of one Unicode subset, as Google Fonts serves it; the browser
-   loads the latin-ext ones only for characters in their range (IPA symbols). A
-   changed font gets a new file name: the files are cached as immutable. */
+   variable font of one Unicode subset, as Google Fonts serves it (the Inter files
+   are the wght files of @fontsource-variable/inter 5.3.0, Inter 4.001); the
+   browser downloads a subset only when the page shows a character in its range.
+   A changed font gets a new file name: the files are cached as immutable. */
 @font-face {
 	font-family: "Inter";
 	font-style: normal;
@@ -20,6 +21,19 @@
 	font-display: swap;
 	src: url("../fonts/inter-latin-ext.woff2") format("woff2");
 	unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Vietnamese: the letters with tone marks (ạ ố ữ ậ) are only here. Where two
+   ranges overlap, the browser tries the face defined last first, so this rule
+   comes after latin-ext: ă đ ơ ư come from this file (10 KB) too, and
+   Vietnamese text needs only the latin and vietnamese files. */
+@font-face {
+	font-family: "Inter";
+	font-style: normal;
+	font-weight: 400 700;
+	font-display: swap;
+	src: url("../fonts/inter-vietnamese.woff2") format("woff2");
+	unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
 }
 
 @font-face {
@@ -51,55 +65,107 @@
 }
 
 /* ============ Design tokens ============ */
+/* context/design-system.md §1 says what each token is for; when the two
+   disagree, this file is right. Colours are never mixed in CSS (design-system
+   §6: Chrome 109 and iOS up to 16.1 cannot, and a fallback written before a
+   mix that holds var() does not help): the alpha colours below are written
+   out per theme. Spacing uses the 4 px scale (4, 8, 12, 16, 20, 24, 32, 40,
+   48) and font sizes only 12, 13, 14, 16, 18, 22 and 28 px. */
 :root {
+	/* Base colours (§1.1) */
 	--bg: #f4f5fb;
 	--surface: #ffffff;
 	--surface-2: #f7f8fc;
 	--border: #e3e6f0;
+	--border-strong: #868ca4;
 	--text: #161a2e;
 	--text-2: #4b5167;
-	--text-3: #7c829a;
+	--text-3: #646b85;
 	--primary: #4f46e5;
 	--primary-2: #6366f1;
+	--primary-hover: #4338ca;
 	--primary-soft: #eef0ff;
 	--on-primary: #ffffff;
-	--good: #12a150;
-	--good-soft: #e3f7ec;
-	--ok: #d97706;
-	--ok-soft: #fdf1dc;
-	--bad: #dc2626;
-	--bad-soft: #fde6e6;
 	--rec: #e11d48;
+	--on-rec: #ffffff;
+	--focus: #4f46e5;
+	--scrim: rgba(10, 12, 28, .55);
+	--dim: rgba(10, 12, 28, .62);
+
+	/* Status (§1.3): only these colours mean a status */
+	--good: #0f766e;
+	--good-soft: #e3f7ec;
+	--ok: #b45309;
+	--ok-strong: #92400e;
+	--ok-soft: #fdf1dc;
+	--bad: #b91c1c;
+	--bad-soft: #fde6e6;
+
+	/* Alpha colours (§1.4) */
+	--primary-glow: rgba(79, 70, 229, .35);
+	--primary-tint: rgba(79, 70, 229, .18);
+	--rec-glow: rgba(225, 29, 72, .35);
+	--surface-veil: rgba(255, 255, 255, .86);
+
+	/* Radii (§1.7); pills use 999px */
+	--radius: 18px;
+	--radius-sheet: 22px;
+	--radius-sm: 12px;
+	--radius-xs: 8px;
+
+	/* Shadows and layers (§1.8) */
 	--shadow: 0 1px 2px rgba(22, 26, 46, .04), 0 8px 24px rgba(22, 26, 46, .06);
 	--shadow-lg: 0 24px 64px rgba(22, 26, 46, .22);
-	--radius: 18px;
-	--radius-sm: 12px;
+	--shadow-bar: 0 -4px 16px rgba(22, 26, 46, .08);
+	--z-bar: 20;
+	--z-notice: 21;
+	--z-backdrop: 49;
+	--z-sheet: 50;
+	--z-tour: 60;
+	--z-confirm: 70;
+
+	/* Type (§1.5) */
 	--font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 	--font-ipa: "Noto Sans", "Segoe UI", "Lucida Sans Unicode", "DejaVu Sans", sans-serif;
 	color-scheme: light;
 }
 
+/* --scrim, --dim, the radii and the layers are the same in both themes. */
 @media (prefers-color-scheme: dark) {
 	:root {
 		--bg: #0e1020;
 		--surface: #171a2e;
 		--surface-2: #1d2138;
 		--border: #2a2f4a;
+		--border-strong: #666d8f;
 		--text: #eef0fb;
 		--text-2: #b7bcd6;
 		--text-3: #8a90ad;
 		--primary: #818cf8;
 		--primary-2: #a5b4fc;
+		--primary-hover: #a5b4fc;
 		--primary-soft: #252a4d;
 		--on-primary: #0e1020;
-		--good: #34d399;
+		--rec: #fb7185;
+		--on-rec: #0e1020;
+		--focus: #a5b4fc;
+
+		--good: #2dd4bf;
 		--good-soft: #12352a;
 		--ok: #fbbf24;
+		--ok-strong: #fbbf24;
 		--ok-soft: #3a2e12;
 		--bad: #f87171;
 		--bad-soft: #3d1a1d;
-		--rec: #fb7185;
+
+		--primary-glow: rgba(129, 140, 248, .35);
+		--primary-tint: rgba(129, 140, 248, .24);
+		--rec-glow: rgba(251, 113, 133, .35);
+		--surface-veil: rgba(23, 26, 46, .86);
+
 		--shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+		--shadow-lg: 0 24px 64px rgba(0, 0, 0, .5);
+		--shadow-bar: 0 -4px 16px rgba(0, 0, 0, .4);
 		color-scheme: dark;
 	}
 }
@@ -113,6 +179,9 @@
 
 html {
 	-webkit-text-size-adjust: 100%;
+	/* A focused element never hides behind the bar fixed at the bottom of
+	   phones (§2.7); app.js measures the bar into --bar-space. */
+	scroll-padding-bottom: var(--bar-space, 0px);
 }
 
 body {
@@ -125,7 +194,8 @@ body {
 	-webkit-font-smoothing: antialiased;
 }
 
-body.modal-open {
+/* A sheet or dialog is open: the page behind does not scroll. */
+body.sheet-open {
 	overflow: hidden;
 }
 
@@ -144,12 +214,12 @@ a {
 
 kbd {
 	display: inline-block;
-	padding: 0 6px;
-	border: 1px solid var(--border);
+	padding: 0 4px;
+	border: 1px solid var(--border-strong);
 	border-bottom-width: 2px;
-	border-radius: 6px;
+	border-radius: var(--radius-xs);
 	background: var(--surface);
-	font: 600 11px/18px var(--font);
+	font: 600 12px/1.5 var(--font);
 	color: var(--text-2);
 }
 
@@ -160,179 +230,380 @@ kbd {
 	flex: none;
 }
 
-:focus-visible {
-	outline: 3px solid color-mix(in srgb, var(--primary) 55%, transparent);
+.icon-sprite {
+	position: absolute;
+	width: 0;
+	height: 0;
+	overflow: hidden;
+}
+
+/* Read by assistive technology, not shown. */
+.visually-hidden {
+	position: absolute !important;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+/* Focus: a solid 3 px outline. Safari before 15.4 has no :focus-visible and
+   drops the second rule, so it outlines every focus, also after a click. */
+:focus {
+	outline: 3px solid var(--focus);
 	outline-offset: 2px;
 }
 
-/* ============ Layout ============ */
+:focus:not(:focus-visible) {
+	outline: none;
+}
+
+/* ============ Page ============ */
+/* Phones: one column, the controls in a bar fixed at the bottom. From 768 px:
+   inline controls, wider content. From 1024 px: two columns (§1.10). */
 .app {
-	max-width: 920px;
-	margin: 0 auto;
-	padding: 20px 16px 32px;
+	--content-max: 1120px;
+	min-height: 100vh;
 }
 
 .topbar {
+	background: var(--surface);
+	border-bottom: 1px solid var(--border);
+}
+
+.topbar-inner {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 16px;
-	flex-wrap: wrap;
-	margin-bottom: 20px;
+	gap: 8px;
+	max-width: var(--content-max);
+	min-height: 56px;
+	margin: 0 auto;
+	padding: 8px 12px;
 }
 
 .brand {
 	display: flex;
 	align-items: center;
-	gap: 12px;
-	text-decoration: none;
-	color: inherit;
+	gap: 8px;
 	min-width: 0;
+	margin-right: auto;
 }
 
 .brand-mark {
 	display: grid;
 	place-items: center;
-	width: 44px;
-	height: 44px;
-	border-radius: 14px;
+	width: 36px;
+	height: 36px;
+	flex: none;
+	border-radius: var(--radius-sm);
 	background: linear-gradient(135deg, var(--primary), var(--primary-2));
-	color: #fff;
-	box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 35%, transparent);
+	color: var(--on-primary);
+	box-shadow: 0 4px 12px var(--primary-glow);
 }
 
 .brand-mark .icon {
-	width: 24px;
-	height: 24px;
+	width: 20px;
+	height: 20px;
 }
 
 .brand-text {
-	display: flex;
-	flex-direction: column;
 	min-width: 0;
 }
 
 .brand-title {
+	margin: 0;
+	font-size: 14px;
 	font-weight: 700;
-	font-size: 19px;
+	line-height: 1.25;
 	letter-spacing: -.01em;
 }
 
 .brand-sub {
+	display: none;
+	margin: 0;
 	font-size: 13px;
 	color: var(--text-3);
 }
 
-.session-stats {
+.topbar-tools {
 	display: flex;
-	gap: 6px;
-	background: var(--surface);
-	border: 1px solid var(--border);
-	border-radius: 14px;
-	padding: 6px;
-	box-shadow: var(--shadow);
-}
-
-.stat {
-	display: flex;
-	flex-direction: column;
 	align-items: center;
-	min-width: 72px;
-	padding: 2px 10px;
+	gap: 8px;
+	flex: none;
 }
 
-.stat+.stat {
-	border-left: 1px solid var(--border);
+.banner-slot:empty,
+.progress-slot:empty {
+	display: none;
 }
 
-.stat-value {
+/* How it works, from 1024 px (wireframes H1): reopens the tour. */
+.text-btn.header-how {
+	display: none;
+}
+
+/* The progress chip (wireframes F1-F3, H1): today's points (12.5K from
+   10,000), and from 768 px "245 today · 3 days". A pill 36 px to see, 44 px
+   to tap; it opens the progress sheet. */
+.progress-chip {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 36px;
+	padding: 4px 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--text);
+	font-size: 14px;
 	font-weight: 700;
-	font-size: 18px;
+	line-height: 1.25;
 	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	cursor: pointer;
 }
 
-.stat-label {
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: .06em;
+.progress-chip::before {
+	content: "";
+	position: absolute;
+	inset: -5px 0;
+}
+
+.progress-chip:hover {
+	border-color: var(--primary);
+}
+
+.progress-chip .icon {
+	width: 16px;
+	height: 16px;
+	color: var(--primary);
+}
+
+.progress-chip-long {
+	display: none;
+	align-items: center;
+	gap: 4px;
+}
+
+.progress-chip-dot {
 	color: var(--text-3);
 }
 
-.layout {
-	display: grid;
-	gap: 16px;
+/* ============ In-app browser banner (§2.14, wireframes D1-D8) ============ */
+/* The first thing on the page, in its flow: a notice of the warning family
+   (success while "Link copied" shows, info when the address is to be copied
+   by hand), with ✕ at its top right, or with that corner kept free for the
+   arrow to the app's own menu (.has-pointer, dismissed by Not now). */
+.banner-slot {
+	max-width: var(--content-max);
+	margin: 0 auto;
+	padding: 8px 12px 0;
 }
 
-.panel {
+.banner {
+	position: relative;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: start;
+	gap: 4px 12px;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-left-width: 4px;
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+.banner.has-pointer {
+	padding-top: 40px;
+}
+
+.banner-body {
+	min-width: 0;
+}
+
+.banner-title,
+.banner-text {
+	margin: 0;
+}
+
+.banner-title {
+	font-weight: 700;
+}
+
+/* ✕ in the corner, 44 px to tap: only the title keeps clear of it, so the
+   text has the banner's whole width (a line less on a phone). */
+.banner:not(.has-pointer) .banner-title {
+	padding-right: 32px;
+}
+
+.banner-x {
+	position: absolute;
+	top: 0;
+	right: 0;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--text-2);
+	cursor: pointer;
+}
+
+.banner-x:hover {
+	background: var(--surface);
+	color: var(--text);
+}
+
+.banner-actions,
+.banner-field {
+	grid-column: 1 / -1;
+}
+
+.banner-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 4px;
+}
+
+.banner .text-btn {
+	margin: 0;
+}
+
+/* The arrow to the app's menu, in the banner's top band (D3-D5): it scrolls
+   away with the banner. Under a sheet (which has its own, D10) or the tour
+   it rests. */
+.banner .inapp-pointer {
+	position: absolute;
+	top: 4px;
+	right: 8px;
+	z-index: auto;
+}
+
+.sheet-open .banner .inapp-pointer {
+	visibility: hidden;
+}
+
+/* "Copied": the check in the success family's colour. */
+.btn.is-done .icon {
+	color: var(--good);
+}
+
+/* EN | VI (§2.6): two buttons with aria-pressed, 37 × 36 px, 44 px to tap. */
+.lang-switch {
+	display: inline-flex;
+	border: 1px solid var(--border-strong);
+	border-radius: 999px;
+	background: var(--surface);
+}
+
+.lang-btn {
+	position: relative;
+	width: 37px;
+	height: 34px;
+	padding: 0;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--text-2);
+	font-size: 14px;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.lang-btn::before {
+	content: "";
+	position: absolute;
+	inset: -5px 0;
+}
+
+.lang-btn:hover {
+	color: var(--primary);
+}
+
+.lang-btn[aria-pressed="true"] {
+	background: var(--primary);
+	color: var(--on-primary);
+}
+
+.layout {
+	max-width: var(--content-max);
+	margin: 0 auto;
+	padding: 8px 12px 0;
+}
+
+.col-main {
+	min-width: 0;
+}
+
+.card {
+	margin: 0 0 12px;
+	padding: 12px 16px 16px;
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: var(--radius);
 	box-shadow: var(--shadow);
-	padding: 20px;
 }
 
-/* ============ Source panel (tabs) ============ */
-.tabs {
-	display: inline-flex;
-	gap: 4px;
-	padding: 4px;
-	background: var(--surface-2);
-	border: 1px solid var(--border);
-	border-radius: 12px;
-	margin-bottom: 16px;
-	max-width: 100%;
+.footer {
+	max-width: var(--content-max);
+	margin: 0 auto;
+	padding: 8px 12px 16px;
+	text-align: center;
+	font-size: 13px;
+	color: var(--text-3);
 }
 
-.tab {
-	display: inline-flex;
+.footer p {
+	margin: 0;
+}
+
+.footer a {
+	color: inherit;
+}
+
+/* ============ Level chips (§2.5) ============ */
+.levels {
+	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 8px;
-	border: 0;
-	background: transparent;
-	padding: 8px 14px;
-	border-radius: 9px;
-	font-weight: 600;
-	font-size: 14px;
-	color: var(--text-2);
-	cursor: pointer;
-	white-space: nowrap;
-}
-
-.tab .icon {
-	width: 18px;
-	height: 18px;
-}
-
-.tab.is-active {
-	background: var(--surface);
-	color: var(--primary);
-	box-shadow: 0 1px 3px rgba(22, 26, 46, .12);
-}
-
-.pane-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-	flex-wrap: wrap;
-}
-
-.chips {
-	display: flex;
-	gap: 8px;
-	flex-wrap: wrap;
+	min-height: 44px;
+	margin: 0 0 8px;
 }
 
 .chip {
-	border: 1px solid var(--border);
-	background: var(--surface);
+	position: relative;
+	min-height: 36px;
+	padding: 4px 12px;
+	border: 1px solid var(--border-strong);
 	border-radius: 999px;
-	padding: 6px 14px;
-	font-size: 14px;
-	font-weight: 500;
+	background: var(--surface);
 	color: var(--text-2);
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.25;
 	cursor: pointer;
 	transition: background .15s, color .15s, border-color .15s;
+}
+
+/* 36 px to see, 44 px to tap. */
+.chip::before {
+	content: "";
+	position: absolute;
+	inset: -5px 0;
 }
 
 .chip:hover {
@@ -340,179 +611,248 @@ kbd {
 	color: var(--primary);
 }
 
-.chip.is-active {
+.chip[aria-checked="true"] {
 	background: var(--primary);
 	border-color: var(--primary);
 	color: var(--on-primary);
 }
 
-.field-label {
-	display: block;
-	font-size: 14px;
-	font-weight: 600;
-	margin-bottom: 8px;
-	color: var(--text-2);
-}
-
-.textarea {
-	width: 100%;
-	resize: vertical;
-	min-height: 84px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-sm);
-	background: var(--surface-2);
-	color: var(--text);
-	padding: 12px 14px;
-	font: 16px/1.5 var(--font);
-	margin-bottom: 10px;
-}
-
-.textarea:focus {
-	outline: none;
-	border-color: var(--primary);
-	box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 18%, transparent);
-	background: var(--surface);
-}
-
-.hint {
-	font-size: 13px;
-	color: var(--text-3);
-	font-variant-numeric: tabular-nums;
-}
-
-.field-error {
-	margin: 10px 0 0;
-	font-size: 14px;
-	color: var(--bad);
-}
-
-/* ============ Buttons ============ */
+/* ============ Buttons (§2.1-2.4) ============ */
 .btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	gap: 8px;
+	min-height: 44px;
+	padding: 8px 20px;
 	border: 1px solid transparent;
-	border-radius: 12px;
-	padding: 10px 18px;
-	font-weight: 600;
-	font-size: 15px;
-	cursor: pointer;
-	transition: transform .1s, background .15s, opacity .15s, box-shadow .15s;
+	border-radius: var(--radius-sm);
+	font-size: 16px;
+	font-weight: 700;
+	line-height: 1.25;
+	text-decoration-line: none;
 	white-space: nowrap;
+	cursor: pointer;
+	transition: transform .1s, background .15s;
 }
 
-.btn:active:not(:disabled) {
+.btn:active:not(:disabled):not([aria-disabled="true"]) {
 	transform: translateY(1px);
-}
-
-.btn:disabled {
-	opacity: .45;
-	cursor: not-allowed;
 }
 
 .btn-primary {
 	background: var(--primary);
 	color: var(--on-primary);
-	box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 30%, transparent);
+	box-shadow: 0 4px 12px var(--primary-glow);
 }
 
-.btn-primary:hover:not(:disabled) {
-	background: var(--primary-2);
+.btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
+	background: var(--primary-hover);
 }
 
-.btn-ghost {
-	background: transparent;
-	border-color: var(--border);
-	color: var(--text-2);
+.btn-secondary {
+	background: var(--surface);
+	border-color: var(--border-strong);
+	color: var(--text);
 }
 
-.btn-ghost:hover:not(:disabled) {
+.btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
 	background: var(--surface-2);
+}
+
+.btn-sm {
+	padding: 8px 12px;
+	font-size: 14px;
 }
 
 .btn-stop {
 	background: var(--rec);
-	color: #fff;
-	box-shadow: 0 4px 14px color-mix(in srgb, var(--rec) 35%, transparent);
-	min-width: 160px;
+	color: var(--on-rec);
+	box-shadow: 0 4px 14px var(--rec-glow);
 }
 
-.btn-round {
-	display: grid;
-	place-items: center;
-	width: 56px;
-	height: 56px;
-	border-radius: 50%;
-	border: 1px solid var(--border);
+/* Destructive (§2.1): the secondary look with a 2 px edge and the trash icon,
+   only inside a confirmation, never focused first (wireframes F4). */
+.btn-danger {
 	background: var(--surface);
+	border: 2px solid var(--text);
+	color: var(--text);
+}
+
+.btn-danger:hover {
+	background: var(--surface-2);
+}
+
+/* Disabled (§2.2): a dashed edge and a quieter label, never faded text. */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+	background: transparent;
+	border-color: var(--border-strong);
+	border-style: dashed;
+	color: var(--text-3);
+	box-shadow: none;
+	cursor: not-allowed;
+}
+
+.btn .spinner {
+	width: 18px;
+	height: 18px;
+	border-width: 2px;
+}
+
+/* On a filled button the spinner turns in the label's colour. */
+.btn-primary .spinner {
+	border-color: transparent;
+	border-top-color: currentColor;
+	border-left-color: currentColor;
+}
+
+/* A low-emphasis action: underlined text (My text, Edit). */
+.text-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 44px;
+	margin: -6px -8px -6px 0;
+	padding: 0 8px;
+	border: 0;
+	border-radius: var(--radius-xs);
+	background: none;
 	color: var(--primary);
+	font-size: 14px;
+	font-weight: 700;
+	text-decoration-line: underline;
+	text-underline-offset: 3px;
+	white-space: nowrap;
 	cursor: pointer;
-	box-shadow: var(--shadow);
-	transition: transform .1s, background .15s, opacity .15s;
 }
 
-.btn-round .icon {
-	width: 26px;
-	height: 26px;
+.text-btn .icon {
+	width: 16px;
+	height: 16px;
 }
 
-.btn-round:hover:not(:disabled) {
+.text-btn:hover {
 	background: var(--primary-soft);
 }
 
-.btn-round:disabled {
-	opacity: .4;
-	cursor: not-allowed;
-	box-shadow: none;
+/* Round buttons (Listen, Next): 48 px on phones, 56 px from 768 px. */
+.btn-round {
+	position: relative;
+	display: grid;
+	place-items: center;
+	width: 48px;
+	height: 48px;
+	padding: 0;
+	border: 1px solid var(--border-strong);
+	border-radius: 50%;
+	background: var(--surface);
+	color: var(--primary);
+	cursor: pointer;
+	transition: background .15s;
 }
 
-.btn-round.is-playing {
-	background: var(--primary);
-	color: var(--on-primary);
+.btn-round .icon {
+	width: 24px;
+	height: 24px;
+}
+
+.btn-round:hover:not([aria-disabled="true"]) {
+	background: var(--primary-soft);
+}
+
+.btn-round .icon-active,
+.btn-round .spinner {
+	display: none;
+}
+
+/* Fetching the voice: a spinner. Playing: filled, the Stop icon (§2.3). */
+.btn-round[data-state="loading"] {
 	border-color: var(--primary);
 }
 
+.btn-round[data-state="loading"] .icon-idle,
+.btn-round[data-state="playing"] .icon-idle {
+	display: none;
+}
+
+.btn-round[data-state="loading"] .spinner,
+.btn-round[data-state="playing"] .icon-active {
+	display: block;
+}
+
+.btn-round[data-state="playing"],
+.btn-round[data-state="playing"]:hover {
+	background: var(--primary);
+	border-color: var(--primary);
+	color: var(--on-primary);
+}
+
+.btn-round[aria-disabled="true"] {
+	border-style: dashed;
+	color: var(--text-3);
+	cursor: not-allowed;
+}
+
+/* The mic: the page's primary control (§2.4), 64 px on phones, 88 px from 768 px. */
 .btn-mic {
 	position: relative;
 	display: grid;
 	place-items: center;
-	width: 88px;
-	height: 88px;
-	border-radius: 50%;
+	width: 64px;
+	height: 64px;
+	padding: 0;
 	border: 0;
+	border-radius: 50%;
 	background: linear-gradient(135deg, var(--primary), var(--primary-2));
-	color: #fff;
+	color: var(--on-primary);
+	box-shadow: 0 8px 20px var(--primary-glow);
 	cursor: pointer;
-	box-shadow: 0 10px 28px color-mix(in srgb, var(--primary) 40%, transparent);
-	transition: transform .15s, opacity .15s;
+	transition: transform .15s;
 }
 
 .btn-mic .icon {
-	width: 38px;
-	height: 38px;
 	position: relative;
+	width: 30px;
+	height: 30px;
 }
 
-.btn-mic:hover:not(:disabled) {
+.btn-mic:hover:not([aria-disabled="true"]) {
 	transform: scale(1.04);
 }
 
-.btn-mic:disabled {
-	opacity: .45;
+.btn-mic .icon-mic-off,
+.btn-mic.is-blocked .icon-mic {
+	display: none;
+}
+
+.btn-mic.is-blocked .icon-mic-off {
+	display: block;
+}
+
+.btn-mic[aria-disabled="true"] {
+	background: var(--surface);
+	border: 2px dashed var(--border-strong);
+	color: var(--text-3);
+	box-shadow: none;
 	cursor: not-allowed;
 }
 
 .btn-mic-ring {
 	position: absolute;
 	inset: -8px;
+	border: 2px solid var(--primary-glow);
 	border-radius: 50%;
-	border: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
 	animation: ring 2.4s ease-out infinite;
 }
 
-.btn-mic:disabled .btn-mic-ring {
+.btn-mic[aria-disabled="true"] .btn-mic-ring {
 	display: none;
+}
+
+/* The idle pulse rests while a sheet is open (§1.9). */
+.sheet-open .btn-mic-ring {
+	animation-play-state: paused;
 }
 
 @keyframes ring {
@@ -527,309 +867,1034 @@ kbd {
 	}
 }
 
-/* ============ Practice panel ============ */
-.status {
-	margin: 0 0 14px;
-	font-size: 14px;
-	color: var(--text-3);
-	min-height: 21px;
+.spinner {
+	width: 22px;
+	height: 22px;
+	flex: none;
+	border: 3px solid var(--primary-tint);
+	border-top-color: var(--primary);
+	border-radius: 50%;
+	animation: spin .8s linear infinite;
 }
 
-.status.is-error {
-	color: var(--bad);
+/* ============ Sentence card ============ */
+.card-top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	min-height: 32px;
 }
 
-.eyebrow {
-	margin: 0 0 6px;
+.eyebrow,
+.card-label {
+	margin: 0;
 	font-size: 12px;
-	font-weight: 600;
+	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: .08em;
 	color: var(--text-3);
 }
 
-.sentence-block {
-	background: var(--surface-2);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-sm);
-	padding: 18px 20px;
+.card-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+}
+
+.card-label-icon {
+	display: none;
+	width: 14px;
+	height: 14px;
+}
+
+/* My text: a filled badge instead of "Read this aloud". */
+.card-label.is-badge {
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: var(--primary);
+	color: var(--on-primary);
+	text-transform: none;
+	letter-spacing: 0;
+}
+
+.card-label.is-badge .card-label-icon {
+	display: block;
+}
+
+.sentence-area {
+	margin-top: 8px;
 }
 
 .sentence {
-	margin: 0 0 12px;
-	font-size: clamp(22px, 3.4vw, 30px);
-	line-height: 1.45;
+	margin: 0 0 8px;
+	font-size: 22px;
 	font-weight: 600;
+	line-height: 1.45;
 	letter-spacing: -.01em;
 	word-wrap: break-word;
+	overflow-wrap: anywhere;
 }
 
-.sentence.is-loading {
-	color: var(--text-3);
+/* Above 20 words the text stays near the top (wireframes A7). */
+.sentence.is-long {
+	font-size: 18px;
 }
 
-.word {
-	display: inline;
-	border: 0;
-	padding: 0 1px;
-	margin: 0;
-	background: none;
-	font: inherit;
-	letter-spacing: inherit;
-	cursor: pointer;
-	border-radius: 6px;
-	text-decoration: underline;
-	text-decoration-thickness: 3px;
-	text-underline-offset: 6px;
-	text-decoration-color: transparent;
-}
-
-.word:hover,
-.word.is-selected {
-	background: var(--primary-soft);
-}
-
-.word.cat-0 {
-	text-decoration-color: color-mix(in srgb, var(--good) 55%, transparent);
-}
-
-.word.cat-1 {
-	text-decoration-color: color-mix(in srgb, var(--ok) 70%, transparent);
-}
-
-.word.cat-2 {
-	text-decoration-color: color-mix(in srgb, var(--bad) 70%, transparent);
-}
-
-.l-good {
-	color: var(--good);
-}
-
-.l-bad {
-	color: var(--bad);
-}
-
-.ipa-rows {
-	display: grid;
-	gap: 4px;
-}
-
-.ipa-row {
-	margin: 0;
-	display: flex;
-	gap: 10px;
-	align-items: baseline;
-	font-size: 15px;
-}
-
-.ipa-label {
-	flex: none;
-	width: 74px;
-	font-size: 12px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: .06em;
-	color: var(--text-3);
+.sentence.has-result {
+	font-weight: 500;
 }
 
 .ipa {
+	margin: 0;
 	font-family: var(--font-ipa);
+	font-size: 16px;
+	line-height: 1.5;
 	color: var(--text-2);
-	word-break: break-word;
+	word-wrap: break-word;
+	overflow-wrap: anywhere;
 }
 
-/* Word detail */
-.word-detail {
-	margin-top: 14px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-sm);
-	padding: 14px;
-	animation: fadeUp .18s ease-out;
+.noscript {
+	margin: 0;
+	color: var(--text-2);
 }
 
-.word-detail-head {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	margin-bottom: 10px;
+/* Skeleton (§2.16), with a shimmer that stops under reduced motion. */
+.skeleton {
+	display: grid;
+	gap: 12px;
+	padding: 4px 0 8px;
 }
 
-.word-detail-word {
-	font-weight: 700;
-	font-size: 18px;
+.skel {
+	display: block;
+	height: 14px;
+	border-radius: 7px;
+	background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
+	background-size: 200% 100%;
+	animation: shimmer 1.4s linear infinite;
 }
 
-.badge {
-	font-size: 12px;
-	font-weight: 600;
-	padding: 2px 10px;
-	border-radius: 999px;
+.skel-big {
+	height: 22px;
+	border-radius: var(--radius-xs);
 }
 
-.badge.cat-0 {
-	background: var(--good-soft);
-	color: var(--good);
+.skel-w95 {
+	width: 95%;
 }
 
-.badge.cat-1 {
-	background: var(--ok-soft);
-	color: var(--ok);
+.skel-w80 {
+	width: 80%;
 }
 
-.badge.cat-2 {
-	background: var(--bad-soft);
+.skel-w60 {
+	width: 60%;
+}
+
+@keyframes shimmer {
+	from {
+		background-position: 100% 0;
+	}
+
+	to {
+		background-position: -100% 0;
+	}
+}
+
+/* No sentence yet and the load failed (wireframes A3). */
+.load-error {
+	padding: 8px 8px 4px;
+	text-align: center;
+}
+
+.load-error-icon {
+	width: 28px;
+	height: 28px;
 	color: var(--bad);
 }
 
-.word-detail-grid {
-	display: grid;
-	grid-template-columns: 1fr 1fr;
-	gap: 10px;
-}
-
-.wd-cell {
-	display: grid;
-	gap: 2px;
-	text-align: left;
-	border: 1px solid var(--border);
-	background: var(--surface-2);
-	border-radius: 10px;
-	padding: 10px 12px;
-	cursor: pointer;
-}
-
-.wd-cell:hover:not(:disabled) {
-	border-color: var(--primary);
-}
-
-.wd-cell:disabled {
-	cursor: not-allowed;
-	opacity: .6;
-}
-
-.wd-label {
-	font-size: 12px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: .06em;
-	color: var(--text-3);
-}
-
-.wd-ipa {
-	font-family: var(--font-ipa);
+.load-error-title {
+	margin: 4px 0;
 	font-size: 18px;
+	font-weight: 700;
 }
 
-.wd-action {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	font-size: 13px;
-	font-weight: 600;
-	color: var(--primary);
+.load-error-text {
+	margin: 0 0 12px;
+	color: var(--text-2);
 }
 
-.wd-action .icon {
-	width: 16px;
-	height: 16px;
-}
-
-/* Controls */
-.controls {
-	display: grid;
-	grid-template-columns: 1fr auto 1fr;
-	align-items: start;
-	gap: 12px;
-	margin: 26px 0 6px;
-}
-
-.control-main,
-.control-side {
+.card-foot {
 	display: flex;
-	flex-direction: column;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: 8px;
+	gap: 0 12px;
+	margin-top: 4px;
 }
 
-.control-main {
-	padding-top: 0;
-}
-
-.control-side {
-	padding-top: 16px;
-}
-
-.control-label {
-	font-size: 13px;
-	font-weight: 500;
-	color: var(--text-3);
-	display: inline-flex;
-	gap: 6px;
-	align-items: center;
-}
-
+/* Slow: a checkbox drawn as a pill, 36 px to see, 44 px to tap. */
 .toggle {
+	position: relative;
 	display: inline-flex;
+	align-items: center;
+	min-height: 44px;
 	cursor: pointer;
+	-webkit-user-select: none;
 	user-select: none;
 }
 
 .toggle input {
 	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: 0;
 	opacity: 0;
 	pointer-events: none;
 }
 
-.toggle-ui {
+.toggle-ui,
+.toggle-btn {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	font-size: 12px;
-	font-weight: 600;
-	padding: 3px 10px;
+	gap: 8px;
+	min-height: 36px;
+	padding: 4px 12px;
+	border: 1px solid var(--border-strong);
 	border-radius: 999px;
-	border: 1px solid var(--border);
-	color: var(--text-3);
+	background: var(--surface);
+	color: var(--text-2);
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.25;
 }
 
-.toggle-ui .icon {
-	width: 15px;
-	height: 15px;
+.toggle-ui .icon,
+.toggle-btn .icon {
+	width: 16px;
+	height: 16px;
+}
+
+.toggle-box {
+	display: grid;
+	place-items: center;
+	width: 16px;
+	height: 16px;
+	border: 2px solid var(--text-2);
+	border-radius: 4px;
+}
+
+.toggle-box .icon {
+	width: 12px;
+	height: 12px;
+	visibility: hidden;
 }
 
 .toggle input:checked+.toggle-ui {
-	background: var(--primary-soft);
 	border-color: var(--primary);
+	background: var(--primary-soft);
 	color: var(--primary);
+	box-shadow: inset 0 0 0 1px var(--primary);
 }
 
-.toggle input:focus-visible+.toggle-ui {
-	outline: 3px solid color-mix(in srgb, var(--primary) 55%, transparent);
+.toggle input:checked+.toggle-ui .toggle-box {
+	border-color: var(--primary);
+	background: var(--primary);
+	color: var(--on-primary);
+}
+
+.toggle input:checked+.toggle-ui .toggle-box .icon {
+	visibility: visible;
+}
+
+/* The checkbox is hidden: its focus shows on the pill, with the same
+   fallback as the shared focus rules. */
+.toggle input:focus+.toggle-ui {
+	outline: 3px solid var(--focus);
 	outline-offset: 2px;
 }
 
-/* Result */
-.result {
+.toggle input:focus:not(:focus-visible)+.toggle-ui {
+	outline: none;
+}
+
+/* Show IPA: a button drawn like the Slow pill, with the same 44 px to tap. */
+.toggle-btn {
+	position: relative;
+	cursor: pointer;
+}
+
+.toggle-btn::before {
+	content: "";
+	position: absolute;
+	inset: -5px 0;
+}
+
+.toggle-btn[aria-expanded="true"] .icon {
+	transform: rotate(180deg);
+}
+
+.playing-note {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-2);
+}
+
+.eq {
+	display: inline-flex;
+	align-items: flex-end;
+	gap: 2px;
+	height: 14px;
+}
+
+.eq i {
+	width: 3px;
+	height: 100%;
+	background: var(--primary);
+	transform-origin: bottom;
+	animation: eq 1s ease-in-out infinite;
+}
+
+.eq i:nth-child(2) {
+	animation-delay: -.3s;
+}
+
+.eq i:nth-child(3) {
+	animation-delay: -.6s;
+}
+
+@keyframes eq {
+	0%,
+	100% {
+		transform: scaleY(.4);
+	}
+
+	50% {
+		transform: scaleY(1);
+	}
+}
+
+/* ============ Controls: the bar (phones) or inline (from 768 px) ============ */
+/* Inline unless a phone held upright: then the bar is fixed (below). */
+.control-zone {
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--border);
+}
+
+.dock .notice {
+	margin-bottom: 12px;
+}
+
+.controls {
+	display: grid;
+	grid-template-columns: 1fr 1.3fr 1fr;
+	align-items: end;
+	gap: 4px;
+}
+
+.control {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+}
+
+.control-label {
+	max-width: 100%;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 16px;
+	text-align: center;
+	color: var(--text-2);
+	overflow-wrap: break-word;
+}
+
+.btn-round[aria-disabled="true"]~.control-label,
+.btn-mic[aria-disabled="true"]~.control-label {
+	color: var(--text-3);
+}
+
+.space-hint {
+	display: none;
+}
+
+@media (max-width: 767.98px) and (min-height: 480px) {
+	/* The page keeps room for the bar (§2.7); app.js measures it. */
+	.app {
+		padding-bottom: var(--bar-space, 124px);
+	}
+
+	.control-zone {
+		position: fixed;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		z-index: var(--z-bar);
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	.dock {
+		position: relative;
+		z-index: var(--z-notice);
+		padding: 0 8px;
+	}
+
+	.dock .notice {
+		margin-bottom: 8px;
+		box-shadow: var(--shadow);
+	}
+
+	.controls {
+		padding: 8px 8px max(8px, env(safe-area-inset-bottom));
+		background: var(--surface);
+		border-top: 1px solid var(--border);
+		box-shadow: var(--shadow-bar);
+	}
+}
+
+/* ============ Notices (§2.9) ============ */
+.notice {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: start;
+	gap: 4px 12px;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-left-width: 4px;
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+.notice-icon {
+	width: 20px;
+	height: 20px;
+	margin-top: 1px;
+}
+
+.notice-title {
+	margin: 0;
+	font-weight: 700;
+}
+
+.notice-text {
+	margin: 0;
+}
+
+.notice-body {
+	min-width: 0;
+}
+
+.notice-actions {
+	grid-column: 2;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 4px;
+}
+
+.notice-warning {
+	background: var(--ok-soft);
+	border-left-color: var(--ok-strong);
+}
+
+.notice-warning .notice-icon {
+	color: var(--ok-strong);
+}
+
+.notice-error {
+	background: var(--bad-soft);
+	border-left-color: var(--bad);
+}
+
+.notice-error .notice-icon {
+	color: var(--bad);
+}
+
+.notice-info {
+	background: var(--primary-soft);
+	border-left-color: var(--primary);
+}
+
+.notice-info .notice-icon {
+	color: var(--primary);
+}
+
+.notice-success {
+	background: var(--good-soft);
+	border-left-color: var(--good);
+}
+
+.notice-success .notice-icon {
+	color: var(--good);
+}
+
+/* The page's address, to copy by hand when the clipboard is refused (in a
+   notice, or in the recording sheet inside an app). */
+.address-field {
+	display: block;
+	width: 100%;
+	min-height: 44px;
+	padding: 8px 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font: 16px/1.5 var(--font);
+}
+
+.notice-field {
+	grid-column: 2;
+}
+
+/* ============ Sheets and dialogs (§2.8) ============ */
+/* A bottom sheet on phones, a centred 560 px dialog from 768 px. The frame
+   lets taps through to the backdrop around the sheet; --keyboard-inset
+   (ui.js) keeps the sheet above an on-screen keyboard. */
+.backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-backdrop);
+	background: var(--scrim);
+	-webkit-backdrop-filter: blur(4px);
+	backdrop-filter: blur(4px);
+	animation: fade .2s ease-out;
+}
+
+.sheet-frame {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-sheet);
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	padding-bottom: var(--keyboard-inset, 0px);
+	pointer-events: none;
+}
+
+.sheet {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	max-height: calc(100vh - var(--keyboard-inset, 0px));
+	max-height: calc(100dvh - var(--keyboard-inset, 0px));
+	background: var(--surface);
+	color: var(--text);
+	border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+	box-shadow: var(--shadow-lg);
+	pointer-events: auto;
+	animation: slideUp .2s ease-out;
+}
+
+.sheet-head {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: 8px;
+	min-height: 56px;
+	padding: 4px 4px 4px 16px;
+	border-bottom: 1px solid var(--border);
+}
+
+.sheet-icon {
+	width: 20px;
+	height: 20px;
+	color: var(--text-2);
+}
+
+.sheet-title {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	font-size: 18px;
+	font-weight: 700;
+	line-height: 1.25;
+}
+
+.sheet-x {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--text-2);
+	cursor: pointer;
+}
+
+.sheet-x:hover {
+	background: var(--surface-2);
+	color: var(--text);
+}
+
+.sheet-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 16px;
+}
+
+/* Fixed at the bottom, above the safe area. Two buttons share a row, the
+   primary with the larger part; they stack when their labels do not fit.
+   Three do not fit one row in Vietnamese (wireframes B21): the primary takes
+   a row of its own (.is-full), and the first of the others the larger part
+   of the next (.is-wide). Labels never wrap inside a button. */
+.sheet-actions {
+	display: flex;
+	flex: none;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+	border-top: 1px solid var(--border);
+}
+
+.sheet-actions .btn {
+	flex: 1 1 0;
+	min-width: max-content;
+}
+
+.sheet-actions .btn-primary,
+.sheet-actions .btn-stop,
+.sheet-actions .is-wide {
+	flex-grow: 1.6;
+}
+
+.sheet-actions .is-full {
+	flex-basis: 100%;
+}
+
+/* ============ My text sheet: the text field (§2.15) ============ */
+.field-label {
+	display: block;
+	margin: 0 0 8px;
+	font-size: 14px;
+	font-weight: 700;
+}
+
+.textarea {
+	display: block;
+	width: 100%;
+	min-height: 120px;
+	max-height: 40vh;
+	max-height: 40dvh;
+	padding: 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font: 16px/1.5 var(--font);
+	resize: none;
+	overflow-y: auto;
+}
+
+.textarea::placeholder {
+	color: var(--text-3);
+	opacity: 1;
+}
+
+.textarea[aria-invalid="true"] {
+	padding: 11px;
+	border: 2px solid var(--bad);
+}
+
+.textarea[readonly] {
+	background: var(--surface-2);
+	color: var(--text-2);
+}
+
+.counter {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	margin: 8px 0 0;
+	font-size: 13px;
+	color: var(--text-3);
+	font-variant-numeric: tabular-nums;
+}
+
+.counter:empty {
+	display: none;
+}
+
+/* Over the limit: bold and underlined, not just coloured. */
+.counter .is-over {
+	font-weight: 700;
+	color: var(--bad);
+	text-decoration-line: underline;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 3px;
+}
+
+.field-msg {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 8px 0 0;
+	font-size: 14px;
+	font-weight: 700;
+}
+
+.field-msg .icon {
+	width: 18px;
+	height: 18px;
+	margin-top: 1px;
+}
+
+.field-msg.is-error {
+	color: var(--bad);
+}
+
+.field-msg.is-warning .icon {
+	color: var(--ok-strong);
+}
+
+/* ============ Recording sheet (design/wireframes/02, B1-B21) ============ */
+/* The header shows the dot (and "REC" while recording) for the take's
+   states, or the state's icon in the colour of its family (§1.3): its words
+   say the same, so colour is never the only signal. */
+.rec-dot {
+	flex: none;
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--border-strong);
+	border-radius: 50%;
+	background: var(--surface-2);
+}
+
+.rec-dot.is-live {
+	border-color: var(--rec);
+	background: var(--rec);
+	animation: blink 1.2s ease-in-out infinite;
+}
+
+.rec-label {
+	font-size: 12px;
+	font-weight: 700;
+	letter-spacing: .06em;
+	color: var(--rec);
+}
+
+.rec-icon {
+	width: 24px;
+	height: 24px;
+}
+
+.rec-sheet[data-tone="error"] .rec-icon {
+	color: var(--bad);
+}
+
+.rec-sheet[data-tone="warning"] .rec-icon {
+	color: var(--ok-strong);
+}
+
+.rec-sheet[data-tone="info"] .rec-icon {
+	color: var(--primary);
+}
+
+.rec-timer {
+	flex: none;
+	padding: 2px 8px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--surface-2);
+	color: var(--text-2);
+	font-size: 14px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+/* A click inside the dialog focuses it (Space then stops a recording); it
+   is never focused from the keyboard. */
+.rec-sheet .sheet:focus {
+	outline: none;
+}
+
+.sheet-body .eyebrow {
+	margin-bottom: 4px;
+}
+
+/* The sentence scrolls in its own area (about 35% of the height, B19):
+   header and actions never move. Its scroll bar stays visible: Blink and
+   WebKit draw this one always (where the platform allows), Firefox its thin
+   one. */
+.rec-sentence {
+	max-height: 35vh;
+	max-height: 35dvh;
+	margin: 0 0 12px;
+	padding-right: 4px;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.45;
+	word-wrap: break-word;
+	overflow-wrap: anywhere;
+}
+
+.rec-sentence.is-long {
+	font-size: 16px;
+}
+
+.rec-sentence::-webkit-scrollbar {
+	width: 8px;
+}
+
+.rec-sentence::-webkit-scrollbar-track {
+	border-radius: 999px;
+	background: var(--surface-2);
+}
+
+.rec-sentence::-webkit-scrollbar-thumb {
+	border-radius: 999px;
+	background: var(--border-strong);
+}
+
+@supports (-moz-appearance: none) {
+	.rec-sentence {
+		scrollbar-width: thin;
+		scrollbar-color: var(--border-strong) var(--surface-2);
+	}
+}
+
+.wave-wrap {
+	position: relative;
+	height: 96px;
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+}
+
+.wave {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+.wave-overlay {
+	position: absolute;
+	inset: 0;
 	display: flex;
 	align-items: center;
-	gap: 20px;
-	margin-top: 22px;
-	padding-top: 20px;
-	border-top: 1px solid var(--border);
-	animation: fadeUp .25s ease-out;
+	justify-content: center;
+	gap: 12px;
+	padding: 0 16px;
+	background: var(--surface-veil);
+	color: var(--text-2);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	text-align: center;
 }
 
-.icon-sprite {
-	position: absolute;
+.wave-clock {
+	width: 22px;
+	height: 22px;
 }
 
+.wave-line {
+	display: block;
+}
+
+.rec-hint {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	min-height: 42px;
+	margin: 12px 0 0;
+	font-size: 14px;
+	color: var(--text-2);
+	font-variant-numeric: tabular-nums;
+}
+
+/* "We can't hear you" and the countdown (B3, B4): icon and bold. */
+.rec-hint.is-warning {
+	color: var(--ok-strong);
+	font-weight: 700;
+}
+
+.rec-hint .icon {
+	width: 18px;
+	height: 18px;
+	margin-top: 1px;
+}
+
+/* The message of the other states (B8-B18): a bold first line, a second
+   line, steps, and what happened to the recording. */
+.rec-message {
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.rec-lead {
+	margin: 0 0 4px;
+	font-size: 16px;
+	font-weight: 700;
+	line-height: 1.45;
+}
+
+.rec-text {
+	margin: 0;
+}
+
+.rec-steps {
+	margin: 12px 0 0;
+	padding: 12px 12px 12px 32px;
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+}
+
+.rec-steps li+li {
+	margin-top: 4px;
+}
+
+/* A part of another program's interface named in a step: the browser's
+   Permissions, an app's ••• (ui.uibit). */
+.uibit {
+	display: inline-flex;
+	align-items: center;
+	padding: 0 4px;
+	border: 1px solid var(--border-strong);
+	border-radius: 4px;
+	background: var(--surface);
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	white-space: nowrap;
+	vertical-align: 1px;
+}
+
+.uibit .icon {
+	width: 16px;
+	height: 16px;
+}
+
+.rec-kept,
+.rec-note {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 12px 0 0;
+	font-size: 13px;
+	font-weight: 700;
+}
+
+.rec-kept {
+	padding: 4px 8px;
+	border: 1px dashed var(--border-strong);
+	border-radius: var(--radius-xs);
+}
+
+.rec-kept .icon,
+.rec-note .icon {
+	width: 16px;
+	height: 16px;
+	color: var(--good);
+}
+
+.rec-copy {
+	margin: 12px 0 0;
+}
+
+.rec-copy-text {
+	margin: 0 0 8px;
+	font-weight: 700;
+}
+
+/* The arrow to the app's ••• menu at the top right of the screen (D3, D10),
+   over the sheet's backdrop. */
+.inapp-pointer {
+	position: fixed;
+	top: 4px;
+	right: 12px;
+	z-index: var(--z-sheet);
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	pointer-events: none;
+}
+
+.inapp-pointer-arrow {
+	width: 0;
+	height: 0;
+	margin-right: 12px;
+	border-right: 8px solid transparent;
+	border-bottom: 12px solid var(--primary);
+	border-left: 8px solid transparent;
+}
+
+.inapp-pointer-label {
+	padding: 2px 8px;
+	border-radius: var(--radius-xs);
+	background: var(--primary);
+	color: var(--on-primary);
+	font-size: 14px;
+	font-weight: 700;
+	box-shadow: var(--shadow);
+}
+
+/* ============ Result card (design/wireframes/03-result-card.html, design-system §2.10-2.13) ============ */
+/* In order: the ring with the title and what the number means, a note when the
+   take stopped at 30 s, a "done" line or the words to practise, the detail of
+   one word, My recording, what was heard, the legend; from 1024 px Try again
+   and Next sentence. The card names its tier in data-tier (result.js). */
+.result-head {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+}
+
+.result-headline {
+	min-width: 0;
+}
+
+.result-title {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 700;
+	line-height: 1.25;
+}
+
+.result-meaning {
+	margin: 4px 0 0;
+	font-size: 14px;
+	color: var(--text-2);
+}
+
+/* The score ring (§2.12): the arc in the tier's colour (§3: Correct from 70,
+   Almost 60-69, Needs work below and for another sentence); it fills in
+   900 ms, at once under reduced motion. */
 .score-ring {
 	--color: var(--good);
 	--value: 0;
 	position: relative;
-	width: 108px;
-	height: 108px;
 	flex: none;
+	width: 68px;
+	height: 68px;
+}
+
+.result-card[data-tier="almost"] .score-ring {
+	--color: var(--ok);
+}
+
+.result-card[data-tier="keep"] .score-ring,
+.result-card[data-tier="different"] .score-ring {
+	--color: var(--bad);
 }
 
 .score-ring svg {
@@ -852,7 +1917,7 @@ kbd {
 	stroke-linecap: round;
 	stroke-dasharray: 326.73;
 	stroke-dashoffset: calc(326.73 - 326.73 * var(--value) / 100);
-	transition: stroke-dashoffset .9s cubic-bezier(.2, .8, .2, 1), stroke .3s;
+	transition: stroke-dashoffset .9s cubic-bezier(.2, .8, .2, 1), stroke .2s;
 }
 
 .score-ring-text {
@@ -862,297 +1927,912 @@ kbd {
 	place-content: center;
 	grid-auto-flow: column;
 	align-items: baseline;
+	font-size: 18px;
 	font-weight: 700;
-	font-size: 30px;
 	font-variant-numeric: tabular-nums;
 }
 
 .score-ring-text small {
-	font-size: 14px;
+	font-size: 12px;
 	color: var(--text-3);
 }
 
-.score-ring.tier-ok {
-	--color: var(--ok);
+/* A take stopped at 30 s (warning family), and nothing to practise (success
+   family): icon and text, never colour alone. */
+.result-note,
+.done-line {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 16px 0 0;
+	padding: 8px 12px;
+	border-radius: var(--radius-sm);
+	font-size: 14px;
+	line-height: 1.45;
 }
 
-.score-ring.tier-bad {
-	--color: var(--bad);
+.result-note .icon,
+.done-line .icon {
+	width: 20px;
+	height: 20px;
 }
 
-.result-title {
-	margin: 0;
-	font-size: 20px;
+.result-note {
+	background: var(--ok-soft);
+}
+
+.result-note .icon {
+	color: var(--ok-strong);
+}
+
+.done-line {
+	background: var(--good-soft);
+}
+
+.done-line .icon {
+	color: var(--good);
+}
+
+.result-note+.done-line {
+	margin-top: 8px;
+}
+
+/* Words to practise (§2.13): at most 4 chips, then "+N more". 36 px to see,
+   44 px to tap; the rows are 8 px apart, so the extensions never overlap. */
+.result-sub {
+	margin: 16px 0 8px;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	text-transform: uppercase;
+	letter-spacing: .08em;
+	color: var(--text-3);
+}
+
+.word-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.word-chip {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	max-width: 100%;
+	min-height: 36px;
+	padding: 4px 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--text);
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.word-chip::before {
+	content: "";
+	position: absolute;
+	inset: -4px 0;
+}
+
+.word-chip:hover {
+	border-color: var(--primary);
+}
+
+/* The selected word's chip: a 2 px edge as well as the tint. */
+.word-chip[aria-pressed="true"] {
+	padding: 3px 11px;
+	border: 2px solid var(--primary);
+	background: var(--primary-soft);
+}
+
+.word-chip-more {
+	color: var(--primary);
 	font-weight: 700;
 }
 
-.result-sub {
-	margin: 2px 0 10px;
-	color: var(--text-2);
-	font-size: 14px;
+.chip-mark {
+	width: 14px;
+	height: 14px;
 }
 
+.chip-mark-1 {
+	color: var(--ok);
+}
+
+.chip-mark-2 {
+	color: var(--bad);
+}
+
+/* The detail of one word: its badge, Correct IPA + Listen | Heard IPA +
+   Replay, and the typical-mistake hint. */
+.word-detail {
+	margin-top: 12px;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	animation: fadeUp .18s ease-out;
+}
+
+.word-detail-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 8px;
+}
+
+.word-detail-word {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 700;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
+}
+
+/* Badges (§2.11): a pill with the mark and the status in words. */
+.badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	white-space: nowrap;
+}
+
+.badge .icon {
+	width: 12px;
+	height: 12px;
+}
+
+.badge-0 {
+	background: var(--good-soft);
+	color: var(--good);
+}
+
+.badge-1 {
+	background: var(--ok-soft);
+	color: var(--ok-strong);
+}
+
+.badge-2 {
+	background: var(--bad-soft);
+	color: var(--bad);
+}
+
+/* Two cells side by side at every width: the longest Vietnamese labels fit at
+   360 px (wireframes C4). */
+.word-detail-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.wd-cell {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	min-width: 0;
+	padding: 8px 12px 4px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-xs);
+	background: var(--surface-2);
+}
+
+.wd-label {
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	text-transform: uppercase;
+	letter-spacing: .06em;
+	color: var(--text-3);
+}
+
+.wd-ipa {
+	max-width: 100%;
+	font-family: var(--font-ipa);
+	font-size: 16px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+/* "not heard": in words, not IPA. */
+.wd-ipa.is-none {
+	font-family: var(--font);
+	font-size: 14px;
+	font-style: italic;
+	color: var(--text-2);
+}
+
+/* Listen and Replay: underlined text buttons, 36 px to see and 44 px to tap. */
+.wd-action {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 36px;
+	margin: 0 -8px;
+	padding: 4px 8px;
+	border: 0;
+	border-radius: var(--radius-xs);
+	background: none;
+	color: var(--primary);
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1.25;
+	text-decoration-line: underline;
+	text-underline-offset: 3px;
+	cursor: pointer;
+}
+
+.wd-action::before {
+	content: "";
+	position: absolute;
+	inset: -4px 0;
+}
+
+.wd-action .icon {
+	width: 16px;
+	height: 16px;
+}
+
+.wd-action:hover:not([aria-disabled="true"]),
+.wd-action[aria-pressed="true"] {
+	background: var(--primary-soft);
+}
+
+/* A word not heard has nothing to replay (C5): struck through, the label of
+   disabled controls (§2.2), never faded. */
+.wd-action[aria-disabled="true"] {
+	color: var(--text-3);
+	text-decoration-line: line-through;
+	cursor: not-allowed;
+}
+
+/* The typical-mistake hint (Q3, wireframes C3/C4): info family. */
+.hint {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 8px;
+	margin-top: 12px;
+	padding: 12px;
+	border-radius: var(--radius-sm);
+	background: var(--primary-soft);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+.hint-icon {
+	width: 20px;
+	height: 20px;
+	color: var(--primary);
+}
+
+.hint-body {
+	min-width: 0;
+}
+
+.hint-lead {
+	margin: 0;
+	font-weight: 700;
+	overflow-wrap: anywhere;
+}
+
+.hint-tip {
+	margin: 4px 0 0;
+	color: var(--text-2);
+}
+
+.hint-tip b {
+	color: var(--text);
+}
+
+.hint-ipa {
+	font-family: var(--font-ipa);
+	font-weight: 500;
+}
+
+.hint-arrow .icon {
+	width: 14px;
+	height: 14px;
+	vertical-align: -2px;
+}
+
+.hint-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+/* A button that plays a sound (§2.3): a spinner while it loads, Stop while
+   it plays (aria-pressed). */
+.play-btn .icon-active,
+.play-btn .spinner {
+	display: none;
+}
+
+.play-btn[data-state="loading"] .icon-idle,
+.play-btn[data-state="playing"] .icon-idle {
+	display: none;
+}
+
+.play-btn[data-state="loading"] .spinner,
+.play-btn[data-state="playing"] .icon-active {
+	display: block;
+}
+
+.play-btn .spinner {
+	width: 16px;
+	height: 16px;
+	border-width: 2px;
+}
+
+.result-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+.btn-secondary[aria-pressed="true"] {
+	border-color: var(--primary);
+	background: var(--primary-soft);
+	color: var(--primary);
+}
+
+/* "Heard: “…”", cut after 3 lines, with "more" (C7). */
+.result-heard {
+	margin: 12px 0 0;
+	font-size: 14px;
+	color: var(--text-2);
+	word-wrap: break-word;
+	overflow-wrap: anywhere;
+}
+
+.result-heard.is-clamped {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+}
+
+.heard-more {
+	margin: 0 0 0 -8px;
+}
+
+/* The legend (§2.13): the marks as in the sentence, no mark for Correct, and
+   the wrong letters. */
 .legend {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 14px;
-	margin: 0;
-	padding: 0;
+	gap: 4px 16px;
+	margin: 12px 0 0;
+	padding: 12px 0 0;
+	border-top: 1px solid var(--border);
 	list-style: none;
-	font-size: 13px;
-	color: var(--text-3);
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text-2);
 }
 
 .legend li {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
 }
 
-.dot {
-	width: 10px;
-	height: 10px;
-	border-radius: 50%;
+.legend .mark {
+	margin: 0;
+	vertical-align: middle;
 }
 
-.dot-good {
-	background: var(--good);
+.legend-letters {
+	font-size: 14px;
+	line-height: 1.25;
+	color: var(--bad);
+	text-decoration-line: underline;
+	text-decoration-style: dotted;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 4px;
 }
 
-.dot-ok {
-	background: var(--ok);
+.result-actions {
+	display: none;
+	gap: 12px;
+	margin-top: 16px;
 }
 
-.dot-bad {
-	background: var(--bad);
+.result-actions .btn {
+	flex: 1 1 0;
+	min-width: max-content;
 }
 
-/* Tips */
-.tips-panel {
+.result-actions .btn-primary {
+	flex-grow: 1.6;
+}
+
+/* ============ Words and letters after a result (§2.10) ============ */
+/* Each word is a button. Letters heard as written: the Correct colour, 500.
+   Letters not: bold, red, a 2 px dotted underline 4 px below. Almost and
+   Needs-work words end with a boxed mark; Correct words have none (Q2). The
+   word, its mark and its punctuation never break apart (.wg), and the mark
+   never makes a line taller: its box is set on the text's top edge, inside the
+   line. A button's box is as tall as the line (at least 24 px from 18 px);
+   its 2 px of side padding are taken back by its margins, so the words keep
+   the places they had before the result and only the marks take room. */
+.wg {
+	white-space: nowrap;
+}
+
+.w {
+	max-width: 100%;
+	margin: 0 -2px;
+	padding: 0 2px;
+	border: 0;
+	border-radius: 6px;
+	background: none;
+	color: var(--good);
+	font: inherit;
+	letter-spacing: inherit;
+	line-height: inherit;
+	text-align: inherit;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	vertical-align: baseline;
+	cursor: pointer;
+}
+
+.w:hover,
+.w.is-selected {
+	background: var(--primary-soft);
+}
+
+.wl {
+	color: var(--bad);
+	font-weight: 700;
+	text-decoration-line: underline;
+	text-decoration-style: dotted;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 4px;
+}
+
+/* The boxed mark: ~ Almost, ✗ Needs work (the sprite's own strokes). Also in
+   the legend and in How it works. */
+.mark {
+	display: inline-grid;
+	place-items: center;
+	width: 15px;
+	height: 15px;
+	margin-left: 2px;
+	border: 1.5px solid currentColor;
+	border-radius: 4px;
+	line-height: 1;
+	vertical-align: text-top;
+}
+
+.mark .icon {
+	width: 9px;
+	height: 9px;
+}
+
+.mark-1 {
+	color: var(--ok);
+}
+
+.mark-2 {
+	color: var(--bad);
+}
+
+/* ============ How it works ============ */
+.tips-card {
 	background: transparent;
+	border: 1px dashed var(--border-strong);
 	box-shadow: none;
-	border-style: dashed;
 }
 
 .tips-title {
 	margin: 0 0 8px;
-	font-size: 15px;
+	font-size: 16px;
+	font-weight: 700;
 }
 
 .tips {
-	margin: 0;
-	padding-left: 20px;
-	color: var(--text-2);
-	font-size: 14px;
 	display: grid;
 	gap: 4px;
-}
-
-.tips-note {
-	margin: 10px 0 0;
-	font-size: 13px;
-	color: var(--text-3);
-}
-
-.t-good {
-	color: var(--good);
-	font-weight: 600;
-}
-
-.t-bad {
-	color: var(--bad);
-	font-weight: 600;
-}
-
-.footer {
-	margin-top: 24px;
-	text-align: center;
-	font-size: 13px;
-	color: var(--text-3);
-}
-
-.footer a {
-	color: inherit;
-}
-
-.footer p {
 	margin: 0;
+	padding-left: 20px;
+	font-size: 14px;
+	color: var(--text-2);
 }
 
-/* ============ Recording modal ============ */
-.modal {
-	position: fixed;
-	inset: 0;
-	z-index: 50;
-	display: grid;
-	place-items: center;
-	padding: 16px;
-}
-
-.modal-backdrop {
-	position: absolute;
-	inset: 0;
-	background: rgba(10, 12, 28, .55);
-	backdrop-filter: blur(4px);
-	animation: fade .2s ease-out;
-}
-
-.modal-card {
-	position: relative;
-	width: min(560px, 100%);
-	max-height: calc(100vh - 32px);
-	overflow: auto;
-	background: var(--surface);
-	border-radius: 22px;
-	padding: 24px;
-	box-shadow: var(--shadow-lg);
-	animation: pop .22s cubic-bezier(.2, .9, .3, 1.2);
-}
-
-.modal-x {
-	position: absolute;
-	top: 14px;
-	right: 14px;
-	display: grid;
-	place-items: center;
-	width: 36px;
-	height: 36px;
-	border-radius: 50%;
-	border: 0;
-	background: transparent;
-	color: var(--text-3);
-	cursor: pointer;
-}
-
-.modal-x:hover {
-	background: var(--surface-2);
+.tips b {
 	color: var(--text);
 }
 
-.rec-head {
+/* The marks of the result, boxed as in the sentence and the legend. */
+.tips-mark {
+	padding: 0 2px;
+}
+
+.tips-mark .mark {
+	margin: 0;
+}
+
+/* The tour again and the microphone check (wireframes E10); from 1024 px the
+   header's How it works reopens the tour, and only the check stays (H1). */
+.tips-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+/* ============ Progress sheet (wireframes F1-F7) ============ */
+.progress-icon {
+	color: var(--primary);
+}
+
+.progress-eyebrow {
+	margin: 0 0 8px;
+	line-height: 1.5;
+}
+
+.progress-stats {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	margin: 0 0 16px;
+	padding: 0;
+	list-style: none;
+}
+
+.progress-stat {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	min-width: 0;
+	padding: 8px 4px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+	text-align: center;
+}
+
+.progress-stat b {
+	max-width: 100%;
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.25;
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.progress-stat span {
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.5;
+	color: var(--text-2);
+}
+
+.progress-streak {
 	display: flex;
 	align-items: center;
-	gap: 10px;
-	margin: 0 40px 18px 0;
-}
-
-.rec-dot {
-	width: 12px;
-	height: 12px;
-	border-radius: 50%;
-	background: var(--text-3);
-	flex: none;
-}
-
-.rec-dot.is-live {
-	background: var(--rec);
-	animation: blink 1.2s ease-in-out infinite;
-}
-
-.rec-title {
+	gap: 8px;
 	margin: 0;
-	font-size: 18px;
+	font-size: 16px;
 	font-weight: 700;
-	flex: 1;
 }
 
-.rec-timer {
-	font-variant-numeric: tabular-nums;
-	font-weight: 600;
+.progress-streak .icon {
+	width: 20px;
+	height: 20px;
+	color: var(--primary);
+}
+
+.progress-hint {
+	margin: 4px 0 0;
+	font-size: 14px;
 	color: var(--text-2);
-	background: var(--surface-2);
-	padding: 2px 10px;
-	border-radius: 999px;
 }
 
-.rec-sentence {
-	margin: 0 0 16px;
-	font-size: 20px;
-	font-weight: 600;
-	line-height: 1.45;
+/* No word yet (F1): the line takes the list's place. */
+.progress-hint.is-empty {
+	margin: 0;
+	padding: 8px 4px;
+	text-align: center;
 }
 
-.wave-wrap {
-	position: relative;
-	height: 120px;
-	border-radius: 16px;
-	background: var(--surface-2);
+.progress-streak+.progress-hint+.progress-eyebrow,
+.progress-streak+.progress-eyebrow {
+	margin-top: 16px;
+}
+
+/* The last 7 days, today last: the day's name over a circle, ✓ and a solid
+   edge on a day with a scored sentence, and today outlined. */
+.week {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 4px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.week-day {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+}
+
+.week-name {
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	color: var(--text-2);
+}
+
+.week-mark {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border: 2px dashed var(--border-strong);
+	border-radius: 50%;
+}
+
+.week-mark .icon {
+	width: 18px;
+	height: 18px;
+}
+
+.week-day.is-done .week-mark {
+	border-style: solid;
+	border-color: var(--primary);
+	background: var(--primary-soft);
+	color: var(--primary);
+}
+
+.week-day.is-today .week-mark {
+	outline: 2px solid var(--text-2);
+	outline-offset: 2px;
+}
+
+.week-day.is-today .week-name {
+	color: var(--text);
+}
+
+/* "Saved in this browser only…" and the note under New learner. */
+.progress-note {
+	margin: 12px 0 0;
+	font-size: 13px;
+	font-style: italic;
+	color: var(--text-3);
+}
+
+.progress-sep {
+	margin: 16px 0 8px;
+	border: 0;
+	border-top: 1px solid var(--border);
+}
+
+.progress-new {
+	margin: 0 0 0 -8px;
+}
+
+.progress-new+.progress-note {
+	margin-top: 0;
+}
+
+/* ============ A confirmation over a sheet (§2.8, wireframes F4) ============ */
+/* A centred alertdialog at every width, above the sheet and its backdrop. */
+.confirm-root .backdrop {
+	z-index: calc(var(--z-confirm) - 1);
+}
+
+.confirm-root .sheet-frame {
+	z-index: var(--z-confirm);
+	align-items: center;
+	padding: 16px;
+}
+
+.confirm-root .sheet {
+	width: 440px;
+	max-width: 100%;
+	max-height: calc(100vh - 32px);
+	max-height: calc(100dvh - 32px);
+	border-radius: var(--radius-sheet);
+	animation: pop .2s ease-out;
+}
+
+.confirm-text {
+	margin: 0;
+}
+
+/* ============ Microphone check (wireframes E5-E9) ============ */
+/* The header shows the live dot while it listens, else the state's icon in
+   the colour of its family (§1.3). */
+.mic-check .sheet-icon {
+	width: 24px;
+	height: 24px;
+}
+
+.mic-check[data-tone="success"] .sheet-icon {
+	color: var(--good);
+}
+
+.mic-check[data-tone="warning"] .sheet-icon {
+	color: var(--ok-strong);
+}
+
+.mic-check-msg {
+	margin: 0 0 12px;
+}
+
+/* E7: the big ✓. */
+.mic-check-done {
+	display: grid;
+	place-items: center;
+	width: 56px;
+	height: 56px;
+	margin: 4px auto 12px;
+	border: 3px solid var(--good);
+	border-radius: 50%;
+	color: var(--good);
+}
+
+.mic-check-done .icon {
+	width: 32px;
+	height: 32px;
+}
+
+/* The level meter (§2.17): decorative, as many bars lit as the level reaches. */
+.meter {
+	display: flex;
+	align-items: flex-end;
+	gap: 4px;
+	height: 64px;
+	padding: 8px 12px;
 	border: 1px solid var(--border);
-	overflow: hidden;
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
 }
 
-.wave {
-	display: block;
-	width: 100%;
+.meter i {
+	flex: 1;
 	height: 100%;
+	border-radius: 4px;
+	background: var(--border);
 }
 
-.wave-overlay {
+.meter i.is-lit {
+	background: var(--primary);
+}
+
+.mic-check .rec-hint {
+	min-height: 0;
+}
+
+.mic-tips {
+	margin-top: 12px;
+}
+
+/* ============ Tour (§2.18, wireframes E1-E4) ============ */
+/* A spotlight on the step's control, the rest dimmed by its shadow; the
+   shield under it takes the taps on the dimmed page. The callout is placed
+   by tour.js below or above the spotlight. */
+.tour {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-tour);
+}
+
+.tour-shield {
 	position: absolute;
 	inset: 0;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 12px;
-	background: color-mix(in srgb, var(--surface) 78%, transparent);
-	font-weight: 600;
-	color: var(--text-2);
-	text-align: center;
-	padding: 0 16px;
 }
 
-.wave-overlay.is-error {
-	color: var(--bad);
-}
-
-.spinner {
-	width: 22px;
-	height: 22px;
-	border-radius: 50%;
-	border: 3px solid color-mix(in srgb, var(--primary) 25%, transparent);
-	border-top-color: var(--primary);
-	animation: spin .8s linear infinite;
-	flex: none;
-}
-
-.rec-hint {
-	margin: 12px 0 18px;
-	font-size: 14px;
-	color: var(--text-3);
-	min-height: 21px;
-}
-
-.rec-hint.is-warning {
-	color: var(--ok);
-	font-weight: 600;
-}
-
-.rec-actions {
-	display: flex;
-	justify-content: flex-end;
-	gap: 10px;
-	flex-wrap: wrap;
-}
-
-/* Toast */
-.toast {
+.tour-spot {
 	position: fixed;
-	left: 50%;
-	bottom: 24px;
-	transform: translateX(-50%);
-	z-index: 60;
-	background: var(--text);
-	color: var(--surface);
-	padding: 10px 18px;
-	border-radius: 12px;
-	font-size: 14px;
-	font-weight: 500;
+	border-radius: var(--radius);
+	outline: 3px solid var(--focus);
+	box-shadow: 0 0 0 200vmax var(--dim);
+	pointer-events: none;
+	transition: left .2s, top .2s, width .2s, height .2s;
+}
+
+.tour-callout {
+	position: fixed;
+	max-width: calc(100vw - 24px);
+	padding: 16px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--surface);
+	color: var(--text);
 	box-shadow: var(--shadow-lg);
-	max-width: calc(100vw - 32px);
 	animation: fadeUp .2s ease-out;
 }
 
+.tour-step {
+	margin: 0;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	color: var(--text-3);
+}
+
+.tour-title {
+	margin: 4px 0;
+	font-size: 18px;
+	font-weight: 700;
+	line-height: 1.25;
+}
+
+.tour-text {
+	margin: 0 0 12px;
+	font-size: 14px;
+	color: var(--text-2);
+}
+
+.tour-text b {
+	color: var(--text);
+}
+
+.tour-text .wl {
+	color: var(--bad);
+}
+
+.tour-example {
+	font-weight: 600;
+	color: var(--text);
+	white-space: nowrap;
+}
+
+.tour-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.tour-actions .text-btn {
+	margin: 0 0 0 -8px;
+}
+
+.tour-pips {
+	display: inline-flex;
+	gap: 4px;
+	margin: 0 auto;
+}
+
+.tour-pips i {
+	width: 8px;
+	height: 8px;
+	border: 2px solid var(--text-2);
+	border-radius: 50%;
+}
+
+.tour-pips i.is-on {
+	border-color: var(--primary);
+	background: var(--primary);
+}
+
+.wide-only {
+	display: none;
+}
+
 /* ============ Animations ============ */
+/* A state change takes 200 ms or less; longer motion (the ring filling, the
+   mic's pulse, the live dot, the spinner, the shimmer) is decoration. */
 @keyframes fade {
 	from {
 		opacity: 0;
@@ -1166,10 +2846,17 @@ kbd {
 	}
 }
 
+@keyframes slideUp {
+	from {
+		transform: translateY(24px);
+		opacity: 0;
+	}
+}
+
 @keyframes pop {
 	from {
 		opacity: 0;
-		transform: scale(.94) translateY(8px);
+		transform: scale(.96) translateY(8px);
 	}
 }
 
@@ -1185,6 +2872,8 @@ kbd {
 	}
 }
 
+/* Reduced motion: nothing moves. Each animation ends at once on its last
+   frame's base style, and transitions jump. */
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
@@ -1196,87 +2885,232 @@ kbd {
 }
 
 /* ============ Responsive ============ */
-@media (max-width: 640px) {
-	.app {
-		padding: 14px 12px 24px;
+/* Below 360 px the header keeps the mark; the name stays for screen readers. */
+@media (max-width: 359.98px) {
+	.brand-text {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 
-	.panel {
-		padding: 16px;
-	}
-
-	.session-stats {
-		width: 100%;
-		justify-content: space-between;
-	}
-
-	.stat {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.tabs {
-		display: flex;
-		width: 100%;
-	}
-
-	.tab {
-		flex: 1;
-		justify-content: center;
-		padding: 8px 6px;
-		font-size: 13px;
-	}
-
-	.pane-row .btn {
-		width: 100%;
-	}
-
-	.sentence-block {
-		padding: 14px;
-	}
-
-	.controls {
+	.levels {
 		gap: 4px;
 	}
+}
 
-	.btn-mic {
-		width: 76px;
-		height: 76px;
+@media (min-width: 768px) {
+	.app {
+		--content-max: 720px;
 	}
 
-	.control-label kbd {
+	.topbar-inner {
+		gap: 12px;
+		min-height: 72px;
+		padding: 12px 24px;
+	}
+
+	.brand {
+		gap: 12px;
+	}
+
+	.brand-mark {
+		width: 44px;
+		height: 44px;
+		box-shadow: 0 6px 16px var(--primary-glow);
+	}
+
+	.brand-mark .icon {
+		width: 24px;
+		height: 24px;
+	}
+
+	.brand-title {
+		font-size: 18px;
+	}
+
+	.brand-sub {
+		display: block;
+	}
+
+	.progress-chip-short {
 		display: none;
 	}
 
-	.word-detail-grid {
-		grid-template-columns: 1fr;
+	.progress-chip-long {
+		display: inline-flex;
 	}
 
-	.result {
-		gap: 14px;
+	.banner-slot {
+		padding: 12px 24px 0;
+	}
+
+	.layout {
+		padding: 20px 24px 0;
+	}
+
+	.levels {
+		margin-bottom: 12px;
+	}
+
+	.card {
+		margin-bottom: 16px;
+		padding: 20px 24px 24px;
+	}
+
+	.sentence {
+		font-size: 28px;
+	}
+
+	.sentence.is-long {
+		font-size: 22px;
+	}
+
+	.control-zone {
+		margin-top: 16px;
+		padding-top: 16px;
+	}
+
+	.dock .notice {
+		margin-bottom: 16px;
+	}
+
+	.controls {
+		gap: 12px;
+	}
+
+	.control-label {
+		font-size: 13px;
+	}
+
+	.btn-round {
+		width: 56px;
+		height: 56px;
+	}
+
+	.btn-round .icon {
+		width: 26px;
+		height: 26px;
+	}
+
+	.btn-mic {
+		width: 88px;
+		height: 88px;
+		box-shadow: 0 10px 28px var(--primary-glow);
+	}
+
+	.btn-mic .icon {
+		width: 38px;
+		height: 38px;
+	}
+
+	.space-hint {
+		display: inline-block;
+	}
+
+	.sheet-frame {
+		align-items: center;
+		padding: 32px 16px calc(32px + var(--keyboard-inset, 0px));
+	}
+
+	.sheet {
+		width: 560px;
+		max-width: 100%;
+		max-height: calc(100vh - 64px - var(--keyboard-inset, 0px));
+		max-height: calc(100dvh - 64px - var(--keyboard-inset, 0px));
+		border-radius: var(--radius-sheet);
+		animation: pop .2s ease-out;
+	}
+
+	.sheet-actions {
+		padding: 12px 16px 16px;
+	}
+
+	.result-head {
+		gap: 20px;
 	}
 
 	.score-ring {
-		width: 92px;
-		height: 92px;
+		width: 96px;
+		height: 96px;
 	}
 
-	.modal {
-		align-items: end;
-		padding: 0;
+	.score-ring-text {
+		font-size: 28px;
 	}
 
-	.modal-card {
-		width: 100%;
-		border-radius: 22px 22px 0 0;
-		padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+	.score-ring-text small {
+		font-size: 14px;
+	}
+}
+
+/* Two columns: the sentence and its controls (640 px) | the result, or How
+   it works until a result takes its place (wireframes H1, H2). */
+@media (min-width: 1024px) {
+	.app {
+		--content-max: 1120px;
 	}
 
-	.rec-actions .btn {
-		flex: 1;
+	.layout {
+		display: grid;
+		grid-template-columns: 640px minmax(0, 1fr);
+		align-items: start;
+		gap: 0 24px;
 	}
 
-	.desk-only {
+	/* My text sits at the end of the chips' row (H1). */
+	.col-main {
+		position: relative;
+	}
+
+	#btnMyText {
+		position: absolute;
+		top: 0;
+		right: 0;
+		margin: 0;
+	}
+
+	.result-card,
+	.tips-card {
+		grid-column: 2;
+		grid-row: 1;
+	}
+
+	.app.has-result .tips-card {
+		display: none;
+	}
+
+	.tips-card {
+		padding: 24px;
+		border-width: 2px;
+	}
+
+	.tips-title {
+		margin-bottom: 12px;
+	}
+
+	.narrow-only {
+		display: none;
+	}
+
+	.wide-only {
+		display: block;
+	}
+
+	.result-actions {
+		display: flex;
+	}
+
+	.text-btn.header-how {
+		display: inline-flex;
+		margin: 0;
+	}
+
+	.tips-actions .tips-tour {
 		display: none;
 	}
 }

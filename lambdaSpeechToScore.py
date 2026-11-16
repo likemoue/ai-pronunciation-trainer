@@ -266,6 +266,9 @@ def _build_response(result) -> dict:
 
     pair_accuracy_category = ' '.join(
         [str(category) for category in result['pronunciation_categories']])
+    # Per word, like pair_accuracy_category: the typical mistake it was heard
+    # with (ending, th or sh), for the page's hint, or '-' for none.
+    mistake_kinds = ' '.join(kind or '-' for kind in result['mistake_kinds'])
 
     return {'real_transcript': result['recording_transcript'],
             'ipa_transcript': result['recording_ipa'],
@@ -273,6 +276,7 @@ def _build_response(result) -> dict:
             'real_transcripts': real_transcripts, 'matched_transcripts': matched_transcripts,
             'real_transcripts_ipa': real_transcripts_ipa, 'matched_transcripts_ipa': matched_transcripts_ipa,
             'pair_accuracy_category': pair_accuracy_category,
+            'mistake_kinds': mistake_kinds,
             'start_time': result['start_time'],
             'end_time': result['end_time'],
             'is_letter_correct_all_words': is_letter_correct_all_words}

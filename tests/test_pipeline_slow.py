@@ -64,7 +64,7 @@ def _wav(samples, rate=16000):
 
 
 def _opus(wav):
-    """The upload the page sends: WebM/Opus at 32 kbps (app.js)."""
+    """The upload the page sends: WebM/Opus at 32 kbps (recorder.js)."""
     import audioPreprocessing
     return subprocess.run([audioPreprocessing.ffmpeg_binary(), '-nostdin', '-loglevel', 'error', '-f', 'wav',
                            '-i', 'pipe:0', '-ac', '1', '-ar', '48000', '-c:a', 'libopus', '-b:a', '32k',

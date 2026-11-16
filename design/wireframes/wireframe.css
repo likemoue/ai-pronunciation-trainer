@@ -1,0 +1,2087 @@
+/* Wireframe kit, phase 4 (frontend) of the AI Pronunciation Trainer.
+   Grey only, on purpose: every state must read without colour, so status is
+   shown by icon + text + underline style. System fonts; nothing is loaded from
+   another site and the pages have no JavaScript. Frames are drawn at true CSS
+   size (a phone is 360 x 640 CSS px). This file styles the wireframes only:
+   the product's own tokens are in context/design-system.md. */
+
+:root {
+	--ink: #1a1a1a;
+	--ink-2: #4d4d4d;
+	--ink-3: #666666;
+	--line: #bdbdbd;
+	--line-2: #8c8c8c;
+	--line-soft: #dddddd;
+	--page: #eeeeee;
+	--card: #ffffff;
+	--fill: #f5f5f5;
+	--fill-2: #e2e2e2;
+	--skel: #d4d4d4;
+	--strong: #2b2b2b;
+	--scrim: rgba(0, 0, 0, .45);
+	--dim: rgba(0, 0, 0, .62);
+	--doc-bg: #fafafa;
+	--sys: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+	--ipa: "Segoe UI", "Noto Sans", "Lucida Sans Unicode", "DejaVu Sans", sans-serif;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--doc-bg);
+	color: var(--ink);
+	font: 14px/1.45 var(--sys);
+}
+
+.sprite {
+	position: absolute;
+	width: 0;
+	height: 0;
+	overflow: hidden;
+}
+
+.i {
+	width: 20px;
+	height: 20px;
+	fill: currentColor;
+	flex: none;
+}
+
+.i.s16 {
+	width: 16px;
+	height: 16px;
+}
+
+.i.s24 {
+	width: 24px;
+	height: 24px;
+}
+
+.i.s28 {
+	width: 28px;
+	height: 28px;
+}
+
+.i.s32 {
+	width: 32px;
+	height: 32px;
+}
+
+/* ===================================================== document chrome */
+.doc {
+	padding: 24px 32px 64px;
+	max-width: 1700px;
+}
+
+.doc-nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 16px;
+	padding: 10px 0 14px;
+	border-bottom: 1px solid var(--line);
+	margin-bottom: 20px;
+	font-size: 13px;
+}
+
+.doc-nav a {
+	color: var(--ink);
+}
+
+.doc-nav a.here {
+	font-weight: 700;
+	text-decoration: none;
+}
+
+.doc h1 {
+	font-size: 26px;
+	margin: 0 0 4px;
+}
+
+.doc h2 {
+	font-size: 19px;
+	margin: 40px 0 6px;
+	padding-top: 12px;
+	border-top: 1px solid var(--line-soft);
+}
+
+.doc h3 {
+	font-size: 15px;
+	margin: 20px 0 6px;
+}
+
+.lede {
+	max-width: 980px;
+	color: var(--ink-2);
+	margin: 0 0 12px;
+}
+
+.box {
+	max-width: 1100px;
+	border: 1px solid var(--line);
+	background: var(--card);
+	border-radius: 8px;
+	padding: 12px 16px;
+	margin: 12px 0;
+}
+
+.box h3 {
+	margin-top: 0;
+}
+
+.box ul,
+.box ol {
+	margin: 4px 0;
+	padding-left: 20px;
+}
+
+.box li {
+	margin: 3px 0;
+}
+
+.box.q {
+	border-width: 2px;
+	border-color: var(--ink);
+}
+
+.doc table {
+	border-collapse: collapse;
+	margin: 8px 0 12px;
+	font-size: 13px;
+	background: var(--card);
+}
+
+.doc th,
+.doc td {
+	border: 1px solid var(--line);
+	padding: 5px 8px;
+	text-align: left;
+	vertical-align: top;
+}
+
+.doc th {
+	background: var(--fill);
+}
+
+.legend-line {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 22px;
+	align-items: center;
+	font-size: 13px;
+}
+
+code {
+	font: 12.5px/1.4 Consolas, "SFMono-Regular", Menlo, monospace;
+	background: var(--fill);
+	padding: 0 3px;
+	border-radius: 3px;
+}
+
+/* A row of frames, side by side; each frame with its caption and notes. */
+.shots {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 36px 40px;
+	align-items: flex-start;
+	margin-top: 14px;
+}
+
+.shot {
+	margin: 0;
+	width: 360px;
+}
+
+.shot.w320 {
+	width: 320px;
+}
+
+.shot.wdesk {
+	width: 1280px;
+}
+
+.cap {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	margin-bottom: 8px;
+	font-size: 14px;
+	min-height: 40px;
+}
+
+.cap b {
+	white-space: nowrap;
+}
+
+.tag {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 700;
+	border: 1px solid var(--line-2);
+	border-radius: 4px;
+	padding: 0 4px;
+	color: var(--ink-2);
+	white-space: nowrap;
+}
+
+.notes {
+	margin: 10px 0 0;
+	padding-left: 18px;
+	font-size: 12.5px;
+	color: var(--ink-2);
+}
+
+.notes li {
+	margin: 3px 0;
+}
+
+.notes .chg {
+	font-weight: 700;
+	color: var(--ink);
+}
+
+/* The typical-mistake hint, decided for phase 4 (Q3): framed and labelled. */
+.prop {
+	position: relative;
+	border: 2px solid var(--ink);
+	border-radius: 10px;
+	padding: 18px 10px 10px;
+	margin-top: 10px;
+	background: var(--card);
+}
+
+.prop::before {
+	content: "Phase 4 (decided, Q3)";
+	position: absolute;
+	top: -9px;
+	left: 10px;
+	background: var(--card);
+	padding: 0 4px;
+	font-size: 10.5px;
+	font-weight: 800;
+	letter-spacing: .04em;
+}
+
+/* ===================================================== frames */
+.phone {
+	position: relative;
+	width: 360px;
+	height: 640px;
+	overflow: hidden;
+	background: var(--page);
+	border: 2px solid var(--ink);
+	border-radius: 6px;
+	box-sizing: content-box;
+}
+
+.phone.p320 {
+	width: 320px;
+	height: 568px;
+}
+
+.phone.p560 {
+	height: 560px;
+	border-top-width: 0;
+	border-radius: 0 0 6px 6px;
+}
+
+/* Taller strip: the whole page from the top, not clipped, with the fold marked. */
+.phone.strip {
+	height: auto;
+	min-height: 640px;
+	overflow: visible;
+}
+
+.phone.desk {
+	width: 1280px;
+	height: 800px;
+}
+
+.vp {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.strip .vp {
+	position: relative;
+	overflow: visible;
+}
+
+.page {
+	padding: 0 12px 124px;
+}
+
+.strip .page {
+	padding-bottom: 16px;
+}
+
+/* Scrolled by N px (the header and chips are not sticky; the bar is). */
+.sc120 {
+	margin-top: -120px;
+}
+
+.sc200 {
+	margin-top: -200px;
+}
+
+.sc280 {
+	margin-top: -280px;
+}
+
+.sc360 {
+	margin-top: -360px;
+}
+
+.sc440 {
+	margin-top: -440px;
+}
+
+.sc520 {
+	margin-top: -520px;
+}
+
+.fold {
+	position: absolute;
+	left: 0;
+	right: 0;
+	border-top: 2px dashed var(--ink);
+	z-index: 30;
+	pointer-events: none;
+}
+
+/* The label sits outside the frame, in the gap, so it hides no content. */
+.fold span {
+	position: absolute;
+	left: calc(100% + 4px);
+	top: -9px;
+	width: 34px;
+	font-size: 10px;
+	font-weight: 800;
+	line-height: 1.1;
+}
+
+.fold.f540 {
+	top: 540px;
+}
+
+.fold.f460 {
+	top: 460px;
+}
+
+/* The host app's own bar (Zalo, Facebook, Messenger): not part of our page. */
+.inapp {
+	position: relative;
+	width: 364px;
+}
+
+.host {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	height: 56px;
+	padding: 0 12px;
+	background: #3a3a3a;
+	color: #fff;
+	border: 2px solid var(--ink);
+	border-bottom: 0;
+	border-radius: 6px 6px 0 0;
+	font-size: 12.5px;
+}
+
+.host .url {
+	flex: 1;
+	min-width: 0;
+	line-height: 1.2;
+}
+
+.host .url small {
+	display: block;
+	opacity: .8;
+}
+
+.host .menu {
+	width: 36px;
+	height: 36px;
+	display: grid;
+	place-items: center;
+	border: 2px dashed #fff;
+	border-radius: 50%;
+}
+
+.pointer {
+	position: absolute;
+	top: 56px;
+	right: 10px;
+	z-index: 60;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	font-size: 11px;
+	font-weight: 800;
+	line-height: 1.1;
+}
+
+.pointer .arr {
+	width: 0;
+	height: 0;
+	margin-right: 13px;
+	border-left: 9px solid transparent;
+	border-right: 9px solid transparent;
+	border-bottom: 14px solid var(--ink);
+}
+
+.pointer .stem {
+	width: 3px;
+	height: 14px;
+	background: var(--ink);
+	margin-right: 20px;
+}
+
+.pointer .lbl {
+	background: var(--ink);
+	color: #fff;
+	padding: 2px 6px;
+	border-radius: 4px;
+}
+
+.safe {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 16px;
+	background: repeating-linear-gradient(45deg, var(--fill-2) 0 4px, var(--card) 4px 8px);
+	font-size: 9px;
+	text-align: center;
+	line-height: 16px;
+	color: var(--ink-2);
+}
+
+.kbd-area {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 270px;
+	background: repeating-linear-gradient(0deg, var(--fill-2) 0 1px, #d0d0d0 1px 54px);
+	border-top: 2px solid var(--ink);
+	display: grid;
+	place-items: center;
+	font-weight: 800;
+	color: var(--ink-2);
+	z-index: 60;
+}
+
+/* ===================================================== atoms */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	min-height: 44px;
+	padding: 0 14px;
+	border: 1px solid var(--line-2);
+	border-radius: 12px;
+	background: var(--card);
+	color: var(--ink);
+	font: 700 15px/1.2 var(--sys);
+	text-align: center;
+}
+
+.btn.pri {
+	background: var(--strong);
+	border-color: var(--strong);
+	color: #fff;
+}
+
+.btn.txt {
+	border-color: transparent;
+	background: none;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+	padding: 0 8px;
+}
+
+.btn.dis,
+.rb.dis,
+.chip.dis {
+	color: var(--ink-3);
+	border-style: dashed;
+	background: var(--fill);
+}
+
+.btn.pri.dis {
+	background: var(--fill-2);
+	border-color: var(--line-2);
+	color: var(--ink-3);
+}
+
+.btn.danger {
+	border-width: 2px;
+	border-color: var(--ink);
+}
+
+.btn.sm {
+	min-height: 36px;
+	font-size: 13px;
+	padding: 0 10px;
+	border-radius: 10px;
+}
+
+.btn.full {
+	width: 100%;
+}
+
+.tbtn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 32px;
+	font-weight: 700;
+	font-size: 13px;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+	white-space: nowrap;
+}
+
+.badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	font-size: 12px;
+	font-weight: 800;
+	border: 1px solid var(--line-2);
+	border-radius: 999px;
+	padding: 1px 8px;
+	background: var(--card);
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+.badge.solid {
+	background: var(--strong);
+	color: #fff;
+	border-color: var(--strong);
+}
+
+.eyebrow {
+	font-size: 12px;
+	font-weight: 800;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+.spin {
+	display: inline-block;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	border: 3px solid var(--fill-2);
+	border-top-color: var(--ink);
+	flex: none;
+}
+
+.skel {
+	display: block;
+	height: 14px;
+	border-radius: 7px;
+	background: var(--skel);
+	margin: 8px 0;
+}
+
+.skel.big {
+	height: 22px;
+	border-radius: 8px;
+}
+
+.w95 {
+	width: 95%;
+}
+
+.w80 {
+	width: 80%;
+}
+
+.w60 {
+	width: 60%;
+}
+
+.w40 {
+	width: 40%;
+}
+
+.kb {
+	display: inline-block;
+	border: 1px solid var(--line-2);
+	border-bottom-width: 2px;
+	border-radius: 4px;
+	padding: 0 4px;
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 16px;
+}
+
+.sr {
+	display: block;
+	font-size: 11px;
+	color: var(--ink-3);
+	font-style: italic;
+	margin-top: 2px;
+}
+
+/* ===================================================== header + chips */
+.hdr {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 56px;
+	margin: 0 -12px 4px;
+	padding: 0 12px;
+	background: var(--card);
+	border-bottom: 1px solid var(--line-soft);
+}
+
+.mark {
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
+	border: 1px solid var(--line-2);
+	background: var(--fill-2);
+	display: grid;
+	place-items: center;
+	flex: none;
+}
+
+.wm {
+	flex: 0 1 116px;
+	min-width: 0;
+	max-height: 32px;
+	overflow: hidden;
+	font-weight: 800;
+	font-size: 13px;
+	line-height: 16px;
+}
+
+.hdr .sp {
+	flex: 1;
+}
+
+.seg {
+	display: inline-flex;
+	height: 36px;
+	border: 1px solid var(--line-2);
+	border-radius: 999px;
+	overflow: hidden;
+	flex: none;
+	font-weight: 800;
+	font-size: 13px;
+}
+
+.seg span {
+	display: grid;
+	place-items: center;
+	width: 37px;
+}
+
+.seg .on {
+	background: var(--strong);
+	color: #fff;
+}
+
+.pts {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 36px;
+	padding: 0 10px;
+	border: 1px solid var(--line-2);
+	border-radius: 999px;
+	background: var(--card);
+	font-weight: 800;
+	font-size: 14px;
+	flex: none;
+	white-space: nowrap;
+}
+
+.chips {
+	display: flex;
+	gap: 6px;
+	padding: 4px 0 8px;
+	white-space: nowrap;
+}
+
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 36px;
+	padding: 0 12px;
+	border: 1px solid var(--line-2);
+	border-radius: 999px;
+	background: var(--card);
+	font-weight: 700;
+	font-size: 13px;
+}
+
+.chip.on {
+	background: var(--strong);
+	border-color: var(--strong);
+	color: #fff;
+}
+
+/* ===================================================== sentence card */
+.card {
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	padding: 12px 16px 14px;
+	margin-bottom: 12px;
+}
+
+.card-top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	min-height: 32px;
+}
+
+.card-top .left {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.sentence {
+	margin: 6px 0 8px;
+	font-size: 22px;
+	line-height: 32px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.sentence.sm {
+	font-size: 18px;
+	line-height: 27px;
+}
+
+.sentence.done {
+	font-weight: 500;
+}
+
+.ipa {
+	font-family: var(--ipa);
+	font-size: 16px;
+	line-height: 24px;
+	color: var(--ink-2);
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.card-foot {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 10px;
+	flex-wrap: wrap;
+}
+
+.tog {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 36px;
+	padding: 0 12px;
+	border: 1px solid var(--line-2);
+	border-radius: 999px;
+	font-weight: 700;
+	font-size: 13px;
+	background: var(--card);
+}
+
+.tog.on {
+	border: 2px solid var(--ink);
+	background: var(--fill-2);
+}
+
+.tog .box-i {
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--ink-2);
+	border-radius: 3px;
+	display: grid;
+	place-items: center;
+	font-size: 10px;
+	line-height: 1;
+}
+
+.playing {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	font-weight: 700;
+}
+
+.eq {
+	display: inline-flex;
+	align-items: flex-end;
+	gap: 2px;
+	height: 14px;
+}
+
+.eq i {
+	width: 3px;
+	background: var(--ink);
+}
+
+.eq i:nth-child(1) {
+	height: 6px;
+}
+
+.eq i:nth-child(2) {
+	height: 13px;
+}
+
+.eq i:nth-child(3) {
+	height: 9px;
+}
+
+.err-block {
+	text-align: center;
+	padding: 18px 8px 8px;
+}
+
+.err-block .big {
+	font-size: 17px;
+	font-weight: 800;
+	margin: 6px 0 2px;
+}
+
+.err-block p {
+	margin: 0 0 12px;
+	color: var(--ink-2);
+}
+
+/* Words after a result. Wrong letters: bold + dotted underline (not colour). */
+.w {
+	border-radius: 6px;
+	padding: 0 1px;
+}
+
+/* A word, its mark and any trailing punctuation never break apart. */
+.wg {
+	white-space: nowrap;
+}
+
+.w.sel {
+	background: var(--fill-2);
+	box-shadow: 0 0 0 2px var(--fill-2);
+}
+
+.wl {
+	font-weight: 800;
+	text-decoration: underline dotted 2px;
+	text-underline-offset: 5px;
+}
+
+/* Per-word mark after the letters: ~ Almost, ✗ Needs work (Correct has none). */
+.mk {
+	display: inline-block;
+	min-width: 15px;
+	margin-left: 2px;
+	padding: 0 2px;
+	border: 1.5px solid currentColor;
+	border-radius: 4px;
+	font-size: 11px;
+	font-weight: 900;
+	line-height: 13px;
+	text-align: center;
+	vertical-align: 10px;
+	text-decoration: none;
+}
+
+.mk.all {
+	opacity: .55;
+}
+
+/* ===================================================== bottom bar */
+.bar {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 20;
+	height: 100px;
+	display: grid;
+	grid-template-columns: 1fr 1.3fr 1fr;
+	align-items: end;
+	padding: 8px 8px 8px;
+	background: var(--card);
+	border-top: 1px solid var(--line);
+	box-shadow: 0 -4px 14px rgba(0, 0, 0, .08);
+}
+
+.bcol {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	font-weight: 700;
+	text-align: center;
+	line-height: 16px;
+	min-width: 0;
+}
+
+.rb {
+	width: 48px;
+	height: 48px;
+	border-radius: 50%;
+	border: 1px solid var(--line-2);
+	background: var(--card);
+	display: grid;
+	place-items: center;
+}
+
+.rb.on {
+	background: var(--strong);
+	border-color: var(--strong);
+	color: #fff;
+}
+
+.mic {
+	width: 64px;
+	height: 64px;
+	border-radius: 50%;
+	background: var(--strong);
+	color: #fff;
+	display: grid;
+	place-items: center;
+	box-shadow: 0 0 0 5px var(--fill-2);
+}
+
+.mic.dis {
+	background: var(--fill);
+	color: var(--ink-3);
+	border: 2px dashed var(--line-2);
+	box-shadow: none;
+}
+
+.bcol .dis-l {
+	color: var(--ink-3);
+}
+
+/* A notice docked right above the bar: it explains the controls below it. */
+.dock {
+	position: absolute;
+	left: 8px;
+	right: 8px;
+	bottom: 108px;
+	z-index: 21;
+}
+
+/* ===================================================== notices + banner */
+.notice {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 4px 10px;
+	align-items: start;
+	padding: 10px 12px;
+	border: 1px solid var(--line-2);
+	border-left: 5px solid var(--ink);
+	border-radius: 10px;
+	background: var(--card);
+	font-size: 13.5px;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, .08);
+}
+
+.notice .t {
+	font-weight: 800;
+}
+
+.notice p {
+	margin: 0;
+}
+
+.notice .acts {
+	grid-column: 2;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 4px;
+}
+
+.banner {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	gap: 4px 10px;
+	align-items: start;
+	margin: 8px 0 4px;
+	padding: 10px 6px 10px 12px;
+	background: var(--card);
+	border: 2px solid var(--ink);
+	border-radius: 12px;
+	font-size: 13.5px;
+}
+
+.banner .t {
+	font-weight: 800;
+}
+
+.banner p {
+	margin: 0;
+}
+
+.banner .acts {
+	grid-column: 1 / -1;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+/* iPhone variants: the top band is kept free for the pointer to the host menu. */
+.banner.ptr {
+	grid-template-columns: auto 1fr;
+	padding-top: 38px;
+}
+
+.banner .xbtn {
+	width: 40px;
+	height: 40px;
+	margin: -8px -2px 0 0;
+	display: grid;
+	place-items: center;
+}
+
+.urlfield {
+	grid-column: 1 / -1;
+	display: block;
+	border: 2px solid var(--ink);
+	border-radius: 8px;
+	padding: 8px 10px;
+	background: var(--fill-2);
+	font: 700 14px/1.2 var(--sys);
+}
+
+.ok-line {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 800;
+}
+
+/* ===================================================== result card */
+.res {
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	padding: 14px 16px 14px;
+	margin-bottom: 12px;
+}
+
+.res-top {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+}
+
+.ring {
+	--v: 0%;
+	position: relative;
+	width: 68px;
+	height: 68px;
+	flex: none;
+	border-radius: 50%;
+	background: conic-gradient(var(--ink) var(--v), var(--fill-2) 0);
+	display: grid;
+	place-items: center;
+}
+
+.ring::before {
+	content: "";
+	position: absolute;
+	inset: 8px;
+	border-radius: 50%;
+	background: var(--card);
+}
+
+.ring b {
+	position: relative;
+	font-size: 19px;
+}
+
+.ring b small {
+	font-size: 11px;
+}
+
+.ring.lg {
+	width: 96px;
+	height: 96px;
+}
+
+.ring.lg::before {
+	inset: 10px;
+}
+
+.ring.lg b {
+	font-size: 26px;
+}
+
+.v100 {
+	--v: 100%;
+}
+
+.v79 {
+	--v: 79%;
+}
+
+.v74 {
+	--v: 74%;
+}
+
+.v47 {
+	--v: 47%;
+}
+
+.v8 {
+	--v: 8%;
+}
+
+.r-title {
+	font-size: 18px;
+	font-weight: 800;
+	margin: 0;
+}
+
+.r-mean {
+	font-size: 13.5px;
+	color: var(--ink-2);
+	margin: 2px 0 0;
+}
+
+.sub-h {
+	font-size: 12px;
+	font-weight: 800;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+	margin: 12px 0 6px;
+}
+
+.wchips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.wchip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	height: 36px;
+	padding: 0 12px;
+	border: 1px solid var(--line-2);
+	border-radius: 999px;
+	background: var(--card);
+	font-weight: 700;
+	font-size: 14px;
+}
+
+.wchip.on {
+	border: 2px solid var(--ink);
+	background: var(--fill-2);
+}
+
+.wchip .m {
+	font-weight: 900;
+}
+
+.detail {
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	padding: 10px 12px 12px;
+	margin-top: 8px;
+}
+
+.d-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.d-word {
+	font-size: 18px;
+	font-weight: 800;
+}
+
+.d-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.cell {
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 8px 10px;
+	background: var(--fill);
+	min-width: 0;
+}
+
+.cell .lab {
+	display: block;
+	font-size: 11.5px;
+	font-weight: 800;
+	letter-spacing: .05em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+.cell .ip {
+	display: block;
+	font-family: var(--ipa);
+	font-size: 18px;
+	line-height: 26px;
+	overflow-wrap: anywhere;
+}
+
+.cell .ip.none {
+	font-family: var(--sys);
+	font-size: 14px;
+	font-style: italic;
+	color: var(--ink-2);
+}
+
+.cell .act {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 32px;
+	font-weight: 800;
+	font-size: 13px;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.cell .act.dis {
+	color: var(--ink-3);
+	text-decoration: line-through;
+}
+
+.hintp {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 8px;
+	align-items: start;
+	font-size: 13.5px;
+}
+
+.hintp p {
+	margin: 0;
+}
+
+.res-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-top: 12px;
+	flex-wrap: wrap;
+}
+
+.heard {
+	font-size: 13px;
+	color: var(--ink-2);
+	margin: 8px 0 0;
+}
+
+.legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px 12px;
+	font-size: 12px;
+	color: var(--ink-2);
+	margin-top: 10px;
+	padding-top: 8px;
+	border-top: 1px solid var(--line-soft);
+}
+
+.legend b {
+	color: var(--ink);
+}
+
+.res-btns {
+	display: flex;
+	gap: 8px;
+	margin-top: 14px;
+}
+
+.res-btns .btn {
+	flex: 1;
+}
+
+.done-line {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin-top: 12px;
+	padding: 10px 12px;
+	border-radius: 10px;
+	background: var(--fill);
+	font-size: 13.5px;
+}
+
+/* ===================================================== sheet + dialog */
+.scrim {
+	position: absolute;
+	inset: 0;
+	background: var(--scrim);
+	z-index: 49;
+}
+
+.sheet {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 50;
+	max-height: 100%;
+	display: flex;
+	flex-direction: column;
+	background: var(--card);
+	border-radius: 18px 18px 0 0;
+	box-shadow: 0 -10px 30px rgba(0, 0, 0, .25);
+}
+
+.sheet.tall {
+	top: 24px;
+}
+
+/* Keyboard open: the sheet sits in the visual viewport above the keyboard. */
+.sheet.kbopen {
+	bottom: 270px;
+	max-height: 370px;
+}
+
+.sheet.kbopen .ta {
+	min-height: 72px;
+	max-height: 96px;
+	overflow: hidden;
+}
+
+.dlg {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 50;
+	width: 560px;
+	max-height: calc(100% - 64px);
+	display: flex;
+	flex-direction: column;
+	background: var(--card);
+	border-radius: 18px;
+	box-shadow: 0 24px 64px rgba(0, 0, 0, .3);
+}
+
+.sh-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 56px;
+	padding: 6px 4px 6px 16px;
+	border-bottom: 1px solid var(--line-soft);
+	flex: none;
+}
+
+.dot {
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: var(--fill-2);
+	border: 2px solid var(--line-2);
+	flex: none;
+}
+
+.dot.live {
+	background: var(--ink);
+	border-color: var(--ink);
+	box-shadow: 0 0 0 4px var(--fill-2);
+}
+
+.rec-lbl {
+	font-size: 11px;
+	font-weight: 900;
+	letter-spacing: .06em;
+}
+
+.sh-title {
+	flex: 1;
+	min-width: 0;
+	font-size: 17px;
+	font-weight: 800;
+	line-height: 1.25;
+	margin: 0;
+}
+
+.timer {
+	font-variant-numeric: tabular-nums;
+	font-weight: 800;
+	font-size: 14px;
+	background: var(--fill);
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	padding: 2px 9px;
+	white-space: nowrap;
+}
+
+.x {
+	width: 44px;
+	height: 44px;
+	display: grid;
+	place-items: center;
+	flex: none;
+}
+
+.sh-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: auto;
+	padding: 12px 16px 4px;
+}
+
+.sh-sent {
+	font-size: 19px;
+	line-height: 28px;
+	font-weight: 600;
+	margin: 4px 0 12px;
+	max-height: 224px;
+	overflow: auto;
+}
+
+.sh-sent.sm {
+	font-size: 17px;
+	line-height: 25px;
+}
+
+/* About 35% of a 568 px screen. */
+.p320 .sh-sent {
+	max-height: 199px;
+}
+
+.wave {
+	position: relative;
+	height: 96px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: var(--fill);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 3px;
+	overflow: hidden;
+	flex: none;
+}
+
+.wave i {
+	width: 4px;
+	border-radius: 2px;
+	background: var(--ink-2);
+}
+
+.wave.frozen i {
+	background: var(--line);
+}
+
+.wave .mid {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
+	border-top: 1px solid var(--line);
+}
+
+.h1 {
+	height: 3px;
+}
+
+.h2 {
+	height: 8px;
+}
+
+.h3 {
+	height: 14px;
+}
+
+.h4 {
+	height: 22px;
+}
+
+.h5 {
+	height: 32px;
+}
+
+.h6 {
+	height: 44px;
+}
+
+.h7 {
+	height: 56px;
+}
+
+.h8 {
+	height: 66px;
+}
+
+.h9 {
+	height: 76px;
+}
+
+.wave .ov {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	padding: 0 14px;
+	background: rgba(255, 255, 255, .86);
+	font-weight: 700;
+	text-align: center;
+	font-size: 13.5px;
+}
+
+.hint {
+	display: flex;
+	gap: 6px;
+	align-items: flex-start;
+	font-size: 14px;
+	color: var(--ink-2);
+	min-height: 42px;
+	margin: 10px 0 4px;
+}
+
+.hint.warn {
+	color: var(--ink);
+	font-weight: 800;
+}
+
+.msg {
+	margin: 4px 0 10px;
+	font-size: 14.5px;
+}
+
+.msg .lead {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	font-size: 16px;
+	font-weight: 800;
+	margin-bottom: 4px;
+}
+
+.steps {
+	margin: 6px 0 8px;
+	padding: 10px 12px 10px 30px;
+	background: var(--fill);
+	border-radius: 10px;
+	font-size: 14px;
+}
+
+.steps li {
+	margin: 4px 0;
+}
+
+.uibit {
+	display: inline-block;
+	border: 1px solid var(--ink-2);
+	border-radius: 4px;
+	padding: 0 4px;
+	font-weight: 800;
+	font-size: 12.5px;
+	background: var(--card);
+	white-space: nowrap;
+}
+
+.kept {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	font-weight: 700;
+	border: 1px dashed var(--line-2);
+	border-radius: 8px;
+	padding: 6px 10px;
+	margin: 0 0 8px;
+}
+
+.sh-acts {
+	display: flex;
+	gap: 8px;
+	padding: 10px 16px 14px;
+	border-top: 1px solid var(--line-soft);
+	flex: none;
+	flex-wrap: wrap;
+}
+
+.sh-acts .btn {
+	flex: 1;
+}
+
+/* The primary action gets more room, so labels never wrap inside a button. */
+.sh-acts .btn.pri,
+.sh-acts .btn.danger,
+.sh-acts .row2 .btn:first-child {
+	flex: 1.6;
+}
+
+.sh-acts .row2 {
+	display: flex;
+	gap: 8px;
+	width: 100%;
+}
+
+.sh-acts .row2 .btn {
+	flex: 1;
+}
+
+.ta {
+	display: block;
+	min-height: 132px;
+	border: 1px solid var(--line-2);
+	border-radius: 12px;
+	padding: 10px 12px;
+	font-size: 16px;
+	line-height: 1.45;
+	background: var(--card);
+	overflow-wrap: anywhere;
+}
+
+.ta.empty {
+	color: var(--ink-3);
+	font-style: italic;
+}
+
+.ta.err {
+	border: 2px solid var(--ink);
+}
+
+.ta.ro {
+	background: var(--fill);
+}
+
+.flab {
+	display: block;
+	font-weight: 800;
+	font-size: 14px;
+	margin: 2px 0 6px;
+}
+
+.counter {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px 10px;
+	font-size: 13px;
+	color: var(--ink-2);
+	margin: 6px 0;
+	font-variant-numeric: tabular-nums;
+}
+
+.counter .over {
+	font-weight: 900;
+	color: var(--ink);
+	text-decoration: underline;
+}
+
+.ferr {
+	display: flex;
+	gap: 6px;
+	align-items: flex-start;
+	font-weight: 700;
+	font-size: 13.5px;
+	margin: 4px 0;
+}
+
+/* ===================================================== coach + mic check */
+.spot {
+	position: absolute;
+	z-index: 55;
+	border-radius: 50%;
+	box-shadow: 0 0 0 1600px var(--dim);
+	outline: 3px dashed #fff;
+	outline-offset: 2px;
+}
+
+/* Positions match the bar of a 360 x 640 frame (bar top at 540 px). */
+.spot.s-listen {
+	left: 18px;
+	top: 556px;
+	width: 84px;
+	height: 80px;
+	border-radius: 16px;
+}
+
+.spot.s-mic {
+	left: 120px;
+	top: 538px;
+	width: 120px;
+	height: 98px;
+	border-radius: 18px;
+}
+
+.spot.s-card {
+	left: 8px;
+	top: 104px;
+	width: 344px;
+	height: 184px;
+	border-radius: 16px;
+}
+
+.callout {
+	position: absolute;
+	z-index: 56;
+	left: 12px;
+	right: 12px;
+	background: var(--card);
+	border-radius: 14px;
+	padding: 12px 14px;
+	border: 2px solid var(--ink);
+}
+
+.callout.above-bar {
+	bottom: 124px;
+}
+
+.callout.below-card {
+	top: 304px;
+}
+
+.callout .stepn {
+	font-size: 12px;
+	font-weight: 800;
+	color: var(--ink-3);
+}
+
+.callout h4 {
+	margin: 2px 0 4px;
+	font-size: 17px;
+}
+
+.callout p {
+	margin: 0 0 10px;
+}
+
+.callout .acts {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.callout .acts .sp {
+	flex: 1;
+}
+
+.pips {
+	display: inline-flex;
+	gap: 5px;
+}
+
+.pips i {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	border: 2px solid var(--ink-2);
+}
+
+.pips i.on {
+	background: var(--ink);
+	border-color: var(--ink);
+}
+
+.meter {
+	display: flex;
+	align-items: flex-end;
+	gap: 5px;
+	height: 64px;
+	padding: 8px 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: var(--fill);
+	margin: 8px 0;
+}
+
+.meter i {
+	flex: 1;
+	border-radius: 3px;
+	background: var(--fill-2);
+	border: 1px solid var(--line);
+	height: 100%;
+}
+
+.meter i.lit {
+	background: var(--ink-2);
+	border-color: var(--ink-2);
+}
+
+.meter.flat i.lit {
+	background: var(--line);
+}
+
+.bigcheck {
+	width: 56px;
+	height: 56px;
+	border-radius: 50%;
+	border: 3px solid var(--ink);
+	display: grid;
+	place-items: center;
+	margin: 6px auto 8px;
+	font-size: 30px;
+	font-weight: 900;
+}
+
+/* ===================================================== progress sheet */
+.stats {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 6px;
+	margin: 6px 0 4px;
+}
+
+.stat {
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	padding: 8px 6px;
+	text-align: center;
+	background: var(--fill);
+}
+
+.stat b {
+	display: block;
+	font-size: 22px;
+	line-height: 28px;
+}
+
+.stat span {
+	font-size: 12px;
+	color: var(--ink-2);
+}
+
+.week {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: 4px;
+	margin: 6px 0 2px;
+	text-align: center;
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--ink-2);
+}
+
+.week i {
+	display: grid;
+	place-items: center;
+	height: 30px;
+	margin-top: 2px;
+	border-radius: 50%;
+	border: 2px dashed var(--line-2);
+	font-style: normal;
+	font-weight: 900;
+	color: var(--ink);
+}
+
+.week i.done {
+	border-style: solid;
+	border-color: var(--ink);
+	background: var(--fill-2);
+}
+
+.week i.today {
+	outline: 2px solid var(--ink);
+	outline-offset: 2px;
+}
+
+.streak {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-weight: 800;
+	font-size: 15px;
+}
+
+.empty-ill {
+	text-align: center;
+	color: var(--ink-2);
+	padding: 8px 4px;
+}
+
+/* ===================================================== desktop */
+.d-hdr {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	height: 72px;
+	padding: 0 80px;
+	background: var(--card);
+	border-bottom: 1px solid var(--line-soft);
+}
+
+.d-hdr .mark {
+	width: 44px;
+	height: 44px;
+	border-radius: 12px;
+}
+
+.d-brand b {
+	display: block;
+	font-size: 19px;
+}
+
+.d-brand small {
+	color: var(--ink-2);
+	font-size: 13px;
+}
+
+.d-main {
+	display: grid;
+	grid-template-columns: 640px 1fr;
+	gap: 24px;
+	padding: 20px 80px 0;
+}
+
+.d-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+
+.d-row .sp,
+.d-hdr .sp {
+	flex: 1;
+}
+
+.d-card {
+	background: var(--card);
+	border: 1px solid var(--line);
+	border-radius: 18px;
+	padding: 20px 24px;
+}
+
+.d-card .sentence {
+	font-size: 28px;
+	line-height: 40px;
+}
+
+.ctrls {
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
+	align-items: end;
+	margin-top: 18px;
+	padding-top: 16px;
+	border-top: 1px solid var(--line-soft);
+}
+
+.ctrls .bcol {
+	font-size: 13px;
+}
+
+.ctrls .rb {
+	width: 56px;
+	height: 56px;
+}
+
+.ctrls .mic {
+	width: 88px;
+	height: 88px;
+}
+
+.placeholder {
+	border: 2px dashed var(--line-2);
+	border-radius: 18px;
+	padding: 20px 24px;
+	color: var(--ink-2);
+}
+
+.placeholder ol {
+	padding-left: 20px;
+}
+
+.d-foot {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	padding: 10px;
+	text-align: center;
+	font-size: 12px;
+	color: var(--ink-2);
+}
+
+.page-foot {
+	text-align: center;
+	font-size: 12px;
+	color: var(--ink-2);
+	padding: 8px 0;
+}
+
+.tips {
+	border: 1px dashed var(--line-2);
+	border-radius: 14px;
+	padding: 12px 14px;
+	margin-bottom: 12px;
+}
+
+.tips h4 {
+	margin: 0 0 4px;
+	font-size: 15px;
+}
+
+.tips ol {
+	margin: 0 0 8px;
+	padding-left: 20px;
+	font-size: 13.5px;
+	color: var(--ink-2);
+}
+
+.tips .acts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+/* A confirmation dialog on a phone: centred, 16 px from the edges. */
+.dlg.m {
+	width: calc(100% - 32px);
+	z-index: 70;
+}
+
+.scrim.top {
+	z-index: 69;
+}
+
+/* An inline example inside running text. */
+.ex {
+	font-size: 16px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.sep {
+	border: 0;
+	border-top: 1px solid var(--line-soft);
+	margin: 12px 0 4px;
+}
+
+/* In a legend the marks sit on the line, not raised. */
+.legend .mk,
+.legend-line .mk {
+	vertical-align: 1px;
+}

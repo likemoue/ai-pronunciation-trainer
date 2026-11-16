@@ -76,7 +76,8 @@ def _ensure_initialized(language):
 
 
 def sample(category: int, language: str) -> dict:
-    """Pick a random practice sentence. category: 0 = any, 1 = easy, 2 = medium, 3 = hard."""
+    """Pick a random practice sentence. category: 0 = any, 1 = easy, 2 = medium, 3 = hard.
+    The answer's category is the sentence's own level (1-3), also when 0 was asked for."""
     category = validation.category(category)
     _ensure_initialized(language)
     bank = _database_cache[language]
@@ -86,7 +87,10 @@ def sample(category: int, language: str) -> dict:
             'ipa_transcript': _ipa_converter_cache[language].convertToPhonem(sentence),
             'transcript_translation': '',
             # The reference voice for this sentence, as a cacheable MP3 (webApp.py).
-            'tts_url': f'/tts/{language}/{bank.keys[index]}.mp3'}
+            'tts_url': f'/tts/{language}/{bank.keys[index]}.mp3',
+            # The level the bank files the sentence under: the page pays a sentence
+            # of any level (0) at its own level's multiplier.
+            'category': getSentenceCategory(sentence)}
 
 
 def sentence_for_audio_key(language: str, key: str):
