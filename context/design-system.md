@@ -109,7 +109,7 @@ icon; success (link copied, progress deleted) = `--good-soft` + `--good` icon.
 | `--rec-glow` | `rgba(225, 29, 72, .35)` | `rgba(251, 113, 133, .35)` | Stop button shadow (1 use) |
 | `--surface-veil` | `rgba(255, 255, 255, .86)` | `rgba(23, 26, 46, .86)` | waveform overlay while checking (1 use) |
 | `--focus` (solid, §1.1) | | | the two focus outlines (2 uses) |
-| none | | | the three word-underline colours (3 uses): the plain status colour until the marks of §2.10 replace the underlines |
+| none | | | the three word-underline colours (3 uses): gone; the marks of §2.10 replaced the underlines |
 
 ### 1.5 Type
 

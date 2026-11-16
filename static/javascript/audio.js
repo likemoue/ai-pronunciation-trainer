@@ -61,11 +61,14 @@
         }
     }
 
-    // Hold every sound (on: stop what plays or loads, start nothing new) or
-    // let them play again.
+    // Hold every sound (on: stop what plays or loads, the chime too, and
+    // start nothing new) or let them play again.
     function hold(on) {
         held = Boolean(on);
-        if (held) stop();
+        if (held) {
+            stop();
+            stopChime();
+        }
     }
 
     // The end of the sound `mine` (if it is still the current one).
@@ -232,16 +235,37 @@
     }
 
     // The result chime is synthesised, so the page downloads no sound file:
-    // [frequency in Hz, start in s, length in s] for each note.
+    // [frequency in Hz, start in s, length in s] for each note. Which one
+    // follows the score's tier (design-system §3): good from 70, okay from
+    // 60, bad below and for another sentence.
     const FEEDBACK_NOTES = {
         good: [[784, 0, 0.14], [1047, 0.12, 0.28]], // G5 then C6, rising
         okay: [[659, 0, 0.24]], // E5
         bad: [[392, 0, 0.16], [330, 0.14, 0.3]], // G4 then E4, falling
     };
+    // A chime later than this after the score came belongs to nothing on
+    // the screen any more: it is skipped.
+    const CHIME_LATE_MS = 500;
+    let chimeNotes = [];
 
-    function chime(accuracy) {
-        if (held) return;
-        const notes = FEEDBACK_NOTES[accuracy >= 70 ? 'good' : accuracy >= 30 ? 'okay' : 'bad'];
+    function stopChime() {
+        const notes = chimeNotes;
+        chimeNotes = [];
+        notes.forEach((osc) => {
+            try {
+                osc.stop();
+            } catch (_) {
+                // Already over.
+            }
+        });
+    }
+
+    // chime(kind, { since }): kind 'good', 'okay' or 'bad'; since, when the
+    // score came (performance.now()). Never while the sound is held (a
+    // recording), nor on a hidden page.
+    function chime(kind, { since = performance.now() } = {}) {
+        const notes = FEEDBACK_NOTES[kind];
+        if (!notes || held || document.hidden) return;
         let ctx;
         try {
             ctx = getContext();
@@ -249,20 +273,31 @@
             console.warn('No audio for the feedback sound', err);
             return;
         }
-        const now = ctx.currentTime + 0.02;
-        notes.forEach(([frequency, start, length]) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = frequency;
-            // A soft bell: a quick rise, then an exponential fade.
-            gain.gain.setValueAtTime(0.0001, now + start);
-            gain.gain.exponentialRampToValueAtTime(0.18, now + start + 0.015);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + start + length);
-            osc.connect(gain).connect(ctx.destination);
-            osc.start(now + start);
-            osc.stop(now + start + length + 0.02);
-        });
+        const play = () => {
+            if (held || document.hidden || performance.now() - since > CHIME_LATE_MS) return;
+            const now = ctx.currentTime + 0.02;
+            notes.forEach(([frequency, start, length]) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = frequency;
+                // A soft bell: a quick rise, then an exponential fade.
+                gain.gain.setValueAtTime(0.0001, now + start);
+                gain.gain.exponentialRampToValueAtTime(0.18, now + start + 0.015);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + start + length);
+                osc.connect(gain).connect(ctx.destination);
+                osc.onended = () => {
+                    chimeNotes = chimeNotes.filter((note) => note !== osc);
+                };
+                chimeNotes.push(osc);
+                osc.start(now + start);
+                osc.stop(now + start + length + 0.02);
+            });
+        };
+        // A context the browser suspended plays once it runs again, if that
+        // is still in time.
+        if (ctx.state === 'running') play();
+        else Promise.resolve(ctx.resume()).then(play, () => {});
     }
 
     AIPT.audio = {

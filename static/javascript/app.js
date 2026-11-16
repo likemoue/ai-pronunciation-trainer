@@ -496,8 +496,9 @@
     AIPT.recorder.init({
         getText: () => state.text,
         fallbackFocus: els.btnRecord,
-        onResult: (data, buffer, text) => {
-            AIPT.result.render(data, { text, buffer });
+        // The score of the text on the card: a bank sentence or My text (state.mode).
+        onResult: (data, buffer, text, take) => {
+            AIPT.result.render(data, { ...take, text, buffer, source: state.mode });
             renderControls();
         },
     });

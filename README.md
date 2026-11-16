@@ -18,8 +18,12 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
   when the connection or the server fails, or the browser is offline, the recording stays on the page to send
   again. Each microphone problem says what to do: the steps to unblock it in the browser at hand, or, inside
   Zalo, Facebook or Messenger, how to open the page in Chrome or Safari.
-- **Feedback**: a score for the sentence, a colour for every letter, and for each word the reference IPA,
-  what was heard, and both sounds to compare (with slow playback).
+- **Feedback**: a score for the sentence in words (Excellent, Well done, Almost there, Keep practising, or "That
+  sounds like a different sentence"), the letters heard as written in one colour and the others bold and dotted,
+  a mark after each word marked Almost or Needs work, and the words to practise first. For each word: the
+  reference IPA with the server's voice reading it, what was heard with that part of the recording; for a word
+  heard with a typical mistake (an ending left out, "th" or "sh" said otherwise), what to fix and both words to
+  listen to.
 - **Reference voice**: [Piper](https://github.com/OHF-voice/piper1-gpl) with the public-domain LJ Speech voice
   (`en_US-ljspeech-medium`), synthesised on the server. Bank sentences come as MP3 files that browsers and
   Cloudflare cache; if the server has no voice, the browser's voice is used.

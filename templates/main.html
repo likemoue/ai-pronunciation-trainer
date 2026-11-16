@@ -38,8 +38,9 @@
 
 <body>
     <!-- Icons (fill: currentColor). The warning, info, offline, clock, refresh, copy, chevron, check,
-         microphone-off, open-in-new, lock, tune and more-vertical icons are Material Icons paths (Apache-2.0,
-         THIRD_PARTY_NOTICES.md). -->
+         microphone-off, open-in-new, lock, tune, more-vertical and lightbulb icons are Material Icons paths
+         (Apache-2.0, THIRD_PARTY_NOTICES.md). The three status marks (design-system §1.3: ✓ Correct, ~ Almost,
+         ✗ Needs work) are strokes of their own, so that every device draws the same mark: Inter has no ✗. -->
     <svg class="icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
         <symbol id="i-mic" viewBox="0 0 24 24">
             <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5.3-3a.75.75 0 0 1 1.5 0 6.8 6.8 0 0 1-6.05 6.76V20.5h2.5a.75.75 0 0 1 0 1.5h-6.5a.75.75 0 0 1 0-1.5h2.5v-2.74A6.8 6.8 0 0 1 5.2 11a.75.75 0 0 1 1.5 0 5.3 5.3 0 0 0 10.6 0Z" />
@@ -106,6 +107,18 @@
         </symbol>
         <symbol id="i-more-vert" viewBox="0 0 24 24">
             <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+        </symbol>
+        <symbol id="i-bulb" viewBox="0 0 24 24">
+            <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z" />
+        </symbol>
+        <symbol id="i-correct" viewBox="0 0 24 24">
+            <path d="M4 12.5l5 5L20 6.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-almost" viewBox="0 0 24 24">
+            <path d="M3 14.5C4.7 10.9 6.4 9.5 8.4 9.5C11.1 9.5 12.9 14.5 15.6 14.5C17.6 14.5 19.3 13.1 21 9.5" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-needs-work" viewBox="0 0 24 24">
+            <path d="M5.5 5.5l13 13M18.5 5.5l-13 13" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
         </symbol>
     </svg>
 
@@ -228,6 +241,8 @@
                 </section>
             </div>
 
+            <!-- The result (design/wireframes/03-result-card.html, C1-C7; design-system §2.10-2.13). result.js fills it
+                 and names its tier in data-tier: excellent, good, almost, keep or different. -->
             <section class="card result-card" id="resultCard" aria-label="{{ t['result.region'] }}" data-i18n-attr="aria-label:result.region" hidden>
                 <div class="result-head">
                     <div class="score-ring" id="scoreRing" aria-hidden="true">
@@ -243,37 +258,91 @@
                     </div>
                 </div>
 
+                <!-- The take was stopped at 30 s before the end of the text (02-recording-sheet.html, B4). -->
+                <p class="result-note" id="resultCutOff" hidden>
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-clock"></use></svg>
+                    <span data-i18n="result.cutOff">{{ t['result.cutOff'] }}</span>
+                </p>
+                <p class="done-line" id="resultDone" hidden>
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"></use></svg>
+                    <span data-i18n="result.done">{{ t['result.done'] }}</span>
+                </p>
+                <div class="practise" id="practise" hidden>
+                    <h3 class="result-sub" id="practiseTitle" data-i18n="result.practise">{{ t['result.practise'] }}</h3>
+                    <div class="word-chips" id="wordChips" role="group" aria-labelledby="practiseTitle"></div>
+                </div>
+
                 <div class="word-detail" id="wordDetail" hidden>
                     <div class="word-detail-head">
-                        <span class="word-detail-word" id="wdWord" lang="en"></span>
-                        <span class="badge" id="wdBadge"></span>
+                        <p class="word-detail-word" id="wdWord" lang="en"></p>
+                        <span class="badge" id="wdBadge"><svg class="icon" aria-hidden="true" focusable="false"><use id="wdBadgeIcon" href="#i-correct"></use></svg><span id="wdBadgeText"></span></span>
                     </div>
                     <div class="word-detail-grid">
-                        <button type="button" class="wd-cell" id="wdPlayRef">
+                        <div class="wd-cell">
                             <span class="wd-label" data-i18n="detail.correct">{{ t['detail.correct'] }}</span>
                             <span class="wd-ipa" id="wdRefIpa" lang="en"></span>
-                            <span class="wd-action"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-volume"></use></svg><span data-i18n="detail.listen">{{ t['detail.listen'] }}</span></span>
-                        </button>
-                        <button type="button" class="wd-cell" id="wdPlayHeard">
+                            <button type="button" class="wd-action play-btn" id="wdPlayRef" aria-pressed="false" data-state="idle">
+                                <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-volume"></use></svg>
+                                <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                <span class="spinner" aria-hidden="true"></span>
+                                <span data-i18n="detail.listen">{{ t['detail.listen'] }}</span>
+                            </button>
+                        </div>
+                        <div class="wd-cell">
                             <span class="wd-label" data-i18n="detail.heard">{{ t['detail.heard'] }}</span>
                             <span class="wd-ipa" id="wdHeardIpa"></span>
-                            <span class="wd-action"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-headphones"></use></svg><span data-i18n="detail.replay">{{ t['detail.replay'] }}</span></span>
-                        </button>
+                            <button type="button" class="wd-action play-btn" id="wdPlayHeard" aria-pressed="false" data-state="idle">
+                                <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-headphones"></use></svg>
+                                <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                <span class="spinner" aria-hidden="true"></span>
+                                <span data-i18n="detail.replay">{{ t['detail.replay'] }}</span>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- The typical-mistake hint (Q3, C3/C4): only on an Almost word whose mistake the server names. -->
+                    <div class="hint" id="wdHint" hidden>
+                        <svg class="icon hint-icon" aria-hidden="true" focusable="false"><use href="#i-bulb"></use></svg>
+                        <div class="hint-body">
+                            <p class="hint-lead" id="wdHintLead"></p>
+                            <p class="hint-tip" id="wdHintTip"></p>
+                            <div class="hint-actions">
+                                <button type="button" class="btn btn-secondary btn-sm play-btn" id="wdHintWord" aria-pressed="false" data-state="idle">
+                                    <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-volume"></use></svg>
+                                    <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                    <span class="spinner" aria-hidden="true"></span>
+                                    <span id="wdHintWordText" lang="en"></span>
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm play-btn" id="wdHintHeard" aria-pressed="false" data-state="idle">
+                                    <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-volume"></use></svg>
+                                    <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                                    <span class="spinner" aria-hidden="true"></span>
+                                    <span id="wdHintHeardText" lang="en"></span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="result-row">
-                    <button type="button" class="btn btn-secondary btn-sm" id="btnPlayback" aria-pressed="false">
-                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg>
+                    <button type="button" class="btn btn-secondary btn-sm play-btn" id="btnPlayback" aria-pressed="false" data-state="idle">
+                        <svg class="icon icon-idle" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg>
+                        <svg class="icon icon-active" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
+                        <span class="spinner" aria-hidden="true"></span>
                         <span data-i18n="result.myRecording">{{ t['result.myRecording'] }}</span>
                     </button>
                 </div>
                 <p class="result-heard" id="resultHeard"></p>
+                <button type="button" class="text-btn heard-more" id="btnHeardMore" aria-expanded="false" aria-controls="resultHeard" hidden>
+                    <span id="heardMoreLabel" data-i18n="result.heardMore">{{ t['result.heardMore'] }}</span>
+                </button>
 
+                <!-- The marks of the sentence (design-system §2.13): ~ Almost, ✗ Needs work, none for Correct, and
+                     the wrong letters. -->
                 <ul class="legend">
-                    <li><span class="dot dot-good" aria-hidden="true"></span><span data-i18n="status.correct">{{ t['status.correct'] }}</span></li>
-                    <li><span class="dot dot-ok" aria-hidden="true"></span><span data-i18n="status.almost">{{ t['status.almost'] }}</span></li>
-                    <li><span class="dot dot-bad" aria-hidden="true"></span><span data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></li>
+                    <li><span class="mark mark-1" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-almost"></use></svg></span><span data-i18n="status.almost">{{ t['status.almost'] }}</span></li>
+                    <li><span class="mark mark-2" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-needs-work"></use></svg></span><span data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></li>
+                    <li><span data-i18n="legend.noMark">{{ t['legend.noMark'] }}</span></li>
+                    <li><b class="legend-letters" lang="en" aria-hidden="true">ab</b><span data-i18n="legend.letters">{{ t['legend.letters'] }}</span></li>
                 </ul>
 
                 <!-- From 1024 px only: the eye ends here, far from the controls (design/wireframes/08-desktop.html, H2). -->
@@ -298,12 +367,12 @@
                 <ol class="tips narrow-only">
                     <li data-i18n-rich="how.step1">{% call(slot) rich('how.step1') %}<b data-slot="slow" data-i18n="card.slow">{{ t['card.slow'] }}</b>{% endcall %}</li>
                     <li data-i18n-rich="how.step2">{% call(slot) rich('how.step2') %}{% if slot == 'mic' %}<b data-slot="mic" data-i18n="how.mic">{{ t['how.mic'] }}</b>{% else %}<b data-slot="stop" data-i18n="controls.stop">{{ t['controls.stop'] }}</b>{% endif %}{% endcall %}</li>
-                    <li data-i18n-rich="how.step3">{% call(slot) rich('how.step3') %}{% if slot == 'almost' %}<b class="tips-mark" data-slot="almost"><span aria-hidden="true">~</span><span class="visually-hidden" data-i18n="status.almost">{{ t['status.almost'] }}</span></b>{% else %}<b class="tips-mark" data-slot="needsWork"><span aria-hidden="true">✗</span><span class="visually-hidden" data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></b>{% endif %}{% endcall %}</li>
+                    <li data-i18n-rich="how.step3">{% call(slot) rich('how.step3') %}{% if slot == 'almost' %}<b class="tips-mark" data-slot="almost"><span class="mark mark-1" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-almost"></use></svg></span><span class="visually-hidden" data-i18n="status.almost">{{ t['status.almost'] }}</span></b>{% else %}<b class="tips-mark" data-slot="needsWork"><span class="mark mark-2" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-needs-work"></use></svg></span><span class="visually-hidden" data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></b>{% endif %}{% endcall %}</li>
                 </ol>
                 <ol class="tips wide-only">
                     <li data-i18n="how.step1Wide">{{ t['how.step1Wide'] }}</li>
                     <li data-i18n-rich="how.step2Wide">{% call(slot) rich('how.step2Wide') %}<kbd data-slot="space" data-i18n="controls.space">{{ t['controls.space'] }}</kbd>{% endcall %}</li>
-                    <li data-i18n-rich="how.step3Wide">{% call(slot) rich('how.step3Wide') %}{% if slot == 'almost' %}<b class="tips-mark" data-slot="almost"><span aria-hidden="true">~</span><span class="visually-hidden" data-i18n="status.almost">{{ t['status.almost'] }}</span></b>{% else %}<b class="tips-mark" data-slot="needsWork"><span aria-hidden="true">✗</span><span class="visually-hidden" data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></b>{% endif %}{% endcall %}</li>
+                    <li data-i18n-rich="how.step3Wide">{% call(slot) rich('how.step3Wide') %}{% if slot == 'almost' %}<b class="tips-mark" data-slot="almost"><span class="mark mark-1" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-almost"></use></svg></span><span class="visually-hidden" data-i18n="status.almost">{{ t['status.almost'] }}</span></b>{% else %}<b class="tips-mark" data-slot="needsWork"><span class="mark mark-2" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-needs-work"></use></svg></span><span class="visually-hidden" data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></b>{% endif %}{% endcall %}</li>
                 </ol>
             </section>
         </main>

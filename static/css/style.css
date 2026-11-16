@@ -1676,9 +1676,11 @@ kbd {
 	box-shadow: var(--shadow);
 }
 
-/* ============ Result ============ */
-/* Kept working in its new place; the next steps of phase 4 rebuild it
-   (design/wireframes/03-result-card.html). */
+/* ============ Result card (design/wireframes/03-result-card.html, design-system §2.10-2.13) ============ */
+/* In order: the ring with the title and what the number means, a note when the
+   take stopped at 30 s, a "done" line or the words to practise, the detail of
+   one word, My recording, what was heard, the legend; from 1024 px Try again
+   and Next sentence. The card names its tier in data-tier (result.js). */
 .result-head {
 	display: flex;
 	align-items: center;
@@ -1693,6 +1695,7 @@ kbd {
 	margin: 0;
 	font-size: 18px;
 	font-weight: 700;
+	line-height: 1.25;
 }
 
 .result-meaning {
@@ -1701,6 +1704,9 @@ kbd {
 	color: var(--text-2);
 }
 
+/* The score ring (§2.12): the arc in the tier's colour (§3: Correct from 70,
+   Almost 60-69, Needs work below and for another sentence); it fills in
+   900 ms, at once under reduced motion. */
 .score-ring {
 	--color: var(--good);
 	--value: 0;
@@ -1708,6 +1714,15 @@ kbd {
 	flex: none;
 	width: 68px;
 	height: 68px;
+}
+
+.result-card[data-tier="almost"] .score-ring {
+	--color: var(--ok);
+}
+
+.result-card[data-tier="keep"] .score-ring,
+.result-card[data-tier="different"] .score-ring {
+	--color: var(--bad);
 }
 
 .score-ring svg {
@@ -1750,60 +1765,123 @@ kbd {
 	color: var(--text-3);
 }
 
-.score-ring.tier-ok {
-	--color: var(--ok);
+/* A take stopped at 30 s (warning family), and nothing to practise (success
+   family): icon and text, never colour alone. */
+.result-note,
+.done-line {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 16px 0 0;
+	padding: 8px 12px;
+	border-radius: var(--radius-sm);
+	font-size: 14px;
+	line-height: 1.45;
 }
 
-.score-ring.tier-bad {
-	--color: var(--bad);
+.result-note .icon,
+.done-line .icon {
+	width: 20px;
+	height: 20px;
 }
 
-/* Words after a result. The status underline goes when the marks of
-   design-system §2.10 replace it. */
-.word {
-	display: inline;
-	margin: 0;
-	padding: 0 1px;
-	border: 0;
-	border-radius: 6px;
-	background: none;
-	font: inherit;
-	letter-spacing: inherit;
-	cursor: pointer;
-	text-decoration-line: underline;
-	text-decoration-thickness: 3px;
-	text-decoration-color: transparent;
-	text-underline-offset: 6px;
+.result-note {
+	background: var(--ok-soft);
 }
 
-.word:hover,
-.word.is-selected {
-	background: var(--primary-soft);
+.result-note .icon {
+	color: var(--ok-strong);
 }
 
-.word.cat-0 {
-	text-decoration-color: var(--good);
+.done-line {
+	background: var(--good-soft);
 }
 
-.word.cat-1 {
-	text-decoration-color: var(--ok);
-}
-
-.word.cat-2 {
-	text-decoration-color: var(--bad);
-}
-
-.l-good {
+.done-line .icon {
 	color: var(--good);
 }
 
-.l-bad {
+.result-note+.done-line {
+	margin-top: 8px;
+}
+
+/* Words to practise (§2.13): at most 4 chips, then "+N more". 36 px to see,
+   44 px to tap; the rows are 8 px apart, so the extensions never overlap. */
+.result-sub {
+	margin: 16px 0 8px;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	text-transform: uppercase;
+	letter-spacing: .08em;
+	color: var(--text-3);
+}
+
+.word-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.word-chip {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	max-width: 100%;
+	min-height: 36px;
+	padding: 4px 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--text);
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.word-chip::before {
+	content: "";
+	position: absolute;
+	inset: -4px 0;
+}
+
+.word-chip:hover {
+	border-color: var(--primary);
+}
+
+/* The selected word's chip: a 2 px edge as well as the tint. */
+.word-chip[aria-pressed="true"] {
+	padding: 3px 11px;
+	border: 2px solid var(--primary);
+	background: var(--primary-soft);
+}
+
+.word-chip-more {
+	color: var(--primary);
+	font-weight: 700;
+}
+
+.chip-mark {
+	width: 14px;
+	height: 14px;
+}
+
+.chip-mark-1 {
+	color: var(--ok);
+}
+
+.chip-mark-2 {
 	color: var(--bad);
 }
 
+/* The detail of one word: its badge, Correct IPA + Listen | Heard IPA +
+   Replay, and the typical-mistake hint. */
 .word-detail {
-	margin-top: 16px;
-	padding: 16px;
+	margin-top: 12px;
+	padding: 12px;
 	border: 1px solid var(--border);
 	border-radius: var(--radius-sm);
 	animation: fadeUp .18s ease-out;
@@ -1811,91 +1889,122 @@ kbd {
 
 .word-detail-head {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: 8px;
-	margin-bottom: 12px;
+	gap: 4px 8px;
 }
 
 .word-detail-word {
+	margin: 0;
 	font-size: 18px;
 	font-weight: 700;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
 }
 
+/* Badges (§2.11): a pill with the mark and the status in words. */
 .badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	padding: 2px 8px;
 	border-radius: 999px;
 	font-size: 12px;
 	font-weight: 700;
+	line-height: 1.5;
 	white-space: nowrap;
 }
 
-.badge.cat-0 {
+.badge .icon {
+	width: 12px;
+	height: 12px;
+}
+
+.badge-0 {
 	background: var(--good-soft);
 	color: var(--good);
 }
 
-.badge.cat-1 {
+.badge-1 {
 	background: var(--ok-soft);
 	color: var(--ok-strong);
 }
 
-.badge.cat-2 {
+.badge-2 {
 	background: var(--bad-soft);
 	color: var(--bad);
 }
 
+/* Two cells side by side at every width: the longest Vietnamese labels fit at
+   360 px (wireframes C4). */
 .word-detail-grid {
 	display: grid;
-	grid-template-columns: 1fr 1fr;
-	gap: 12px;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 8px;
+	margin-top: 12px;
 }
 
 .wd-cell {
-	display: grid;
-	gap: 2px;
-	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	min-width: 0;
+	padding: 8px 12px 4px;
 	border: 1px solid var(--border);
 	border-radius: var(--radius-xs);
 	background: var(--surface-2);
-	text-align: left;
-	cursor: pointer;
-}
-
-.wd-cell:hover:not(:disabled) {
-	border-color: var(--primary);
-}
-
-.wd-cell:disabled {
-	border-color: var(--border-strong);
-	border-style: dashed;
-	color: var(--text-3);
-	cursor: not-allowed;
 }
 
 .wd-label {
 	font-size: 12px;
-	font-weight: 600;
+	font-weight: 700;
+	line-height: 1.5;
 	text-transform: uppercase;
 	letter-spacing: .06em;
 	color: var(--text-3);
 }
 
 .wd-ipa {
+	max-width: 100%;
 	font-family: var(--font-ipa);
 	font-size: 16px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
 }
 
+/* "not heard": in words, not IPA. */
+.wd-ipa.is-none {
+	font-family: var(--font);
+	font-size: 14px;
+	font-style: italic;
+	color: var(--text-2);
+}
+
+/* Listen and Replay: underlined text buttons, 36 px to see and 44 px to tap. */
 .wd-action {
+	position: relative;
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
-	font-size: 13px;
-	font-weight: 600;
+	min-height: 36px;
+	margin: 0 -8px;
+	padding: 4px 8px;
+	border: 0;
+	border-radius: var(--radius-xs);
+	background: none;
 	color: var(--primary);
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1.25;
+	text-decoration-line: underline;
+	text-underline-offset: 3px;
+	cursor: pointer;
 }
 
-.wd-cell:disabled .wd-action {
-	color: var(--text-3);
+.wd-action::before {
+	content: "";
+	position: absolute;
+	inset: -4px 0;
 }
 
 .wd-action .icon {
@@ -1903,7 +2012,102 @@ kbd {
 	height: 16px;
 }
 
+.wd-action:hover:not([aria-disabled="true"]),
+.wd-action[aria-pressed="true"] {
+	background: var(--primary-soft);
+}
+
+/* A word not heard has nothing to replay (C5): struck through, the label of
+   disabled controls (§2.2), never faded. */
+.wd-action[aria-disabled="true"] {
+	color: var(--text-3);
+	text-decoration-line: line-through;
+	cursor: not-allowed;
+}
+
+/* The typical-mistake hint (Q3, wireframes C3/C4): info family. */
+.hint {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 8px;
+	margin-top: 12px;
+	padding: 12px;
+	border-radius: var(--radius-sm);
+	background: var(--primary-soft);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+.hint-icon {
+	width: 20px;
+	height: 20px;
+	color: var(--primary);
+}
+
+.hint-body {
+	min-width: 0;
+}
+
+.hint-lead {
+	margin: 0;
+	font-weight: 700;
+	overflow-wrap: anywhere;
+}
+
+.hint-tip {
+	margin: 4px 0 0;
+	color: var(--text-2);
+}
+
+.hint-tip b {
+	color: var(--text);
+}
+
+.hint-ipa {
+	font-family: var(--font-ipa);
+	font-weight: 500;
+}
+
+.hint-arrow .icon {
+	width: 14px;
+	height: 14px;
+	vertical-align: -2px;
+}
+
+.hint-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+/* A button that plays a sound (§2.3): a spinner while it loads, Stop while
+   it plays (aria-pressed). */
+.play-btn .icon-active,
+.play-btn .spinner {
+	display: none;
+}
+
+.play-btn[data-state="loading"] .icon-idle,
+.play-btn[data-state="playing"] .icon-idle {
+	display: none;
+}
+
+.play-btn[data-state="loading"] .spinner,
+.play-btn[data-state="playing"] .icon-active {
+	display: block;
+}
+
+.play-btn .spinner {
+	width: 16px;
+	height: 16px;
+	border-width: 2px;
+}
+
 .result-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
 	margin-top: 16px;
 }
 
@@ -1913,6 +2117,7 @@ kbd {
 	color: var(--primary);
 }
 
+/* "Heard: “…”", cut after 3 lines, with "more" (C7). */
 .result-heard {
 	margin: 12px 0 0;
 	font-size: 14px;
@@ -1921,10 +2126,19 @@ kbd {
 	overflow-wrap: anywhere;
 }
 
-.result-heard:empty {
-	display: none;
+.result-heard.is-clamped {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
 }
 
+.heard-more {
+	margin: 0 0 0 -8px;
+}
+
+/* The legend (§2.13): the marks as in the sentence, no mark for Correct, and
+   the wrong letters. */
 .legend {
 	display: flex;
 	flex-wrap: wrap;
@@ -1934,7 +2148,8 @@ kbd {
 	border-top: 1px solid var(--border);
 	list-style: none;
 	font-size: 12px;
-	color: var(--text-3);
+	line-height: 1.5;
+	color: var(--text-2);
 }
 
 .legend li {
@@ -1943,22 +2158,19 @@ kbd {
 	gap: 4px;
 }
 
-.dot {
-	width: 10px;
-	height: 10px;
-	border-radius: 50%;
+.legend .mark {
+	margin: 0;
+	vertical-align: middle;
 }
 
-.dot-good {
-	background: var(--good);
-}
-
-.dot-ok {
-	background: var(--ok);
-}
-
-.dot-bad {
-	background: var(--bad);
+.legend-letters {
+	font-size: 14px;
+	line-height: 1.25;
+	color: var(--bad);
+	text-decoration-line: underline;
+	text-decoration-style: dotted;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 4px;
 }
 
 .result-actions {
@@ -1974,6 +2186,78 @@ kbd {
 
 .result-actions .btn-primary {
 	flex-grow: 1.6;
+}
+
+/* ============ Words and letters after a result (§2.10) ============ */
+/* Each word is a button. Letters heard as written: the Correct colour, 500.
+   Letters not: bold, red, a 2 px dotted underline 4 px below. Almost and
+   Needs-work words end with a boxed mark; Correct words have none (Q2). The
+   word, its mark and its punctuation never break apart (.wg), and the mark
+   never makes a line taller: its box is set on the text's top edge, inside the
+   line. A button's box is as tall as the line (at least 24 px from 18 px);
+   its 2 px of side padding are taken back by its margins, so the words keep
+   the places they had before the result and only the marks take room. */
+.wg {
+	white-space: nowrap;
+}
+
+.w {
+	max-width: 100%;
+	margin: 0 -2px;
+	padding: 0 2px;
+	border: 0;
+	border-radius: 6px;
+	background: none;
+	color: var(--good);
+	font: inherit;
+	letter-spacing: inherit;
+	line-height: inherit;
+	text-align: inherit;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	vertical-align: baseline;
+	cursor: pointer;
+}
+
+.w:hover,
+.w.is-selected {
+	background: var(--primary-soft);
+}
+
+.wl {
+	color: var(--bad);
+	font-weight: 700;
+	text-decoration-line: underline;
+	text-decoration-style: dotted;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 4px;
+}
+
+/* The boxed mark: ~ Almost, ✗ Needs work (the sprite's own strokes). Also in
+   the legend and in How it works. */
+.mark {
+	display: inline-grid;
+	place-items: center;
+	width: 15px;
+	height: 15px;
+	margin-left: 2px;
+	border: 1.5px solid currentColor;
+	border-radius: 4px;
+	line-height: 1;
+	vertical-align: text-top;
+}
+
+.mark .icon {
+	width: 9px;
+	height: 9px;
+}
+
+.mark-1 {
+	color: var(--ok);
+}
+
+.mark-2 {
+	color: var(--bad);
 }
 
 /* ============ How it works ============ */
@@ -2002,8 +2286,13 @@ kbd {
 	color: var(--text);
 }
 
+/* The marks of the result, boxed as in the sentence and the legend. */
 .tips-mark {
 	padding: 0 2px;
+}
+
+.tips-mark .mark {
+	margin: 0;
 }
 
 .wide-only {
@@ -2080,12 +2369,6 @@ kbd {
 
 	.levels {
 		gap: 4px;
-	}
-}
-
-@media (max-width: 767.98px) {
-	.word-detail-grid {
-		grid-template-columns: 1fr;
 	}
 }
 

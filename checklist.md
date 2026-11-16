@@ -38,9 +38,13 @@ in English and Vietnamese, light and dark.
       site's settings opens the sheet on the steps at once; turning a tablet redraws the state (tap or click).
 - [ ] Result: ring and title by tier (90/70/60; Excellent, Well done, Almost there, Keep practising), the meaning
       line, "Words to practise" (at most 4, "+N more"), the worst word opened, the word detail (Correct and Heard
-      IPA, Listen and Replay; "not heard" disables Replay), My recording, the "Heard" line, the legend; ~ and ✗ marks
-      only on Almost and Needs-work words; wrong letters bold and dotted; fewer than 35% of the words heard gives
-      "That sounds like a different sentence"; the chime by tier; on desktop Try again and Next sentence on the card.
+      IPA, Listen and Replay; "not heard" disables Replay), My recording, the "Heard" line (3 lines, then "more"),
+      the legend; ~ and ✗ marks only on Almost and Needs-work words, and the sentence's line height unchanged by
+      them; wrong letters bold and dotted; fewer than 35% of the words heard gives "That sounds like a different
+      sentence" (no chips); the chime by tier (70/60), none when the score comes late or a recording starts; on
+      desktop Try again and Next sentence on the card. Focus goes to the result's title and one sentence is
+      announced ("Score 79%. 3 words to practise: written, three, books.").
+- [ ] A text read past 30 s: the take stops by itself and the result says the end was not recorded.
 - [ ] Typical mistakes: "book" for "books", "tree" for "three", "sip" for "ship" give an Almost word whose detail
       says what to fix, with Listen buttons for both words (EN and VI).
 - [ ] My text: the counters count the text as the server will (300 characters, 60 words), the reading time and

@@ -137,6 +137,7 @@
         lastLoudAt: 0,
         warning: '', // 'quiet' (B3), 'ending' (B4) or ''
         endingSeconds: 0,
+        hitLimit: false, // stopped by itself at 30 s: the result says when the end was not heard (B4)
         ticker: 0,
         sampler: 0,
         raf: 0,
@@ -153,6 +154,7 @@
         busyUntil: 0,
         busyShown: 0,
         busyTimer: 0,
+        answeredAt: 0, // when the score came (performance.now()): the result's chime is not played late
         // Copy link (in-app)
         copied: false,
         copyRefused: false,
@@ -300,6 +302,7 @@
         take.maxRms = 0;
         take.samples = 0;
         take.warning = '';
+        take.hitLimit = false;
         setTimer(0);
         enter('recording');
         take.ticker = setInterval(() => transition(attempt, 'tick'), 250);
@@ -329,7 +332,10 @@
         const elapsed = (now - take.startedAt) / 1000;
         setTimer(elapsed);
         const remaining = MAX_SECONDS - elapsed;
-        if (remaining <= 0) return stopRecording();
+        if (remaining <= 0) {
+            take.hitLimit = true;
+            return stopRecording();
+        }
         let warning = '';
         if (remaining <= ENDING_SECONDS) warning = 'ending';
         else if (take.samples > 0 && now - take.lastLoudAt > QUIET_MS) warning = 'quiet';
@@ -453,6 +459,7 @@
         }
         const attempt = take.attempt;
         take.phase = 'scored';
+        take.answeredAt = performance.now();
         Promise.resolve(take.decoded).then((buffer) => transition(attempt, 'scored', { data, buffer }));
         return true;
     }
@@ -461,8 +468,9 @@
     function scored({ data, buffer }) {
         if (take.phase !== 'scored') return false;
         const text = take.text;
+        const about = { hitLimit: take.hitLimit, answeredAt: take.answeredAt };
         close({ restoreFocus: false });
-        options.onResult(data, buffer, text);
+        options.onResult(data, buffer, text, about);
         return true;
     }
 
@@ -675,6 +683,8 @@
         take.slow = false;
         take.busyCount = 0;
         take.samples = 0;
+        take.hitLimit = false;
+        take.answeredAt = 0;
         take.copied = false;
         take.copyRefused = false;
         take.waitingVisible = false;
@@ -1258,8 +1268,10 @@
     watchPermission();
 
     AIPT.recorder = {
-        // getText() gives the sentence to read; onResult(data, buffer, text)
-        // gets the score after the sheet has closed (focus is the caller's);
+        // getText() gives the sentence to read; onResult(data, buffer, text,
+        // { hitLimit, answeredAt }) gets the score after the sheet has closed
+        // (focus is the caller's): hitLimit when the take stopped by itself at
+        // 30 s, answeredAt when the answer came (performance.now()).
         // fallbackFocus takes focus when the sheet closes and its opener is gone.
         init(given) {
             options = { ...options, ...given };
