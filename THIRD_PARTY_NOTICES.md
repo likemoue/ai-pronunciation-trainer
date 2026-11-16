@@ -76,7 +76,7 @@ and onnxruntime (MIT), whose `LICENSE` and `ThirdPartyNotices.txt` are in `site-
 | Debian 13 packages in the base image | Various free licences; see `/usr/share/doc/*/copyright` in the image |
 | FFmpeg 7.1.5 (Debian package `ffmpeg`, built with `--enable-gpl`) and the libraries it pulls in | GPL-2.0-or-later as built; see `/usr/share/doc/ffmpeg/copyright` |
 | Caddy 2.11.9 (the proxy container on the server, not in the app image) | Apache-2.0 |
-| Fonts Inter (latin and latin-ext subsets) and Noto Sans (latin, latin-ext and greek, for the IPA's θ), as Google Fonts serves them, in `static/fonts` and served by the app | SIL Open Font License 1.1 (`static/fonts/OFL-Inter.txt`, `OFL-NotoSans.txt`) |
+| Fonts Inter 4.001 (latin, latin-ext and vietnamese subsets: the variable wght files of `@fontsource-variable/inter` 5.3.0) and Noto Sans (latin, latin-ext and greek, for the IPA's θ), subset as Google Fonts serves them, in `static/fonts` and served by the app | SIL Open Font License 1.1 (`static/fonts/OFL-Inter.txt`, `OFL-NotoSans.txt`) |
 
 The GPL-licensed parts (piper-tts, eSpeak NG, FFmpeg, and the FFmpeg libraries inside PyAV) run in the same image as the AGPL-3.0 app. GPLv3 section 13
 and AGPLv3 section 13 allow combining the two; each part keeps its own licence. The source of every Python package

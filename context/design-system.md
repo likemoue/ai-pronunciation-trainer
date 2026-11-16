@@ -1,15 +1,16 @@
 # Design system: AI Pronunciation Trainer
 
 > **Approved by the user on 2026-11-16**, together with the wireframes in `design/wireframes/` (start at
-> `index.html`). Nothing in `static/` follows it yet: phase 4 applies it.
+> `index.html`). Phase 4 applies it: its first step put the tokens of §1, the type and spacing scales and the
+> fallbacks of §6 into `static/css/style.css`; the components of §2 follow.
 >
 > Decisions taken with it (2026-11-16): **Q1** the page follows the server's thresholds (§3), no scoring change;
 > **Q2** marks only on Almost and Needs-work words (§2.10); **Q3** the typical-mistake hint is part of phase 4
 > (§2.13); **Q4** Correct is teal-green `#0f766e`, with red `#b91c1c` for Needs work (§1.3).
 
 - **Source of truth:** `static/css/style.css` (the `:root` tokens and the `prefers-color-scheme: dark` block). When
-  this file and the CSS disagree, trust the CSS and fix this file. Phase 4 adds the new tokens to the CSS before any
-  component uses them.
+  this file and the CSS disagree, trust the CSS and fix this file. Every token of §1 is in the CSS, also those no
+  component uses yet.
 - **Look:** today's page, codified: Inter, an indigo primary, rounded cards, soft shadows, light and dark themes. No
   design generator was used. What changes: AA contrast everywhere, a status palette that survives colour blindness,
   and no signal carried by colour alone.
@@ -72,7 +73,7 @@ Only these colours mean a status. A new status gets a row here before any compon
 | Status (API code) | Mark | EN | VI | Text, light | Soft bg, light | Text, dark | Soft bg, dark | Cue without colour |
 |---|---|---|---|---|---|---|---|---|
 | Correct (`0`) | ✓ | Correct | Đúng | `--good` `#0f766e` | `--good-soft` `#e3f7ec` | `#2dd4bf` | `#12352a` | no mark in the sentence (Q2); ✓ in badge, legend, accessible name |
-| Almost (`1`) | ~ | Almost | Gần đúng | `--ok` `#b45309`; on soft bg `--ok-strong` `#92400e` | `--ok-soft` `#fdf1dc` | `#fbbf24` | `#3a2e12` | boxed ~ after the word |
+| Almost (`1`) | ~ | Almost | Gần đúng | `--ok` `#b45309`; on soft bg `--ok-strong` `#92400e` | `--ok-soft` `#fdf1dc` | `#fbbf24` (`--ok` and `--ok-strong`) | `#3a2e12` | boxed ~ after the word |
 | Needs work (`2`) | ✗ | Needs work | Cần luyện | `--bad` `#b91c1c` | `--bad-soft` `#fde6e6` | `#f87171` | `#3d1a1d` | boxed ✗ after the word |
 | Wrong letter (`is_letter_correct` 0) | | | | `--bad` | | `--bad` | | weight 700 + 2 px dotted underline |
 | Recording | ● | Recording | Đang ghi âm | `--rec` | | `--rec` | | "REC" next to the dot; the timer runs |
@@ -98,39 +99,43 @@ icon; success (link copied, progress deleted) = `--good-soft` + `--good` icon.
 
 ### 1.4 Alpha tokens: the end of `color-mix()`
 
-`style.css` has 13 `color-mix()` declarations. Each is replaced by a precomputed token, one value per theme:
+`style.css` had 13 `color-mix()` declarations. Each was replaced by a precomputed token, one value per theme:
 
 | Token | Light | Dark | Replaces |
 |---|---|---|---|
-| `--primary-glow` | `rgba(79, 70, 229, .35)` | `rgba(129, 140, 248, .35)` | shadows of the brand mark, the mic and primary buttons; the mic's pulse ring (5 uses) |
-| `--primary-tint` | `rgba(79, 70, 229, .18)` | `rgba(129, 140, 248, .24)` | spinner track, text-field halo if one is kept (2 uses) |
+| `--primary-glow` | `rgba(79, 70, 229, .35)` | `rgba(129, 140, 248, .35)` | shadows of the brand mark, the mic and primary buttons; the mic's pulse ring (4 uses) |
+| `--primary-tint` | `rgba(79, 70, 229, .18)` | `rgba(129, 140, 248, .24)` | spinner track (1 use); the text field's halo is gone, it has the `--focus` outline |
 | `--rec-glow` | `rgba(225, 29, 72, .35)` | `rgba(251, 113, 133, .35)` | Stop button shadow (1 use) |
 | `--surface-veil` | `rgba(255, 255, 255, .86)` | `rgba(23, 26, 46, .86)` | waveform overlay while checking (1 use) |
 | `--focus` (solid, §1.1) | | | the two focus outlines (2 uses) |
-| none | | | the three word-underline colours: the marks of §2.10 replace them (3 uses) |
+| none | | | the three word-underline colours (3 uses): the plain status colour until the marks of §2.10 replace the underlines |
 
 ### 1.5 Type
 
 - **Fonts:** Inter 400-700 for the interface, Noto Sans 400-500 for IPA, both served by the app (OFL).
-  **Add Inter's Vietnamese subset** (U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1,
-  U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB; about 10 KB): today's
-  two Inter files skip U+1EA0-1EF1, so "ạ ố ữ" would come from another font. `tests/test_static.py` counts 5 font
-  files; it becomes 6.
+  Inter's three subsets are the wght files of `@fontsource-variable/inter` 5.3.0 (Inter 4.001): latin, latin-ext
+  and **vietnamese** (`inter-vietnamese.woff2`, 10 KB; U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169,
+  U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB). The other
+  two skip U+1EA0-1EF1, so "ạ ố ữ" came from another font before. The vietnamese `@font-face` comes after
+  latin-ext: where ranges overlap, the browser tries the face defined last first, so ă đ ơ ư come from the 10 KB
+  file too and Vietnamese text loads only the latin and vietnamese files. Six font files; `tests/test_static.py`
+  counts them.
 - **Sizes (px), only these:** 12 caption (eyebrow, badge, legend, bar labels) · 13 small (counter, notes) · 14
   secondary (hint, chip, notice) · 16 body, buttons, inputs, IPA · 18 titles (sheet, result, detail word; the score
   in the phone ring; a sentence over 20 words on phones) · 22 the sentence on phones · 28 the sentence on desktop,
-  the score in the desktop ring. Today's 11, 15, 19, 20 and 30 go.
+  the score in the desktop ring. The sizes 11, 15, 19, 20 and 30 used before phase 4 are gone.
 - **Weights:** 400 body · 500 the sentence after a result · 600 the sentence, labels · 700 titles, buttons, wrong
-  letters. The served Inter stops at 700.
+  letters. Inter stops at 700: the `@font-face` rules declare 400-700 (the files hold the whole 100-900 axis).
 - **Line height:** 1.5 body, 1.45 the sentence; text never sits in a fixed-height box.
 - **Numbers:** `font-variant-numeric: tabular-nums` for scores, timers and counters.
 - Inputs are at least 16 px (iOS zooms below that).
 
 ### 1.6 Spacing
 
-A 4 px scale: 4, 8, 12, 16, 20, 24, 32, 40, 48. Today's off-scale values move to the nearest step (6 → 4 or 8,
-10 → 8 or 12, 14 → 12 or 16, 18 → 16 or 20, 22 → 20 or 24, 26 → 24). Borders (1-2 px) and the 3 px focus outline
-are not spacing.
+A 4 px scale: 4, 8, 12, 16, 20, 24, 32, 40, 48. Off-scale values used before phase 4 moved to the nearest step
+(6 → 4 or 8, 10 → 8 or 12, 14 → 12 or 16, 18 → 16 or 20, 22 → 20 or 24, 26 → 24). Borders (1-2 px), the 3 px
+focus outline and optical nudges of 1-2 px (a word's side padding, the vertical padding of badges and the timer,
+the gap inside a word-detail cell) are not spacing.
 
 ### 1.7 Radii
 
@@ -144,11 +149,12 @@ are not spacing.
 
 ### 1.8 Shadows and layers
 
-- `--shadow` cards; `--shadow-lg` sheets and dialogs; `--shadow-bar` **new** for the bottom bar:
+- `--shadow` cards; `--shadow-lg` sheets and dialogs (dark: `0 24px 64px rgba(0, 0, 0, .5)`; before phase 4 the
+  dark theme used the light value, invisible on a dark page); `--shadow-bar` **new** for the bottom bar:
   `0 -4px 16px rgba(22, 26, 46, .08)` (dark: `rgba(0, 0, 0, .4)`); glows only through the alpha tokens. One shadow per
   element; none on disabled controls.
-- z-index: 20 bottom bar · 21 notice docked above the bar · 49 backdrop · 50 sheet or dialog · 60 tour · 70 a
-  confirmation over a sheet.
+- z-index, as tokens: `--z-bar` 20 bottom bar · `--z-notice` 21 notice docked above the bar · `--z-backdrop` 49
+  backdrop · `--z-sheet` 50 sheet or dialog · `--z-tour` 60 tour · `--z-confirm` 70 a confirmation over a sheet.
 
 ### 1.9 Motion
 
@@ -296,9 +302,10 @@ WebView (Zalo, Facebook, Messenger), Firefox ESR 115+.
 
 - **`color-mix()`: not used.** iOS up to 16.1 and Chrome 109 lack it. A plain fallback written before it in the same
   rule does not help when the `color-mix()` contains `var()`: the browser accepts the declaration when parsing and
-  drops it only at computed-value time, which resets the property to its initial value. That is how today's 13 uses
-  fail (no focus outline, transparent overlay, underlines in the text colour). Use the tokens of §1.4; if a new case
-  is unavoidable, put it inside `@supports (color: color-mix(in srgb, red 50%, blue))` with the fallback outside.
+  drops it only at computed-value time, which resets the property to its initial value. That is how the 13 uses
+  failed before phase 4 (no focus outline, transparent overlay, underlines in the text colour). Use the tokens of
+  §1.4; if a new case is unavoidable, put it inside `@supports (color: color-mix(in srgb, red 50%, blue))` with the
+  fallback outside.
 - `dvh`: write `100vh` first, then `100dvh`.
 - `:focus-visible` (Safari 15.4+): a plain `:focus` outline, removed by a separate `:focus:not(:focus-visible)` rule.
 - `inert` (Safari 15.5+, Firefox 112+): a JS focus trap where it is missing.

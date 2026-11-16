@@ -74,7 +74,7 @@ def test_nothing_is_loaded_from_another_site():
 def test_every_font_the_stylesheet_names_is_served_with_its_licence():
     css = read('static/css/style.css')
     fonts = re.findall(r'url\("\.\./fonts/([^"]+)"\)', css)
-    assert len(fonts) == 5
+    assert len(fonts) == 6  # Inter: latin, latin-ext, vietnamese; Noto Sans: latin, latin-ext, greek
     for name in fonts:
         assert os.path.isfile(os.path.join(ROOT, 'static', 'fonts', name)), name
     for licence in ('OFL-Inter.txt', 'OFL-NotoSans.txt'):
