@@ -22,6 +22,11 @@ export default defineConfig({
     reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
     use: {
         baseURL,
+        // A returning learner: the first-visit tour (e2e/tour.spec.mjs clears this) would cover the page.
+        storageState: {
+            cookies: [],
+            origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: 'aipt.tour', value: 'seen' }] }],
+        },
         locale: 'en-US',
         timezoneId: 'Asia/Ho_Chi_Minh',
         trace: 'retain-on-failure',

@@ -193,11 +193,11 @@ test.describe('on a phone', () => {
             await expect(page.locator('#recCopyLink')).toBeFocused();
             await expect(page.locator('#recCopyLink')).toHaveClass(/btn-primary/);
             await expect(page.locator('#recOpenChrome')).toBeHidden();
-            await expect(page.locator('.inapp-pointer')).toBeVisible();
-            await expect(page.locator('.inapp-pointer')).toHaveText(en['inapp.pointer']);
+            await expect(page.locator('#recordSheet .inapp-pointer')).toBeVisible();
+            await expect(page.locator('#recordSheet .inapp-pointer')).toHaveText(en['inapp.pointer']);
             await tap(page.locator('#recCancel'));
             await expectState(page, 'idle');
-            await expect(page.locator('.inapp-pointer')).toBeHidden();
+            await expect(page.locator('#recordSheet .inapp-pointer')).toBeHidden();
         });
     });
 
