@@ -22,8 +22,15 @@ export const UA = {
         + 'ZaloTheme/light ZaloLanguage/vi',
     facebookAndroid: 'Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A.220624.014; wv) AppleWebKit/537.36 '
         + '(KHTML, like Gecko) Version/4.0 Chrome/120.0.6099.230 Mobile Safari/537.36 [FB_IAB/FB4A;FBAV/440.0.0.31.105;]',
+    instagramAndroid: 'Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A.220624.014; wv) AppleWebKit/537.36 '
+        + '(KHTML, like Gecko) Version/4.0 Chrome/120.0.6099.230 Mobile Safari/537.36 Instagram 309.0.0.40.113 '
+        + 'Android (33/13; 450dpi; 1080x2177; samsung; SM-A536E; a53x; s5e8825; vi_VN; 541635890)',
+    lineAndroid: 'Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A.220624.014; wv) AppleWebKit/537.36 '
+        + '(KHTML, like Gecko) Version/4.0 Chrome/120.0.6099.230 Mobile Safari/537.36 Line/13.19.1/IAB',
     webviewAndroid: 'Mozilla/5.0 (Linux; Android 13; SM-A536E Build/TP1A.220624.014; wv) AppleWebKit/537.36 '
         + '(KHTML, like Gecko) Version/4.0 Chrome/120.0.6099.230 Mobile Safari/537.36',
+    zaloIos: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) '
+        + 'Mobile/15E148 Zalo iOS/617 ZaloTheme/light ZaloLanguage/vi',
     messengerIos: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) '
         + 'Mobile/15E148 LightSpeed [FBAN/MessengerLiteForiOS;FBAV/442.0.0.38.112;FBBV/556574003;FBDV/iPhone14,7;'
         + 'FBMD/iPhone;FBSN/iOS;FBSV/17.1;FBSS/3;FBCR/;FBID/phone;FBLC/vi_VN;FBOP/0]',

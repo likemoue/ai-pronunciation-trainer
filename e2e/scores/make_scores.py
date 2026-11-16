@@ -1,4 +1,5 @@
-"""Scoring answers for the browser tests of the result card (e2e/result.spec.mjs).
+"""Scoring answers for the browser tests of the result card (e2e/result.spec.mjs)
+and of the progress kept on the device (e2e/progress.spec.mjs).
 
 Each case is what POST /GetAccuracyFromRecordedAudio answers when Whisper hears
 `heard` for `sentence`: the real trainer and response code, with a stand-in for
@@ -34,6 +35,8 @@ CASES = {
     'many-words': ('Things are not as bad as Tom thinks they are.', 'Tink are bat Tom tink day.'),
     # Fewer than 35% of the words heard at all: a different sentence.
     'different-sentence': ('Mary has written three books about the history of my town.', 'Mary books.'),
+    # 100%: a word to review practised on its own (wireframes F6), said right.
+    'one-word': ('books', 'books'),
 }
 
 
