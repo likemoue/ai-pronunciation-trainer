@@ -14,7 +14,10 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
   screened for school use, in three levels (up to 8 words, 9-20 words, longer).
 - **Your own text**: up to 300 characters or 60 words of English; the server gives its reference IPA.
 - **Recording popup** with a live waveform and timer. It warns when it hears nothing, stops after 30 seconds
-  and shows progress while the recording is scored.
+  and shows progress while the recording is scored. A busy server gets the same recording again by itself;
+  when the connection or the server fails, or the browser is offline, the recording stays on the page to send
+  again. Each microphone problem says what to do: the steps to unblock it in the browser at hand, or, inside
+  Zalo, Facebook or Messenger, how to open the page in Chrome or Safari.
 - **Feedback**: a score for the sentence, a colour for every letter, and for each word the reference IPA,
   what was heard, and both sounds to compare (with slow playback).
 - **Reference voice**: [Piper](https://github.com/OHF-voice/piper1-gpl) with the public-domain LJ Speech voice

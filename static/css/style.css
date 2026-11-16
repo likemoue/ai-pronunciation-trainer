@@ -470,6 +470,7 @@ kbd {
 	font-size: 16px;
 	font-weight: 700;
 	line-height: 1.25;
+	text-decoration-line: none;
 	white-space: nowrap;
 	cursor: pointer;
 	transition: transform .1s, background .15s;
@@ -1168,9 +1169,10 @@ kbd {
 	color: var(--good);
 }
 
-/* The page's address, to copy by hand when the clipboard is refused. */
-.notice-field {
-	grid-column: 2;
+/* The page's address, to copy by hand when the clipboard is refused (in a
+   notice, or in the recording sheet inside an app). */
+.address-field {
+	display: block;
 	width: 100%;
 	min-height: 44px;
 	padding: 8px 12px;
@@ -1179,6 +1181,10 @@ kbd {
 	background: var(--surface);
 	color: var(--text);
 	font: 16px/1.5 var(--font);
+}
+
+.notice-field {
+	grid-column: 2;
 }
 
 /* ============ Sheets and dialogs (§2.8) ============ */
@@ -1272,7 +1278,10 @@ kbd {
 }
 
 /* Fixed at the bottom, above the safe area. Two buttons share a row, the
-   primary with the larger part; they stack when their labels do not fit. */
+   primary with the larger part; they stack when their labels do not fit.
+   Three do not fit one row in Vietnamese (wireframes B21): the primary takes
+   a row of its own (.is-full), and the first of the others the larger part
+   of the next (.is-wide). Labels never wrap inside a button. */
 .sheet-actions {
 	display: flex;
 	flex: none;
@@ -1288,8 +1297,13 @@ kbd {
 }
 
 .sheet-actions .btn-primary,
-.sheet-actions .btn-stop {
+.sheet-actions .btn-stop,
+.sheet-actions .is-wide {
 	flex-grow: 1.6;
+}
+
+.sheet-actions .is-full {
+	flex-basis: 100%;
 }
 
 /* ============ My text sheet: the text field (§2.15) ============ */
@@ -1377,7 +1391,10 @@ kbd {
 	color: var(--ok-strong);
 }
 
-/* ============ Recording sheet (anatomy of design/wireframes/02) ============ */
+/* ============ Recording sheet (design/wireframes/02, B1-B21) ============ */
+/* The header shows the dot (and "REC" while recording) for the take's
+   states, or the state's icon in the colour of its family (§1.3): its words
+   say the same, so colour is never the only signal. */
 .rec-dot {
 	flex: none;
 	width: 12px;
@@ -1400,6 +1417,23 @@ kbd {
 	color: var(--rec);
 }
 
+.rec-icon {
+	width: 24px;
+	height: 24px;
+}
+
+.rec-sheet[data-tone="error"] .rec-icon {
+	color: var(--bad);
+}
+
+.rec-sheet[data-tone="warning"] .rec-icon {
+	color: var(--ok-strong);
+}
+
+.rec-sheet[data-tone="info"] .rec-icon {
+	color: var(--primary);
+}
+
 .rec-timer {
 	flex: none;
 	padding: 2px 8px;
@@ -1413,16 +1447,27 @@ kbd {
 	white-space: nowrap;
 }
 
+/* A click inside the dialog focuses it (Space then stops a recording); it
+   is never focused from the keyboard. */
+.rec-sheet .sheet:focus {
+	outline: none;
+}
+
 .sheet-body .eyebrow {
 	margin-bottom: 4px;
 }
 
-/* The sentence scrolls in its own area: header and actions never move. */
+/* The sentence scrolls in its own area (about 35% of the height, B19):
+   header and actions never move. Its scroll bar stays visible: Blink and
+   WebKit draw this one always (where the platform allows), Firefox its thin
+   one. */
 .rec-sentence {
 	max-height: 35vh;
 	max-height: 35dvh;
 	margin: 0 0 12px;
+	padding-right: 4px;
 	overflow-y: auto;
+	overscroll-behavior: contain;
 	font-size: 18px;
 	font-weight: 600;
 	line-height: 1.45;
@@ -1432,6 +1477,27 @@ kbd {
 
 .rec-sentence.is-long {
 	font-size: 16px;
+}
+
+.rec-sentence::-webkit-scrollbar {
+	width: 8px;
+}
+
+.rec-sentence::-webkit-scrollbar-track {
+	border-radius: 999px;
+	background: var(--surface-2);
+}
+
+.rec-sentence::-webkit-scrollbar-thumb {
+	border-radius: 999px;
+	background: var(--border-strong);
+}
+
+@supports (-moz-appearance: none) {
+	.rec-sentence {
+		scrollbar-width: thin;
+		scrollbar-color: var(--border-strong) var(--surface-2);
+	}
 }
 
 .wave-wrap {
@@ -1464,11 +1530,19 @@ kbd {
 	text-align: center;
 }
 
-.wave-overlay.is-error {
-	color: var(--bad);
+.wave-clock {
+	width: 22px;
+	height: 22px;
+}
+
+.wave-line {
+	display: block;
 }
 
 .rec-hint {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
 	min-height: 42px;
 	margin: 12px 0 0;
 	font-size: 14px;
@@ -1476,9 +1550,130 @@ kbd {
 	font-variant-numeric: tabular-nums;
 }
 
+/* "We can't hear you" and the countdown (B3, B4): icon and bold. */
 .rec-hint.is-warning {
 	color: var(--ok-strong);
 	font-weight: 700;
+}
+
+.rec-hint .icon {
+	width: 18px;
+	height: 18px;
+	margin-top: 1px;
+}
+
+/* The message of the other states (B8-B18): a bold first line, a second
+   line, steps, and what happened to the recording. */
+.rec-message {
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.rec-lead {
+	margin: 0 0 4px;
+	font-size: 16px;
+	font-weight: 700;
+	line-height: 1.45;
+}
+
+.rec-text {
+	margin: 0;
+}
+
+.rec-steps {
+	margin: 12px 0 0;
+	padding: 12px 12px 12px 32px;
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+}
+
+.rec-steps li+li {
+	margin-top: 4px;
+}
+
+/* A part of another program's interface named in a step: the browser's
+   Permissions, an app's ••• (ui.uibit). */
+.uibit {
+	display: inline-flex;
+	align-items: center;
+	padding: 0 4px;
+	border: 1px solid var(--border-strong);
+	border-radius: 4px;
+	background: var(--surface);
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	white-space: nowrap;
+	vertical-align: 1px;
+}
+
+.uibit .icon {
+	width: 16px;
+	height: 16px;
+}
+
+.rec-kept,
+.rec-note {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 12px 0 0;
+	font-size: 13px;
+	font-weight: 700;
+}
+
+.rec-kept {
+	padding: 4px 8px;
+	border: 1px dashed var(--border-strong);
+	border-radius: var(--radius-xs);
+}
+
+.rec-kept .icon,
+.rec-note .icon {
+	width: 16px;
+	height: 16px;
+	color: var(--good);
+}
+
+.rec-copy {
+	margin: 12px 0 0;
+}
+
+.rec-copy-text {
+	margin: 0 0 8px;
+	font-weight: 700;
+}
+
+/* The arrow to the app's ••• menu at the top right of the screen (D3, D10),
+   over the sheet's backdrop. */
+.inapp-pointer {
+	position: fixed;
+	top: 4px;
+	right: 12px;
+	z-index: var(--z-sheet);
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	pointer-events: none;
+}
+
+.inapp-pointer-arrow {
+	width: 0;
+	height: 0;
+	margin-right: 12px;
+	border-right: 8px solid transparent;
+	border-bottom: 12px solid var(--primary);
+	border-left: 8px solid transparent;
+}
+
+.inapp-pointer-label {
+	padding: 2px 8px;
+	border-radius: var(--radius-xs);
+	background: var(--primary);
+	color: var(--on-primary);
+	font-size: 14px;
+	font-weight: 700;
+	box-shadow: var(--shadow);
 }
 
 /* ============ Result ============ */

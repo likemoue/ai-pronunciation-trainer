@@ -77,7 +77,7 @@ and onnxruntime (MIT), whose `LICENSE` and `ThirdPartyNotices.txt` are in `site-
 | FFmpeg 7.1.5 (Debian package `ffmpeg`, built with `--enable-gpl`) and the libraries it pulls in | GPL-2.0-or-later as built; see `/usr/share/doc/ffmpeg/copyright` |
 | Caddy 2.11.9 (the proxy container on the server, not in the app image) | Apache-2.0 |
 | Fonts Inter 4.001 (latin, latin-ext and vietnamese subsets: the variable wght files of `@fontsource-variable/inter` 5.3.0) and Noto Sans (latin, latin-ext and greek, for the IPA's θ), subset as Google Fonts serves them, in `static/fonts` and served by the app | SIL Open Font License 1.1 (`static/fonts/OFL-Inter.txt`, `OFL-NotoSans.txt`) |
-| Icons of the page's inline SVG sprite (`templates/main.html`): the warning, info, offline, clock, refresh, copy, chevron, check and microphone-off icons are [Material Icons](https://github.com/google/material-design-icons) paths by Google | Apache-2.0 |
+| Icons of the page's inline SVG sprite (`templates/main.html`): the warning, info, offline, clock, refresh, copy, chevron, check, microphone-off, open-in-new, lock, tune and more-vertical icons are [Material Icons](https://github.com/google/material-design-icons) paths by Google | Apache-2.0 |
 
 The GPL-licensed parts (piper-tts, eSpeak NG, FFmpeg, and the FFmpeg libraries inside PyAV) run in the same image as the AGPL-3.0 app. GPLv3 section 13
 and AGPLv3 section 13 allow combining the two; each part keeps its own licence. The source of every Python package

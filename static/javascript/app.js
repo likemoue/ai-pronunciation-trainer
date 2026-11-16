@@ -78,46 +78,36 @@
     // (the learner just asked for it), then cannot record > offline > no voice.
     const dock = new ui.Dock(els.dock, ['loadFailed', 'cannotRecord', 'offline', 'noVoice']);
 
-    // Copy the page's address; where the clipboard is refused, show it in a
-    // selected read-only field to copy by hand (§6). The notice is a polite
-    // live region: "Link copied" is read as it changes.
-    function copyLink(item, base) {
-        const url = window.location.href;
-        const copied = () => {
-            item.set({ ...base, kind: 'success', icon: 'check', title: 'notice.linkCopied.title', text: 'notice.linkCopied.text' });
-            const button = item.el.querySelector('.notice-actions .btn span');
-            if (button) i18n.text(button, 'notice.copied');
-            // Back to what it said after 4 s; the notice itself stays.
-            setTimeout(() => {
-                item.set(base);
-                if (button) i18n.text(button, 'notice.copyLink');
-            }, 4000);
-        };
-        const byHand = () => {
-            const field = AIPT.el('input', {
-                className: 'notice-field',
-                attrs: { type: 'text', readonly: '', value: url, lang: 'en', 'aria-label': t('notice.address') },
-            });
-            i18n.attr(field, 'aria-label', 'notice.address');
-            item.set({ ...base, title: 'notice.copyBlocked.title', text: 'notice.copyBlocked.text', actions: [], extra: field });
-            field.focus();
-            field.select();
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(url).then(copied, byHand);
-        } else {
-            byHand();
-        }
+    // Copy link in a notice (AIPT.inApp.copyControl): "Link copied" for 4 s,
+    // then back to what it said; where the clipboard is refused, the address
+    // in a selected read-only field to copy by hand (§6). The dock is a polite
+    // live region: the new words are read as they change.
+    function copyLinkAction(getItem, base) {
+        const label = () => getItem().el.querySelector('.notice-actions .btn span');
+        const copier = AIPT.inApp.copyControl({
+            onCopied: () => {
+                getItem().set({ ...base, kind: 'success', icon: 'check', title: 'notice.linkCopied.title', text: 'notice.linkCopied.text' });
+                if (label()) i18n.text(label(), 'notice.copied');
+            },
+            onReset: () => {
+                getItem().set(base);
+                if (label()) i18n.text(label(), 'notice.copyLink');
+            },
+            onRefused: () => {
+                const field = AIPT.inApp.addressField('notice-field');
+                getItem().set({ ...base, title: 'notice.copyBlocked.title', text: 'notice.copyBlocked.text', actions: [], extra: field });
+                AIPT.inApp.selectAddress(field);
+            },
+        });
+        return { label: 'notice.copyLink', icon: 'copy', onClick: () => copier.run() };
     }
 
     function cannotRecordNotice() {
         const base = env.secure
             ? { kind: 'warning', icon: 'mic-off', title: 'notice.cantRecord.title', text: 'notice.cantRecord.text' }
             : { kind: 'warning', icon: 'mic-off', title: 'notice.insecure.title', text: 'notice.insecure.text' };
-        const item = ui.notice({
-            ...base,
-            actions: env.secure ? [{ label: 'notice.copyLink', icon: 'copy', onClick: () => copyLink(item, base) }] : [],
-        });
+        // The action reads `item` when tapped, once it exists.
+        const item = ui.notice({ ...base, actions: env.secure ? [copyLinkAction(() => item, base)] : [] });
         return item;
     }
 

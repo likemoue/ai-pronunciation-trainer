@@ -144,6 +144,19 @@
         return node;
     }
 
+    // Set an element's content from a key with elements in it, and keep the
+    // key for a language switch: slots names the elements ({ stop: element }),
+    // which become its children and keep their own data-i18n.
+    function richText(node, key, slots = {}, params) {
+        node.removeAttribute('data-i18n');
+        node.dataset.i18nRich = key;
+        if (params) node.dataset.i18nParams = JSON.stringify(params);
+        else node.removeAttribute('data-i18n-params');
+        Object.keys(slots).forEach((name) => slots[name].setAttribute('data-slot', name));
+        node.replaceChildren(rich(key, slots, params));
+        return node;
+    }
+
     // Set an attribute from a key (null: remove it), and keep the key.
     function attr(node, name, key) {
         const pairs = attrPairs(node.dataset.i18nAttr).filter(([other]) => other !== name);
@@ -211,6 +224,7 @@
         has,
         rich,
         text,
+        richText,
         attr,
         apply,
         setLanguage,

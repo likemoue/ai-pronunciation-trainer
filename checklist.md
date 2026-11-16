@@ -31,6 +31,10 @@ in English and Vietnamese, light and dark.
       Close); offline keeps it too and says when the connection is back; no speech (422), too short, interrupted
       (tab hidden, a call, a headset unplugged: nothing is sent); the microphone blocked (steps for Chrome Android,
       Safari iOS, desktop Chrome/Edge), none, busy, other errors.
+- [ ] Recording sheet, edge cases: Cancel while the browser still asks for the microphone, then the mic again: the
+      new take records (the late answer is let go); a double tap on the mic or on Stop never lands on the buttons
+      that replace them; a recording the server cannot read (400) asks for a new take; a microphone blocked in the
+      site's settings opens the sheet on the steps at once; turning a tablet redraws the state (tap or click).
 - [ ] Result: ring and title by tier (90/70/60; Excellent, Well done, Almost there, Keep practising), the meaning
       line, "Words to practise" (at most 4, "+N more"), the worst word opened, the word detail (Correct and Heard
       IPA, Listen and Replay; "not heard" disables Replay), My recording, the "Heard" line, the legend; ~ and ✗ marks

@@ -29,6 +29,7 @@
     <script defer src="{{ asset_url('javascript/core.js') }}"></script>
     <script defer src="{{ asset_url('javascript/i18n.js') }}"></script>
     <script defer src="{{ asset_url('javascript/ui.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/inapp.js') }}"></script>
     <script defer src="{{ asset_url('javascript/audio.js') }}"></script>
     <script defer src="{{ asset_url('javascript/recorder.js') }}"></script>
     <script defer src="{{ asset_url('javascript/result.js') }}"></script>
@@ -36,8 +37,9 @@
 </head>
 
 <body>
-    <!-- Icons (fill: currentColor). The warning, info, offline, clock, refresh, copy, chevron, check and
-         microphone-off icons are Material Icons paths (Apache-2.0, THIRD_PARTY_NOTICES.md). -->
+    <!-- Icons (fill: currentColor). The warning, info, offline, clock, refresh, copy, chevron, check,
+         microphone-off, open-in-new, lock, tune and more-vertical icons are Material Icons paths (Apache-2.0,
+         THIRD_PARTY_NOTICES.md). -->
     <svg class="icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
         <symbol id="i-mic" viewBox="0 0 24 24">
             <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5.3-3a.75.75 0 0 1 1.5 0 6.8 6.8 0 0 1-6.05 6.76V20.5h2.5a.75.75 0 0 1 0 1.5h-6.5a.75.75 0 0 1 0-1.5h2.5v-2.74A6.8 6.8 0 0 1 5.2 11a.75.75 0 0 1 1.5 0 5.3 5.3 0 0 0 10.6 0Z" />
@@ -92,6 +94,18 @@
         </symbol>
         <symbol id="i-chev" viewBox="0 0 24 24">
             <path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+        </symbol>
+        <symbol id="i-open" viewBox="0 0 24 24">
+            <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+        </symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24">
+            <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
+        </symbol>
+        <symbol id="i-tune" viewBox="0 0 24 24">
+            <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+        </symbol>
+        <symbol id="i-more-vert" viewBox="0 0 24 24">
+            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
         </symbol>
     </svg>
 
@@ -339,43 +353,81 @@
         </div>
     </div>
 
-    <!-- Recording (design/wireframes/02-recording-sheet.html, anatomy): the backdrop never closes it. -->
-    <div class="sheet-root" id="recordSheet" hidden>
+    <!-- Recording (design/wireframes/02-recording-sheet.html, B1-B21; a dialog from 768 px, 08-desktop.html H3).
+         recorder.js runs it as one state machine and names the state in data-state. Its body shows the take
+         (sentence, waveform, hint) or a message; the actions are the state's. The backdrop never closes it. -->
+    <div class="sheet-root rec-sheet" id="recordSheet" data-state="idle" hidden>
         <div class="backdrop"></div>
         <div class="sheet-frame">
-            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="recTitle">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="recTitle" tabindex="-1">
                 <div class="sheet-head">
                     <span class="rec-dot" id="recDot" aria-hidden="true"></span>
                     <span class="rec-label" id="recLabel" aria-hidden="true" data-i18n="rec.rec" hidden>{{ t['rec.rec'] }}</span>
+                    <svg class="icon sheet-icon rec-icon" id="recIcon" aria-hidden="true" focusable="false" hidden><use id="recIconUse" href="#i-warn"></use></svg>
                     <h2 class="sheet-title" id="recTitle" tabindex="-1"></h2>
-                    <span class="rec-timer" id="recTimer"></span>
+                    <span class="rec-timer" id="recTimer" hidden></span>
                     <button type="button" class="sheet-x" data-sheet-close aria-label="{{ t['common.close'] }}" data-i18n-attr="aria-label:common.close">
                         <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
                     </button>
                 </div>
                 <div class="sheet-body">
-                    <p class="eyebrow" data-i18n="rec.readAloud">{{ t['rec.readAloud'] }}</p>
-                    <p class="rec-sentence" id="recSentence" lang="en"></p>
-                    <div class="wave-wrap">
-                        <canvas class="wave" id="waveCanvas" aria-hidden="true"></canvas>
-                        <div class="wave-overlay" id="waveOverlay" hidden>
-                            <span class="spinner" aria-hidden="true"></span>
-                            <span id="waveOverlayText"></span>
+                    <div class="rec-take" id="recTake">
+                        <p class="eyebrow" data-i18n="rec.readAloud">{{ t['rec.readAloud'] }}</p>
+                        <p class="rec-sentence" id="recSentence" lang="en"></p>
+                        <div class="wave-wrap">
+                            <canvas class="wave" id="waveCanvas" aria-hidden="true"></canvas>
+                            <div class="wave-overlay" id="waveOverlay" hidden>
+                                <span class="spinner" id="waveSpinner" aria-hidden="true"></span>
+                                <svg class="icon wave-clock" id="waveClock" aria-hidden="true" focusable="false" hidden><use href="#i-clock"></use></svg>
+                                <span class="wave-overlay-text" id="waveOverlayText"></span>
+                            </div>
+                        </div>
+                        <p class="rec-hint" id="recHint"></p>
+                    </div>
+                    <div class="rec-message" id="recMessage" hidden>
+                        <p class="rec-lead" id="recLead"></p>
+                        <p class="rec-text" id="recText"></p>
+                        <ol class="rec-steps" id="recSteps" hidden></ol>
+                        <p class="rec-kept" id="recKept" hidden>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"></use></svg>
+                            <span id="recKeptText"></span>
+                        </p>
+                        <p class="rec-note" id="recNote" hidden>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"></use></svg>
+                            <span data-i18n="rec.backOnline">{{ t['rec.backOnline'] }}</span>
+                        </p>
+                        <div class="rec-copy" id="recCopyHelp" hidden>
+                            <p class="rec-copy-text" data-i18n="notice.copyBlocked.text">{{ t['notice.copyBlocked.text'] }}</p>
                         </div>
                     </div>
-                    <p class="rec-hint" id="recHint"></p>
                     <p class="visually-hidden" id="recStatus" role="status"></p>
                     <p class="visually-hidden" id="recAlert" role="alert"></p>
                 </div>
-                <div class="sheet-actions">
-                    <button type="button" class="btn btn-secondary" id="recCancel" data-sheet-close data-i18n="common.cancel">{{ t['common.cancel'] }}</button>
+                <div class="sheet-actions" id="recActions">
+                    <button type="button" class="btn btn-secondary" id="recCancel" data-i18n="common.cancel">{{ t['common.cancel'] }}</button>
                     <button type="button" class="btn btn-stop" id="recStop" aria-disabled="true">
                         <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-stop"></use></svg>
                         <span data-i18n="rec.stopCheck">{{ t['rec.stopCheck'] }}</span>
                     </button>
-                    <button type="button" class="btn btn-primary" id="recRetry" hidden>
+                    <button type="button" class="btn btn-primary" id="recSend" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"></use></svg>
+                        <span data-i18n="rec.sendAgain">{{ t['rec.sendAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="recRecordAgain" hidden>
                         <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg>
+                        <span data-i18n="rec.recordAgain">{{ t['rec.recordAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-primary" id="recTryAgain" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"></use></svg>
                         <span data-i18n="common.tryAgain">{{ t['common.tryAgain'] }}</span>
+                    </button>
+                    <a class="btn btn-primary" id="recOpenChrome" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-open"></use></svg>
+                        <span data-i18n="inapp.openChrome">{{ t['inapp.openChrome'] }}</span>
+                    </a>
+                    <button type="button" class="btn btn-secondary" id="recCopyLink" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use id="recCopyIcon" href="#i-copy"></use></svg>
+                        <span id="recCopyLabel" data-i18n="notice.copyLink">{{ t['notice.copyLink'] }}</span>
                     </button>
                 </div>
             </div>

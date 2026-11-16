@@ -10,7 +10,8 @@
 // time; each owner (the control that asked) hears 'loading', 'playing' and
 // 'idle' through onChange. Every new sound or stop() makes the older ones
 // stale (a playback token), so a voice still loading never starts playing
-// later, for instance into a recording.
+// later, for instance into a recording. While the recording sheet is open the
+// sound is held (hold(true)): what plays stops, and nothing new starts.
 (() => {
     const VOICE_TIMEOUT_MS = 15000;
     const SLOW_RATE = 0.75;
@@ -20,6 +21,7 @@
     const cache = new Map(); // text -> object URL of its audio
     let current = null; // { owner, stop(), controller }
     let token = 0;
+    let held = false;
     const changeListeners = [];
     const noVoiceListeners = [];
 
@@ -57,6 +59,13 @@
                 // Nothing to cancel.
             }
         }
+    }
+
+    // Hold every sound (on: stop what plays or loads, start nothing new) or
+    // let them play again.
+    function hold(on) {
+        held = Boolean(on);
+        if (held) stop();
     }
 
     // The end of the sound `mine` (if it is still the current one).
@@ -168,7 +177,7 @@
     // could read it (then onNoVoice listeners hear of it).
     async function speak(text, { owner = '', slow = false, bankUrl = '' } = {}) {
         const clean = String(text || '').trim();
-        if (!clean) return false;
+        if (!clean || held) return false;
         stop();
         const mine = token;
         const controller = new AbortController();
@@ -200,6 +209,7 @@
 
     // Play part of a recording: playBuffer(buffer, { owner, offset, duration }).
     function playBuffer(buffer, { owner = '', offset = 0, duration } = {}) {
+        if (held) return;
         stop();
         const mine = token;
         const ctx = getContext();
@@ -230,6 +240,7 @@
     };
 
     function chime(accuracy) {
+        if (held) return;
         const notes = FEEDBACK_NOTES[accuracy >= 70 ? 'good' : accuracy >= 30 ? 'okay' : 'bad'];
         let ctx;
         try {
@@ -259,12 +270,16 @@
         context: getContext,
         speak,
         stop,
+        hold,
         playBuffer,
         decode,
         chime,
         // The owner of what plays or loads now ('' when nothing does).
         get owner() {
             return current ? current.owner : '';
+        },
+        get held() {
+            return held;
         },
         onChange(fn) {
             changeListeners.push(fn);

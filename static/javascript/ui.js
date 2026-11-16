@@ -1,9 +1,9 @@
 'use strict';
 
 // Pieces of the interface that the page's parts share (context/design-system.md
-// §2 and §4): the page's polite live region, notices and the dock above the
-// controls, sheets and dialogs, focus helpers, and the radio group of the
-// level chips.
+// §2 and §4): the page's polite live region, the boxed names of other
+// programs' buttons in a step, notices and the dock above the controls,
+// sheets and dialogs, focus helpers, and the radio group of the level chips.
 (() => {
     const { el, icon, i18n } = AIPT;
 
@@ -50,6 +50,25 @@
         timers.set(region, setTimeout(() => {
             region.textContent = text;
         }, 60));
+    }
+
+    // ---------------------------------------------------------------- texts
+    // A part of another program's interface that a step names (a button of
+    // the browser, an item of an app's menu), boxed so that it reads as
+    // something to look for: uibit({ key }) for a word of the dictionaries,
+    // uibit({ text }) for a symbol, uibit({ icon, key }) for an icon, named
+    // for assistive technology by the key's text.
+    function uibit({ key = '', text = '', icon: iconName = '' } = {}) {
+        const node = el('span', { className: iconName ? 'uibit uibit-icon' : 'uibit' });
+        if (iconName) {
+            node.appendChild(icon(iconName));
+            if (key) node.appendChild(i18n.text(el('span', { className: 'visually-hidden' }), key));
+        } else if (key) {
+            i18n.text(node, key);
+        } else {
+            node.textContent = text;
+        }
+        return node;
     }
 
     // ---------------------------------------------------------------- notices
@@ -345,6 +364,7 @@
         focusables,
         visibleBottom,
         announce,
+        uibit,
         notice,
         Dock,
         Sheet,
