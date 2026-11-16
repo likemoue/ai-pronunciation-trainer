@@ -37,6 +37,15 @@ def test_a_current_asset_is_immutable_and_any_other_is_checked(client, path):
     assert client.get(path).headers['Cache-Control'] == 'no-cache'
 
 
+@pytest.mark.parametrize('lang', ['en', 'vi'])
+def test_a_vietnamese_page_preloads_the_vietnamese_letters(client, lang):
+    client.set_cookie('lang', lang)
+    page = client.get('/').get_data(as_text=True)
+    assert ('/static/fonts/inter-vietnamese.woff2' in page) is (lang == 'vi')
+    # The fixed bar keeps clear of the home indicator (env(safe-area-inset-bottom)).
+    assert 'viewport-fit=cover' in page
+
+
 def test_fonts_are_immutable(client):
     response = client.get('/static/fonts/inter-latin.woff2')
     assert response.status_code == 200
@@ -81,8 +90,54 @@ def test_every_font_the_stylesheet_names_is_served_with_its_licence():
         assert 'SIL Open Font License' in read(f'static/fonts/{licence}')
 
 
+def test_the_template_has_no_inline_style_or_script():
+    # The CSP (style-src 'self', script-src 'self') would block both. Scripts
+    # set styles through the CSSOM (el.style.setProperty), which it allows.
+    page = read('templates/main.html')
+    assert not re.search(r'\sstyle\s*=', page, re.I)
+    assert '<style' not in page.lower()
+    assert not re.search(r'\son[a-z]+\s*=', page, re.I)  # no inline event handlers either
+    for tag, body in re.findall(r'(<script\b[^>]*>)(.*?)</script>', page, re.S):
+        if 'src=' in tag:
+            assert not body.strip(), tag
+        else:
+            assert tag == '<script type="application/json" id="i18nData">', tag
+            assert body == '{{ dictionaries|tojson }}'
+
+
+def loaded_scripts():
+    """The scripts templates/main.html loads, in order: (path, tag)."""
+    page = read('templates/main.html')
+    return [(path, tag) for tag, path in
+            re.findall(r"""(<script\b[^>]*\bsrc="\{\{ asset_url\('(javascript/[^']+)'\) \}\}"[^>]*>)""", page)]
+
+
+def test_the_page_loads_every_script_once_in_order():
+    scripts = loaded_scripts()
+    paths = [path for path, _ in scripts]
+    on_disk = sorted(f'javascript/{name}' for name in os.listdir(os.path.join(ROOT, 'static', 'javascript')))
+    assert sorted(paths) == on_disk and len(set(paths)) == len(paths)
+    # Classic scripts run in document order: the namespace and the words first, the page itself last.
+    assert paths[:3] == ['javascript/core.js', 'javascript/i18n.js', 'javascript/ui.js']
+    assert paths[-1] == 'javascript/app.js'
+    assert all(' defer' in tag and 'type=' not in tag and 'async' not in tag for _, tag in scripts)
+
+
+@pytest.mark.parametrize('name', sorted(os.listdir(os.path.join(ROOT, 'static', 'javascript'))))
+def test_each_script_is_strict_and_keeps_to_the_shared_namespace(name):
+    source = read(f'static/javascript/{name}')
+    assert source.startswith("'use strict';\n"), name
+    body = source.split('\n(() => {\n', 1)
+    assert len(body) == 2 and body[1].rstrip().endswith('})();'), name
+    # Text goes in as text, never as markup; and the server's English message
+    # (the `error` field of an answer) is never read: the page shows its own
+    # text for the `code` (i18n, error.<code>).
+    assert 'innerHTML' not in source and 'insertAdjacentHTML' not in source and 'document.write' not in source
+    assert not re.search(r"\b(?:data|body|answer|json)\.error\b|\[['\"]error['\"]\]", source)
+
+
 def test_the_page_downloads_no_sound_files():
-    # The result chime is synthesised in the browser (app.js).
+    # The result chime is synthesised in the browser (audio.js).
     assert not [name for _, _, names in os.walk(os.path.join(ROOT, 'static')) for name in names
                 if name.endswith(('.wav', '.mp3', '.ogg'))]
 

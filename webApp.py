@@ -243,6 +243,11 @@ def asset_url(path: str) -> str:
     return url_for('static', filename=path, v=ASSET_VERSION)
 
 
+# A dictionary text cut at its placeholders, for the template's texts with
+# elements in them (the `rich` macro of templates/main.html).
+app.add_template_global(i18n.parts, 'i18n_parts')
+
+
 @app.route(rootPath+'/')
 def main():
     # In the learner's language, from the cookie the page sets when they

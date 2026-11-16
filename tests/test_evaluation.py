@@ -25,7 +25,7 @@ def test_a_label_agrees_with_the_truth(truth, label, expected):
 
 
 def test_the_pipelines_categories_are_the_pages_labels():
-    # static/javascript/app.js: CATEGORY_TEXT = ['Correct', 'Almost', 'Needs work']
+    # static/javascript/result.js: STATUS_KEYS = status.correct, status.almost, status.needsWork
     assert [metrics.label_name(c) for c in ('0', 1, '2')] == ['correct', 'almost', 'needs_work']
 
 

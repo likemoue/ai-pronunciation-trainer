@@ -56,8 +56,9 @@ def normalize_text(text: str) -> str:
     break the word-by-word alignment).
 
     The function is idempotent, and the frontend applies the same rules
-    (static/javascript/app.js, normalizeText), so the words the browser shows
-    and the words the server scores stay in step.
+    (static/javascript/core.js, normalizeText; checkText there mirrors
+    practice_text), so the words the browser shows and the words the server
+    scores stay in step.
     """
     text = (text or '').translate(_TYPOGRAPHY)
     tokens = [token for token in text.split() if any(ch.isalnum() for ch in token)]

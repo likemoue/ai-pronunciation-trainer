@@ -33,6 +33,23 @@ def placeholders(text: str) -> set:
     return set(_PLACEHOLDER.findall(text))
 
 
+def parts(text: str) -> list:
+    """text cut at its placeholders, in order: "Tap {mic}, then {stop}." is
+    [('text', 'Tap '), ('slot', 'mic'), ('text', ', then '), ('slot', 'stop'),
+    ('text', '.')]. The template renders a text with elements in it from
+    this (the `rich` macro of templates/main.html), as the page's script does
+    (static/javascript/i18n.js, rich)."""
+    pieces, position = [], 0
+    for match in _PLACEHOLDER.finditer(text):
+        if match.start() > position:
+            pieces.append(('text', text[position:match.start()]))
+        pieces.append(('slot', match.group(1)))
+        position = match.end()
+    if position < len(text):
+        pieces.append(('text', text[position:]))
+    return pieces
+
+
 def _read(path: str) -> dict:
     """One dictionary: a flat JSON object of strings, each key once (json
     would keep the last of two silently). A byte order mark, which some

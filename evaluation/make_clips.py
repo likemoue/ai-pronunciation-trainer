@@ -451,7 +451,7 @@ def resampled(samples, rate, target):
 
 
 # ---------------------------------------------------------------- Chrome
-# The page's recorder (static/javascript/app.js): getUserMedia({audio:
+# The page's recorder (static/javascript/recorder.js): getUserMedia({audio:
 # {channelCount: 1}}), MediaRecorder with audio/webm;codecs=opus at 32 kbps.
 # 'standin' plays the source into the recorder through WebAudio instead of a
 # microphone, as the production check's stand-in microphone did.

@@ -14,7 +14,8 @@
 - **Look:** today's page, codified: Inter, an indigo primary, rounded cards, soft shadows, light and dark themes. No
   design generator was used. What changes: AA contrast everywhere, a status palette that survives colour blindness,
   and no signal carried by colour alone.
-- **Stack:** Flask + one Jinja template (`templates/main.html`), vanilla JS (`static/javascript/app.js`), one
+- **Stack:** Flask + one Jinja template (`templates/main.html`), vanilla JS (classic scripts in
+  `static/javascript/` that share one global, `AIPT`: core, i18n, ui, audio, recorder, result, app), one
   stylesheet. No Tailwind, no component library, no icon font: icons are the inline SVG sprite in `main.html`
   (`fill: currentColor`).
 
