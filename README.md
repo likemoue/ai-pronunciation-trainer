@@ -95,11 +95,12 @@ browser ──HTTPS──> Cloudflare ──tunnel──> VM 202 (cloudflared) �
   With faster-whisper a recording holds the model for about a second on a CPU with AVX2, and for about 1.8 s on
   the production server, an Ivy Bridge Xeon without AVX2: there a class of 40 sending at once waits 21 s at the
   median and 40 s at most.
-- Static files are named by version: the page asks for its stylesheet and script with `?v=` and a hash of their
-  content, and browsers and Cloudflare keep those, the fonts and the bank-sentence MP3s for a year. The page itself
-  is checked on every load, and API answers are never stored. The page loads nothing from another site: its fonts
-  (Inter, Noto Sans with its Greek subset for the IPA's θ) are served by the app, and the result chime is
-  synthesised in the browser.
+- Static files are named by version: the page asks for its stylesheets and scripts (every file under `static/css`
+  and `static/javascript`, through `asset_url` in the template) with `?v=` and a hash of them all, and browsers
+  and Cloudflare keep those, the fonts and the bank-sentence MP3s for a year. The page itself is checked on every
+  load, and API answers are never stored. The page loads nothing from another site: its fonts
+  (Inter with its Vietnamese subset, Noto Sans with its Greek subset for the IPA's θ) are served by the app, and the
+  result chime is synthesised in the browser.
 - Caddy receives each request in full before the app sees it, so a slow or stalled upload holds no app thread.
   It holds the bodies in up to 1 GB of memory, which held about 110 uploads of 4.9 MB at once in a test. More
   than that at once can make the kernel kill Caddy, which cuts every request in flight until docker has
@@ -186,8 +187,9 @@ Environment variables, with their defaults. The Docker image sets the ones marke
 
 ## HTTP API
 
-The page is `GET /`. The API routes take a JSON object (`Content-Type: application/json`; anything else gets
-415) and answer JSON. `language` is optional and must be an enabled language (`en`).
+The page is `GET /`, in English, or in Vietnamese when its `lang` cookie is `vi` (`Vary: Cookie`). The API routes
+take a JSON object (`Content-Type: application/json`; anything else gets 415) and answer JSON. `language` is
+optional and must be an enabled language (`en`).
 
 | Route | Request | Response |
 |---|---|---|
@@ -195,7 +197,7 @@ The page is `GET /`. The API routes take a JSON object (`Content-Type: applicati
 | `POST /getCustomSample` | `text` | the same, for the user's text |
 | `POST /getAudioFromText` | `value`: the text to read | `wavBase64`: a WAV file |
 | `GET /tts/<language>/<key>.mp3` | | A bank sentence read aloud (MP3); `/getSample` gives the URL as `tts_url`. The key is a hash of the voice, the MP3 bitrate and the sentence, so the file never changes and is cached for a year; any other key is 404 |
-| `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
+| `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `mistake_kinds` (per word, in the same order: `ending`, `th` or `sh` when the word was heard with that typical mistake, which keeps it from 0, else `-`; "Mary has written three books." heard as "Mary has written tree book." gives `- - - th ending`), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |
 | `GET /healthz` | | `{"status": "ok", "uptime_s": …}`: the worker answers HTTP |
 | `GET /readyz` | | 200 once every worker has warmed up, else 503: `ready_workers`, `expected_workers` |
 | `GET /version` | | `git_sha`, `git_date` |
@@ -209,7 +211,7 @@ Errors are JSON too: `{"error": "<message for the user>", "code": "<code>"}`, wi
 | `bad_category` | 400 | `category` is not 0-3 |
 | `text_too_long` | 400 | More than 300 characters or 60 words, or too long to read aloud |
 | `text_not_english` | 400 | Less than 90% Latin letters |
-| `text_bad_characters` | 400 | Control characters or lone surrogates |
+| `text_bad_characters` | 400 | Control characters or lone surrogates (Windows-1252's quotes, dashes and ellipsis read as Latin-1 count as that punctuation; zero-width characters and soft hyphens are dropped) |
 | `no_audio` / `bad_audio` | 400 | No recording, or one that cannot be decoded |
 | `audio_too_long` | 413 | A recording over 35 s |
 | `request_entity_too_large` | 413 | A body over 4 MB (over 5 MB, the proxy answers it) |
