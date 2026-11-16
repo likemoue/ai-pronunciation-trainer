@@ -1,18 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Practise English pronunciation with instant AI feedback on every word.">
+    <meta name="description" content="{{ t['page.description'] }}">
     <meta name="theme-color" content="#4f46e5">
-    <title>AI Pronunciation Trainer</title>
+    <title>{{ t['page.title'] }}</title>
 
     <link rel="icon"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%234f46e5'/%3E%3Cpath fill='white' d='M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5.5a6.5 6.5 0 0 0 5.75 6.45V20h1.5v-2.55A6.5 6.5 0 0 0 18.5 11H17Z'/%3E%3C/svg%3E">
     <link rel="preload" href="{{ url_for('static', filename='fonts/inter-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version }}">
-    <script defer src="{{ url_for('static', filename='javascript/app.js') }}?v={{ asset_version }}"></script>
+    <link rel="stylesheet" href="{{ asset_url('css/style.css') }}">
+    <script type="application/json" id="i18nData">{{ dictionaries|tojson }}</script>
+    <script defer src="{{ asset_url('javascript/app.js') }}"></script>
 </head>
 
 <body>

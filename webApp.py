@@ -16,10 +16,11 @@ import time  # noqa: E402
 import uuid  # noqa: E402
 import webbrowser  # noqa: E402
 
-from flask import Flask, render_template, request, g, abort  # noqa: E402
+from flask import Flask, render_template, request, g, abort, url_for  # noqa: E402
 from werkzeug.exceptions import HTTPException  # noqa: E402
 
 import audioPreprocessing  # noqa: E402
+import i18n  # noqa: E402
 import lambdaGetSample  # noqa: E402
 import lambdaSpeechToScore  # noqa: E402
 import language_registry  # noqa: E402
@@ -40,9 +41,12 @@ app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_REQUEST_BYTES', str(4
 
 rootPath = ''
 
-_STATIC_ASSETS = ('css/style.css', 'javascript/app.js')
+# The stylesheets and scripts: every file in these folders of static/. The page
+# asks for each with its version (asset_url), so a new script is versioned and
+# cached like the others without a change here.
+_ASSET_FOLDERS = ('css', 'javascript')
 
-# The page loads its own script, stylesheet and fonts, and the Cloudflare Web
+# The page loads its own scripts, stylesheets and fonts, and the Cloudflare Web
 # Analytics beacon that the CDN injects.
 CONTENT_SECURITY_POLICY = '; '.join([
     "default-src 'self'",
@@ -66,17 +70,34 @@ SECURITY_HEADERS = {
 }
 
 
-def _asset_version() -> str:
-    """Cache-busting token for the stylesheet and the script: a hash of their
-    content, so the same files give the same token in every build and colour,
-    and a change to either gives a new one."""
+def _asset_files(static_folder=None) -> tuple:
+    """The stylesheets and scripts, by the path the page asks for under
+    /static/ ('javascript/app.js'), sorted: the same files give the same
+    list on any machine and in any folder."""
+    static_folder = static_folder or app.static_folder
+    paths = []
+    for folder in _ASSET_FOLDERS:
+        for parent, _, names in os.walk(os.path.join(static_folder, folder)):
+            paths += [os.path.relpath(os.path.join(parent, name), static_folder).replace(os.sep, '/')
+                      for name in names]
+    return tuple(sorted(paths))
+
+
+def _asset_version(static_folder=None) -> str:
+    """Cache-busting token for the stylesheets and scripts: a hash of their
+    names and content, so the same files give the same token in every build
+    and colour, and a change to any of them, or a new one, gives a new one."""
+    static_folder = static_folder or app.static_folder
     digest = hashlib.sha256()
-    for path in _STATIC_ASSETS:
-        with open(os.path.join(app.static_folder, path), 'rb') as f:
-            digest.update(f.read())
+    for path in _asset_files(static_folder):
+        with open(os.path.join(static_folder, path), 'rb') as f:
+            content = f.read()
+        digest.update(f'{path} {len(content)}:'.encode())
+        digest.update(content)
     return digest.hexdigest()[:12]
 
 
+_STATIC_ASSETS = _asset_files()
 ASSET_VERSION = _asset_version()
 # The page asks for /static/<asset>?v=ASSET_VERSION, and for the fonts, whose
 # names change with their content. Browsers and Cloudflare may keep those for a
@@ -211,9 +232,27 @@ def _request_language(body) -> str:
     return language
 
 
+@app.template_global()
+def asset_url(path: str) -> str:
+    """The URL of a stylesheet or script with its version, for the template:
+    asset_url('javascript/app.js') is /static/javascript/app.js?v=<ASSET_VERSION>,
+    which browsers and Cloudflare keep for a year (_cache_control). A path that
+    is not one of them (a typo, a file the image lacks) fails the page."""
+    if path not in _STATIC_ASSETS:
+        raise ValueError(f'{path!r} is not a file of static/{" or static/".join(_ASSET_FOLDERS)}')
+    return url_for('static', filename=path, v=ASSET_VERSION)
+
+
 @app.route(rootPath+'/')
 def main():
-    return render_template('main.html', asset_version=ASSET_VERSION)
+    # In the learner's language, from the cookie the page sets when they
+    # choose one, so a Vietnamese page comes without English first; the
+    # script gets both dictionaries and switches language in place.
+    lang = i18n.choose(request.cookies.get('lang'))
+    response = app.make_response(render_template('main.html', lang=lang, t=i18n.dictionary(lang),
+                                                 dictionaries=i18n.dictionaries()))
+    response.vary.add('Cookie')  # one URL, two pages
+    return response
 
 
 @app.route(rootPath+'/getAudioFromText', methods=['POST'])
