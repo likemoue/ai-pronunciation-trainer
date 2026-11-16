@@ -12,16 +12,18 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   live colour (blue or green). Cloudflare drops requests after 125 s (error 524). With gthread workers, gunicorn's
   `timeout` no longer interrupts a slow request, so every step bounds itself.
 - API routes accept only `application/json` (others get 415). Every error is JSON `{"error", "code"}`:
-  - `POST /getSample`: a sentence from the bank, `category` 0 to 3 (random, easy, medium, hard).
+  - `POST /getSample`: a sentence from the bank, `category` 0 to 3 (random, easy, medium, hard); the answer's
+    `category` is the sentence's own level (1-3, also for Random), which its points follow.
   - `POST /getCustomSample`: the user's own text, with its IPA.
   - `POST /getAudioFromText`: Piper TTS, returned as base64 WAV.
   - `GET /tts/<language>/<key>.mp3`: a bank sentence read aloud, cached for a year (the key hashes voice and sentence;
     `/getSample` returns it as `tts_url`).
-  - `POST /GetAccuracyFromRecordedAudio`: scores a recording.
+  - `POST /GetAccuracyFromRecordedAudio`: scores a recording; per word `pair_accuracy_category` (0-2),
+    `mistake_kinds` (`ending`, `th`, `sh` or `-`, for the page's hint) and the letters heard as written.
   - `GET /healthz` (the worker answers), `/readyz` (every worker warmed up), `/version` (`GIT_SHA`, `GIT_DATE`).
 - Scoring pipeline (serialised per worker by `_inference_lock`; one `scored` log line per request with timings):
   0. `lambdaSpeechToScore.ScoringQueue`: a worker holds at most `GUNICORN_THREADS - 4` recordings (and none that would
-     wait over 30 s); the next ones get 503 `busy` with `Retry-After`, and app.js sends them again (3 times at most;
+     wait over 30 s); the next ones get 503 `busy` with `Retry-After`, and the page (recorder.js) sends them again (3 times at most;
      each attempt has its own 100 s), as does `deploy/smoke_test.py` (deploy.sh and the canary). The warm-up takes no
      place in the queue, and a cold pipeline's first full pass (the warm-up's or a learner's) stays out of the
      queue's estimate.
@@ -46,17 +48,33 @@ trimmed to English. `README.md` describes it for readers; this file is the short
   browser reads them. MP3s (bank sentences) are encoded with ffmpeg.
 - `validation.py`: shared input limits, enforced before any model runs.
   - Text: up to 300 characters or 60 words, and at least 90% A-Z letters. The TTS route also accepts single short
-    words such as "André" or "2:30". Control characters other than whitespace, and lone UTF-16 surrogates, are refused.
+    words such as "André" or "2:30". Windows-1252's quotes, dashes and ellipsis read as Latin-1 (U+0085, U+0091-0094,
+    U+0096-0097) count as that punctuation, and zero-width characters and soft hyphens are dropped; other control
+    characters and lone UTF-16 surrogates are refused.
   - Audio: up to 35 s, in a request of up to 4 MB.
 - `databases/data_en.csv`: the sentence bank, from Tatoeba (CC BY 2.0 FR, credited in the footer).
   It is screened for school use, and `tests/test_content.py` fails on blocked topics and on duplicates. A second
   review (2026-11) read every sentence; `tests/content_removed_en.tsv` lists the 357 it removed, which must not
   come back.
-- Frontend: `templates/main.html`, `static/javascript/app.js` and `static/css/style.css`.
-  The CSP forbids inline scripts and styles, and the client's `normalizeText` must stay in step with `validation.normalize_text`.
-  The page loads nothing from other sites: fonts are in `static/fonts` (OFL), the result chime is synthesised.
-  `webApp.ASSET_VERSION` hashes style.css and app.js; only `?v=<current>` (and the fonts, and the bank MP3s) are
-  cached as immutable, the page is `no-cache` and the API `no-store`.
+- Frontend (phase 4, built from `design/wireframes/` and `context/design-system.md`, approved): `templates/main.html`,
+  `static/css/style.css` and classic deferred scripts sharing `window.AIPT`, loaded in this order: `core.js`
+  (requests, storage, `normalizeText` and `checkText`, which must stay in step with `validation.normalize_text` and
+  `practice_text`: `tests/js/page_text.test.mjs` compares them), `i18n.js`, `ui.js` (sheets, notices, focus),
+  `inapp.js`, `audio.js`, `recorder.js` (the recording sheet's state machine), `result.js`, `progress.js` (kept in
+  localStorage `aipt.progress.v1`), `miccheck.js`, `tour.js`, `banner.js`, `app.js`. ES2021 at most, no framework,
+  no build step: the targets go down to Chrome 109 and iOS 15 (design-system §6).
+  The CSP forbids inline scripts and styles (no `style=` attributes; `el.style.setProperty` from a script is fine).
+  The page loads nothing from other sites: fonts are in `static/fonts` (OFL; Inter with its Vietnamese subset), the
+  icons are an inline SVG sprite, the result chime is synthesised.
+  `webApp.ASSET_VERSION` hashes every file of `static/css` and `static/javascript`, which the template links with
+  `asset_url()`; only `?v=<current>` (and the fonts, and the bank MP3s) are cached as immutable, the page is
+  `no-cache` and the API `no-store`.
+- Language (EN | VI): every string of the page is in `i18n/en.json` and `i18n/vi.json` (`i18n.py` refuses to start
+  when their keys or placeholders differ). `GET /` renders the page in the language of its `lang` cookie (`Vary:
+  Cookie`) and gives the script both dictionaries in a JSON data block (`#i18nData`); the page switches in place.
+  The server's error messages are never shown: the page maps each `code` to its own words. The Edit/Write tools
+  turn a written four-digit backslash-u escape into the character itself: write invisible characters as
+  `\u{...}` (JS) or `\N{...}` (Python).
 - Health: each gunicorn worker writes a marker (`readiness.py`) after a warm-up that scores a real spoken sentence; the
   warm-up starts in gunicorn's `post_worker_init`, not on import. `healthcheck.py` (the Docker `HEALTHCHECK`) and `/readyz`
   count the markers of live workers.
@@ -76,6 +94,13 @@ FFMPEG_BINARY=<path to ffmpeg> PYTHONUTF8=1 python -m pytest -q
 python -m pytest -q -m slow     # real Whisper and Piper
 
 OPEN_BROWSER=0 python webApp.py   # local server on :3000
+
+# The page's tools (Node 26 LTS; package.json, nothing of it goes into the image).
+npm ci
+npm run lint                      # ESLint on static/javascript and the tests
+node --test tests/js/             # page and server read a text the same way (PYTHON names the interpreter)
+E2E_BASE_URL=http://127.0.0.1:3000 npm run e2e   # Playwright against a running app, Chromium's fake microphone
+python e2e/scores/make_scores.py  # the scoring answers the result tests use (tests/test_build.py checks them)
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciation-trainer .
 scripts/lock.sh [--upgrade | --check]   # requirements*.lock from requirements*.in (needs uv)
 
@@ -144,8 +169,9 @@ as `ai-pronunciation-trainer:english-ui`) have no smoke test or HEALTHCHECK eith
 urllib user agent: check the public site in a browser, or run the smoke test with `--user-agent`.
 
 CI (`.github/workflows/ci.yml`) checks every PR and push to main: ruff, shellcheck, actionlint, the lock (hashes
-included), pip-audit, pytest, then the image (smoke test; the tests inside it, run against the image's own `/app`
-without network; Trivy). A test that reads other files of the repository belongs in `tests/test_build.py`, which
+included), pip-audit, ESLint, `node --test tests/js/`, npm audit, pytest, then the image (smoke test; the Playwright
+tests against the running image, with Chromium's fake microphone playing the app's own voice; the tests inside it,
+run against the image's own `/app` without network; Trivy). A test that reads other files of the repository belongs in `tests/test_build.py`, which
 runs only outside the image.
 `canary.yml` smoke-tests the public site every 15 minutes.
 
@@ -163,6 +189,8 @@ runs with `cpu: host` since 2026-11-15, on a Xeon E5-2670 v2 (Ivy Bridge): AVX, 
 dev machine with AVX2, and a class of 40 at once waits up to 40 s; int8 stays faster than float32 on it (4.7 s
 against 5.5 s for three clips). Before the switch (`x86-64-v2-AES`, no AVX) it was 2.2 s and 46 s.
 Cloudflare turns the app's `no-cache` for an old `?v=` asset into `max-age=14400` (the zone's browser cache TTL).
+A page loaded in the seconds of a colour switch can get its HTML from the old colour and its scripts from the new
+one (an old `?v=` answers today's file), and then fails to start until it is reloaded.
 
 ## Conventions
 
@@ -195,5 +223,10 @@ The full plan is in the maintainer's Claude plan file. Status:
   judged by its report: edit-distance alignment (dtwalign gone, the image 2.06 GB), words read as said (numbers,
   spellings, homophones), a robust level and Silero VAD, and typical mistakes never Correct. Against phase 2: labels
   right 89.5% -> 92.9%, learners' mistakes flagged 49% -> 62%, red letters on words said right 10.2% -> 5.3%.
-- **Phase 4, frontend:** UX, mobile, accessibility, and in-app browsers such as Zalo.
+- **Phase 4, frontend** (branch `phase4/frontend`): the approved wireframes and design system built: AA tokens
+  and no `color-mix()`, level chips and a fixed bottom bar, sheets, My text, the recording sheet with every state
+  (Send again keeps the recording, one state per microphone error, in-app browsers), the result card with marks,
+  words to practise and the typical-mistake hint (`mistake_kinds`), EN | VI, progress on the device, the
+  first-visit tour and microphone check, the in-app banner; ESLint, `tests/js`, Playwright in CI. `checklist.md`
+  lists the flows to walk through on phones and in Zalo, Facebook and Messenger.
 - **Phases 5-7** (learning features, phoneme-level scoring, school platform): only when chosen.
