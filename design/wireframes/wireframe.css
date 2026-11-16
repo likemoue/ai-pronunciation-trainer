@@ -242,10 +242,10 @@ code {
 	color: var(--ink);
 }
 
-/* A proposal outside the agreed scope: dashed and labelled. */
+/* The typical-mistake hint, decided for phase 4 (Q3): framed and labelled. */
 .prop {
 	position: relative;
-	border: 2px dashed var(--ink);
+	border: 2px solid var(--ink);
 	border-radius: 10px;
 	padding: 18px 10px 10px;
 	margin-top: 10px;
@@ -253,7 +253,7 @@ code {
 }
 
 .prop::before {
-	content: "PROPOSAL, not in phase 4 scope yet";
+	content: "Phase 4 (decided, Q3)";
 	position: absolute;
 	top: -9px;
 	left: 10px;
