@@ -38,4 +38,12 @@ export default [
             globals: globals.node,
         },
     },
+    {
+        // The browser tests hand functions to the page (page.evaluate, addInitScript),
+        // which run there.
+        files: ['e2e/**/*.mjs'],
+        languageOptions: {
+            globals: { ...globals.node, ...globals.browser },
+        },
+    },
 ];

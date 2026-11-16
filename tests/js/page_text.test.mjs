@@ -61,16 +61,16 @@ const PAGE_CODE = { '': '', empty: 'invalid_request' };
 
 const CURATED = [
     '', '   ', 'Hello world', '  Mary  has\twritten\nthree books. ',
-    'It’s “fine” — really…', 'It\x92s \x93fine\x94 \x97 really\x85',
-    'zero​width‌ words‍⁠﻿', 'soft\xADhyphen', 'File\x1cseparator\x1d here\x1e\x1f',
+    'It\u{2019}s \u{201C}fine\u{201D} \u{2014} really\u{2026}', 'It\x92s \x93fine\x94 \x97 really\x85',
+    'zero\u{200B}width\u{200C} words\u{200D}\u{2060}\u{FEFF}', 'soft\xADhyphen', 'File\x1cseparator\x1d here\x1e\x1f',
     'tab\x0bvertical', 'bell\x07 rings', 'ap\x9bples', 'lone \uD800 surrogate', 'Hôm nay em đi học',
     'Café au lait is nice', 'André reads 2:30', '- - -', '... !!!', 'word '.repeat(61), 'a'.repeat(301),
-    `${'abcdefghij '.repeat(27)}abcdefgh`, '　ideographic　space', 'nbsp\xa0here', 'line sep',
+    `${'abcdefghij '.repeat(27)}abcdefgh`, '\u{3000}ideographic\u{3000}space', 'nbsp\xa0here', 'line\u{2028}sep',
 ];
 
 const POOL = ['a', 'b', 'Z', 'e', ' ', '\t', '\n', '\x0b', '\x1c', '\x1f', '\x85', '\x91', '\x92', '\x93',
-    '\x94', '\x96', '\x97', '\x9b', '\xa0', ' ', ' ', '​', '‍', '﻿', '\xad', '’',
-    '“', '—', '…', '-', '.', ',', '1', 'é', 'ạ', '　', '!', '?', '́', 'Δ'];
+    '\x94', '\x96', '\x97', '\x9b', '\xa0', '\u{2003}', '\u{2028}', '\u{200B}', '\u{200D}', '\u{FEFF}', '\xad', '\u{2019}',
+    '\u{201C}', '\u{2014}', '\u{2026}', '-', '.', ',', '1', 'é', 'ạ', '\u{3000}', '!', '?', '\u{301}', 'Δ'];
 
 function randomTexts(count) {
     let seed = 20261116;
