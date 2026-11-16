@@ -64,11 +64,12 @@ jobs:
         with:
           node-version: "26"
           cache: npm
-      - name: The page's scripts (ESLint) and the Node tools' known vulnerabilities
+      - name: The page's scripts (ESLint, text rules as the server's) and the Node tools' known vulnerabilities
         run: |
           npm ci --no-audit --no-fund
           npx eslint
-          npm audit --audit-level=high
+          node --test tests/js/
+          npm audit
       - name: shell scripts
         run: |
           scripts=(deploy/deploy.sh scripts/*.sh deploy/test/run.sh deploy/test/harness/*.sh deploy/test/harness/bin/*)
