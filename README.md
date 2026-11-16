@@ -196,8 +196,8 @@ optional and must be an enabled language (`en`).
 
 | Route | Request | Response |
 |---|---|---|
-| `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty), `tts_url` |
-| `POST /getCustomSample` | `text` | the same, for the user's text |
+| `POST /getSample` | `category`: 0 any, 1 easy, 2 medium, 3 hard | `real_transcript` (a list with the sentence), `ipa_transcript`, `transcript_translation` (empty), `tts_url`, `category` (the sentence's own level as a number, 1, 2 or 3, also when 0 was asked for) |
+| `POST /getCustomSample` | `text` | `real_transcript`, `ipa_transcript`, `transcript_translation`, for the user's text (no `tts_url` or `category`) |
 | `POST /getAudioFromText` | `value`: the text to read | `wavBase64`: a WAV file |
 | `GET /tts/<language>/<key>.mp3` | | A bank sentence read aloud (MP3); `/getSample` gives the URL as `tts_url`. The key is a hash of the voice, the MP3 bitrate and the sentence, so the file never changes and is cached for a year; any other key is 404 |
 | `POST /GetAccuracyFromRecordedAudio` | `title`: the sentence, `base64Audio`: the recording (a `data:` URL or plain base64) | `pronunciation_accuracy` (at most 100, as a string; below 0 when what was heard has many more letters than the sentence, which the page shows as 0), `real_transcript` (what was heard), `ipa_transcript`, `real_transcripts` / `matched_transcripts` and their `_ipa` versions (the aligned words), `pair_accuracy_category` (per word: 0 good, 1 fair, 2 poor), `mistake_kinds` (per word, in the same order: `ending`, `th` or `sh` when the word was heard with that typical mistake, which keeps it from 0, else `-`; "Mary has written three books." heard as "Mary has written tree book." gives `- - - th ending`), `is_letter_correct_all_words` (per letter: 1 or 0), `start_time` / `end_time` (per word, seconds) |

@@ -9,7 +9,8 @@ already checks it on every change.
 ## Phase 4: frontend, mobile, accessibility, in-app browsers (2026-11)
 
 Built from the approved wireframes (`design/wireframes/`) and `context/design-system.md`. The page is rebuilt; the
-API gains one field and the page's language; scores and labels do not change. Check every learner flow on a phone
+API gains two fields (the scoring's `mistake_kinds`, getSample's `category`) and the page's language; scores
+and labels do not change. Check every learner flow on a phone
 (Chrome Android, Safari iOS) and in Zalo, Facebook and Messenger on both, and on Chrome 109 (Windows 7 labs),
 in English and Vietnamese, light and dark.
 
@@ -74,12 +75,13 @@ in English and Vietnamese, light and dark.
 ### API and operations
 - [ ] The scoring answer has `mistake_kinds`, one per word; scores and labels are unchanged. Auto:
       `tests/test_word_matching.py`, `tests/test_evaluation.py`.
+- [ ] `/getSample` answers the sentence's own `category` (1-3), also for Random (0). Auto: `tests/test_api.py`.
 - [ ] The page is rendered in the `lang` cookie's language (`Vary: Cookie`); its strings come from `i18n/`; the CSP
       still allows no inline script (the strings are a JSON data block). Auto: `tests/test_i18n.py`.
 - [ ] Every script and the stylesheet are versioned by content and cached for a year only under the current
       version. Auto: `tests/test_assets.py`, `tests/test_static.py`.
 - [ ] A learner who keeps an old page open across the deploy can still record and get a score (the API only gained
-      a field).
+      fields); a new page after `deploy.sh --rollback` still works without them.
 - [ ] CI runs ESLint and the Playwright tests (a fake microphone plays the app's own voice into the real image);
       the Node tools stay out of the image. Auto: `ci.yml`, `tests/test_build.py`.
 
