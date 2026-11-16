@@ -100,11 +100,17 @@
     let activePlayback = null; // { stop(), button }
 
     // ---------------------------------------------------------------- utils
+    // validation.normalize_text on the server, rule for rule: keep the two in
+    // step. The invisible characters go (soft hyphen, zero-width space,
+    // non-joiner and joiner, word joiner, byte order mark), and \x85,
+    // \x91-\x94, \x96 and \x97 are Windows-1252's ellipsis, quotes and dashes
+    // read as Latin-1.
     const normalizeText = (text) => text
-        .replace(/[‘’‛′]/g, "'")
-        .replace(/[“”‟″]/g, '"')
-        .replace(/[–—−]/g, ' - ')
-        .replace(/…/g, '...')
+        .replace(/[\xad\u{200B}-\u{200D}\u{2060}\u{FEFF}]/gu, '')
+        .replace(/[‘’‛′\x91\x92]/g, "'")
+        .replace(/[“”‟″\x93\x94]/g, '"')
+        .replace(/[–—−\x96\x97]/g, ' - ')
+        .replace(/[…\x85]/g, '...')
         .replace(/\s+/g, ' ')
         .trim()
         .split(' ')
@@ -121,7 +127,7 @@
             signal,
         });
         const raw = await res.text();
-        let data = null;
+        let data;
         try {
             data = raw ? JSON.parse(raw) : null;
         } catch (_) {
