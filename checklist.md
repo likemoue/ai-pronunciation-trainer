@@ -17,7 +17,14 @@ in English and Vietnamese, light and dark.
 ### Learner flows
 - [ ] First visit: the 3-step tour over the real controls, then the 3-second microphone check (nothing uploaded);
       Skip at every step; Escape skips; the tour never comes back by itself; "Show the tour again" and "Check my
-      microphone" from How it works (phones) or the header (desktop).
+      microphone" from How it works (phones) or the header (desktop). It does not start by itself inside an app's
+      browser (the banner speaks first), in a browser that cannot record, where the browser keeps nothing
+      (private modes that refuse storage), or while a sheet is open; its flag is `aipt.tour` in localStorage.
+- [ ] Microphone check: the browser's prompt explained first ("tap Allow", not shown when already allowed), 3 s
+      with a moving meter, then "Your microphone works" (Start practising: focus on Listen), "We didn't hear
+      anything" with three things to check, or the recording sheet's own steps (blocked in Chrome Android, Safari
+      iOS, desktop; no microphone; busy), and inside an app its way out (Open in Chrome, Copy link, the ••• steps).
+      The microphone light goes off when it ends; Cancel, ✕ and Escape at every step.
 - [ ] Choose a level: the chip is a radio group (arrow keys), the card shows a skeleton, the sentence comes in its
       level; a chip chosen while loading cancels the first request; a failed load shows the error in the card with
       Try again (or a notice above the bar when a sentence is already shown); getSample gives up after 15 s.
@@ -31,7 +38,9 @@ in English and Vietnamese, light and dark.
 - [ ] Failures: a server or network failure and the 100 s timeout keep the recording (Send again, Record again,
       Close); offline keeps it too and says when the connection is back; no speech (422), too short, interrupted
       (tab hidden, a call, a headset unplugged: nothing is sent); the microphone blocked (steps for Chrome Android,
-      Safari iOS, desktop Chrome/Edge), none, busy, other errors.
+      Safari iOS, desktop Chrome/Edge), none, busy, other errors. A silent take of 1-4 s says "We couldn't hear any
+      words" and is not sent (Chrome makes it smaller than 1 KB, which used to read as too short); under 0.6 s is
+      too short.
 - [ ] Recording sheet, edge cases: Cancel while the browser still asks for the microphone, then the mic again: the
       new take records (the late answer is let go); a double tap on the mic or on Stop never lands on the buttons
       that replace them; a recording the server cannot read (400) asks for a new take; a microphone blocked in the
@@ -54,14 +63,20 @@ in English and Vietnamese, light and dark.
 - [ ] Language: EN | VI in the header switches every text in place, is remembered on the device, and the next visit
       opens in that language with no English first (`lang` cookie); the sentence and IPA stay English; numbers and
       dates follow the language; no server message is shown as it comes.
-- [ ] Progress: the ★ chip shows today's points (12.5K from 10,000); the sheet shows today, the streak and the last
-      7 days in Vietnam time, words to review (at most 12, then Show all); tapping a word practises it alone; each
-      sentence counts once a day with its best attempt, at its own level's multiplier (Random no longer pays x1.3),
-      and sending the same text again pays nothing more; "New learner" asks first, then clears points, streak,
-      words, the draft and the tour flag, and keeps the language.
+- [ ] Progress: the ★ chip shows today's points (12.5K from 10,000; "245 today · 3 days" from 768 px); the sheet
+      shows today, the streak and the last 7 days in Vietnam time (a day starts at midnight in Vietnam, whatever
+      the device's zone), words to review (✗ first, at most 12, then Show all); tapping a word practises it alone
+      ("Word to review", Back to sentences; a level chip or Next go back too) and its result updates the list; a
+      word leaves after two Correct readings; each sentence counts once a day with its best attempt, at its own
+      level's multiplier (Random no longer pays x1.3; an older server without getSample's category: the level asked
+      for, or Random by word count), and sending the same text again pays nothing more; "That sounds like a
+      different sentence" counts for nothing; "New learner" asks first (focus on Cancel), then clears points,
+      streak, words, the draft and the tour flag, keeps the language and shows "Progress deleted" with the tour one
+      tap away. Two tabs keep one record (`aipt.progress.v1`); a damaged or older record starts again quietly.
 - [ ] In-app browsers: the banner names Zalo, Facebook, Messenger, Instagram, LINE or a WebView; Open in Chrome
-      (Android intent link), Copy link (with the address to copy by hand when the clipboard is refused), Not now /
-      ✕ for the visit; when recording fails inside an app, the sheet repeats that guidance instead of browser steps.
+      (Android intent link), Copy link ("Copied" for 4 s, said once; the address to copy by hand when the
+      clipboard is refused), ✕, or Not now where an arrow points at the app's ••• or ⋮ menu, for the visit; when
+      recording fails inside an app, the sheet repeats that guidance instead of browser steps.
 - [ ] Offline: a notice above the controls, Next disabled, the mic usable; a recording made offline can be sent
       once back online. A browser that cannot record says so before the first tap, with the mic disabled.
 

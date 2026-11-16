@@ -14,7 +14,7 @@
 //   failed       the server or the connection failed; the recording is kept (B8)
 //   offline      the browser is offline; the recording is kept (B9)
 //   no-speech    nothing like speech: the server's 422, or the page's own silence check (B10)
-//   too-short    under 0.6 s or 1 KB (B11)
+//   too-short    under 0.6 s, or under 1 KB and not silent (B11)
 //   interrupted  the page was hidden, the track ended or the recorder failed (B12)
 //   rejected     the server refused the recording for a reason that sending it again cannot fix
 //   mic-blocked, mic-none, mic-busy, mic-error   the microphone did not start (B13-B16)
@@ -34,9 +34,8 @@
     const MAX_SECONDS = AIPT.LIMITS.recordingSeconds;
     // B4: the last seconds count down ("Stopping by itself in 5 s…").
     const ENDING_SECONDS = 5;
-    // B3: this long under the speech level says "We can't hear you".
+    // B3: this long under the speech level (AIPT.audio.SPEECH_LEVEL) says "We can't hear you".
     const QUIET_MS = 3500;
-    const SPEECH_LEVEL = 0.06;
     // The page's own silence check (B10): a take whose loudest moment stays
     // under this is not sent. It counts only when the level was measured.
     const SILENCE_RMS = 0.003;
@@ -370,7 +369,11 @@
     }
 
     // checking + recorded: the take is checked here first (too short, or
-    // silent: nothing is sent), then read, then sent.
+    // silent: nothing is sent), then read, then sent. Silence comes before
+    // the size: Chrome encodes digital silence at about 250 bytes a second
+    // (with a 300-byte header), so a silent take of up to 4 s is under 1 KB
+    // and would be called too short. A small take whose level was not
+    // silent, or was not measured, stays too short.
     function recorded({ recorder, chunks }) {
         if (take.phase !== 'stopping' || recorder !== take.recorder) return false;
         clearTimeout(take.stopTimer);
@@ -381,12 +384,16 @@
         const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
         releaseMic();
         drawWave(true);
-        if (take.duration < MIN_RECORDING_MS || blob.size < MIN_RECORDING_BYTES) {
+        if (take.duration < MIN_RECORDING_MS) {
             enter('too-short');
             return true;
         }
         if (metered && take.maxRms < SILENCE_RMS) {
             enter('no-speech', 'silent');
+            return true;
+        }
+        if (blob.size < MIN_RECORDING_BYTES) {
+            enter('too-short');
             return true;
         }
         take.phase = 'reading';
@@ -934,6 +941,34 @@
         ],
     };
     const BLOCKED_HOW = { android: 'rec.blocked.howChrome', ios: 'rec.blocked.how', desktop: 'rec.blocked.how' };
+    const MIC_MESSAGES = {
+        'mic-none': { title: 'rec.none.title', lead: 'rec.none.lead', text: 'rec.none.text' },
+        'mic-busy': { title: 'rec.micBusy.title', lead: 'rec.micBusy.lead', text: 'rec.micBusy.text' },
+        'mic-error': { title: 'rec.micError.title', lead: 'rec.micError.lead', text: '' },
+    };
+
+    // The message of a microphone that did not start (B13-B16), here and in
+    // the microphone check (E9): the keys of its title, first and second
+    // line, and the steps that unblock it in this browser (guide, from
+    // micFailure).
+    function micMessage(state, guide = '') {
+        if (state === 'mic-blocked') {
+            return {
+                title: 'rec.blocked.title',
+                lead: guide === 'ios' ? 'rec.blocked.leadSafari' : 'rec.blocked.lead',
+                text: BLOCKED_HOW[guide] || 'rec.blocked.inSettings',
+                steps: BLOCKED_STEPS[guide] ? BLOCKED_STEPS[guide]() : [],
+            };
+        }
+        return { ...(MIC_MESSAGES[state] || MIC_MESSAGES['mic-error']), steps: [] };
+    }
+
+    function showMicMessage() {
+        const message = micMessage(take.state, take.detail);
+        setMessage(message.title, message.lead, message.text);
+        setSteps(message.steps);
+        micActions();
+    }
 
     const RENDER = {
         preparing() {
@@ -993,38 +1028,20 @@
             setMessage('rec.failed.title', lead);
             againActions();
         },
-        'mic-blocked'() {
-            const guide = take.detail;
-            setMessage('rec.blocked.title', guide === 'ios' ? 'rec.blocked.leadSafari' : 'rec.blocked.lead',
-                BLOCKED_HOW[guide] || 'rec.blocked.inSettings');
-            setSteps(BLOCKED_STEPS[guide] ? BLOCKED_STEPS[guide]() : []);
-            micActions();
-        },
-        'mic-none'() {
-            setMessage('rec.none.title', 'rec.none.lead', 'rec.none.text');
-            micActions();
-        },
-        'mic-busy'() {
-            setMessage('rec.micBusy.title', 'rec.micBusy.lead', 'rec.micBusy.text');
-            micActions();
-        },
-        'mic-error'() {
-            setMessage('rec.micError.title', 'rec.micError.lead');
-            micActions();
-        },
+        'mic-blocked': showMicMessage,
+        'mic-none': showMicMessage,
+        'mic-busy': showMicMessage,
+        'mic-error': showMicMessage,
         // B17 (Android: Open in Chrome, Copy link) and B18 (iPhone: the ••• menu, Copy link).
         'in-app'() {
-            const guide = AIPT.inApp.guidance() || { name: '', openChrome: false, menu: false };
-            if (take.detail === 'ios') {
-                setMessage('inapp.iosTitle', 'inapp.iosLead', 'inapp.iosHow');
+            const message = AIPT.inApp.failureMessage();
+            setMessage(message.title, message.lead, message.text, message.params);
+            if (message.ios) {
                 setSteps(AIPT.inApp.safariSteps());
                 setActions([[els.copyLink, 'primary'], [els.cancel, 'secondary']], 'common.close');
             } else {
-                const named = Boolean(guide.name);
-                setMessage(named ? 'inapp.title' : 'inapp.titleUnnamed', named ? 'inapp.lead' : 'inapp.leadUnnamed',
-                    guide.openChrome ? 'inapp.chrome' : 'inapp.copyElsewhere', named ? { app: guide.name } : undefined);
-                if (guide.menu) AIPT.inApp.chromeOrMenu(els.text);
-                if (guide.openChrome) {
+                if (message.menu) AIPT.inApp.chromeOrMenu(els.text);
+                if (message.openChrome) {
                     els.openChrome.setAttribute('href', AIPT.inApp.chromeIntentUrl());
                     setActions([[els.openChrome, 'primary', 'full'], [els.copyLink, 'secondary', 'wide'],
                         [els.cancel, 'secondary']], 'common.close');
@@ -1129,9 +1146,9 @@
         const rms = Math.sqrt(sum / samples.length);
         take.samples += 1;
         if (rms > take.maxRms) take.maxRms = rms;
-        const level = Math.min(1, Math.pow(rms * 6, 0.8));
+        const level = AIPT.audio.levelOf(rms);
         take.smoothed = Math.max(level, take.smoothed * 0.8);
-        if (level > SPEECH_LEVEL) take.lastLoudAt = performance.now();
+        if (level > AIPT.audio.SPEECH_LEVEL) take.lastLoudAt = performance.now();
         take.levels.push(take.smoothed);
         const maxBars = Math.ceil(wave.width / ((wave.bar + wave.gap) * wave.dpr)) + 1;
         if (take.levels.length > maxBars) take.levels.splice(0, take.levels.length - maxBars);
@@ -1285,6 +1302,14 @@
         },
         get state() {
             return take.state;
+        },
+        // For the microphone check (miccheck.js, E9): the same state and steps
+        // for a microphone that did not start, and what the browser says of the
+        // permission before any tap ('granted', 'denied', 'prompt' or '').
+        micFailure,
+        micMessage,
+        get micPermission() {
+            return micPermission;
         },
     };
 })();

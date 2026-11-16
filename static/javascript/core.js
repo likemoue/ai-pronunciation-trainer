@@ -1,7 +1,8 @@
 'use strict';
 
 // The page's scripts share one global, AIPT, and run in this order (defer):
-// core.js, i18n.js, ui.js, audio.js, recorder.js, result.js, app.js. They are
+// core.js, i18n.js, ui.js, inapp.js, audio.js, recorder.js, result.js,
+// progress.js, miccheck.js, tour.js, banner.js, app.js. They are
 // classic scripts with no build step, for the browsers of
 // context/design-system.md §6 (Chrome 109, iOS 15 Safari, Android WebView,
 // Firefox ESR 115): ES2021, and none of Array.prototype.at, findLast,

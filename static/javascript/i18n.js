@@ -204,14 +204,19 @@
         return new Intl.DateTimeFormat(lang, { ...options, timeZone: TIME_ZONE }).format(date);
     }
 
-    // "2026-11-16": the day in Vietnam (for "today" and the streak).
-    function dayKey(date = new Date()) {
+    // The parts of a date in Vietnam ({ weekday, day, month, year }) as
+    // `locale` writes them (the interface language by default).
+    function dateParts(date, options, locale = lang) {
         const parts = {};
-        new Intl.DateTimeFormat('en-US', {
-            timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
-        }).formatToParts(date).forEach((part) => {
+        new Intl.DateTimeFormat(locale, { ...options, timeZone: TIME_ZONE }).formatToParts(date).forEach((part) => {
             parts[part.type] = part.value;
         });
+        return parts;
+    }
+
+    // "2026-11-16": the day in Vietnam (for "today" and the streak).
+    function dayKey(date = new Date()) {
+        const parts = dateParts(date, { year: 'numeric', month: '2-digit', day: '2-digit' }, 'en-US');
         return `${parts.year}-${parts.month}-${parts.day}`;
     }
 
@@ -233,6 +238,7 @@
         },
         formatNumber,
         formatDate,
+        dateParts,
         dayKey,
     };
 

@@ -27,8 +27,16 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
 - **Reference voice**: [Piper](https://github.com/OHF-voice/piper1-gpl) with the public-domain LJ Speech voice
   (`en_US-ljspeech-medium`), synthesised on the server. Bank sentences come as MP3 files that browsers and
   Cloudflare cache; if the server has no voice, the browser's voice is used.
-- **Privacy**: recordings and typed text are never stored, and student audio is never sent to third-party
-  speech services. Logs hold timings and outcomes, never the text or the audio.
+- **Progress**, kept in the learner's browser only: today's points (each sentence once a day, at its best attempt,
+  times its level: Easy x1, Medium x1.3, Hard x1.6), the streak and the last 7 days in Vietnam time, and the words
+  to review, each practised on its own. "New learner" clears it on a shared phone or computer.
+- **First visit**: a three-step tour over the real controls, then a 3-second microphone check in the browser
+  (nothing recorded or sent), so the browser's permission prompt comes with an explanation; both again from How
+  it works.
+- **In-app browsers**: in Zalo, Facebook, Messenger, Instagram, LINE and other Android WebViews, a banner gets the
+  learner to a real browser: Open in Chrome on Android, the app's ••• menu on iPhone, and Copy link.
+- **Privacy**: recordings and typed text are never stored on the server, and student audio is never sent to
+  third-party speech services. Logs hold timings and outcomes, never the text or the audio.
 
 ## How scoring works
 

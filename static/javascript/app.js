@@ -1,10 +1,11 @@
 'use strict';
 
-// The page itself (design/wireframes 01, 07, 08): the level chips, the
+// The page itself (design/wireframes 01, 06, 07, 08): the level chips, the
 // sentence card with Listen · Mic · Next (a bar fixed at the bottom of phones,
-// inline from 768 px), the notices docked above them, the My text sheet, the
-// language switch and the Space shortcut. Loaded last: it wires the parts the
-// other scripts provide.
+// inline from 768 px), the notices docked above them, the My text sheet, a
+// word of the progress sheet practised alone, How it works, the language
+// switch and the Space shortcut. Loaded last: it wires the parts the other
+// scripts provide.
 (() => {
     const { $, i18n, ui, storage, env } = AIPT;
     const { t } = i18n;
@@ -21,8 +22,10 @@
         levels: $('levels'),
         card: $('sentenceCard'),
         cardLabel: $('cardLabel'),
+        cardLabelIcon: $('cardLabelIcon'),
         cardLabelText: $('cardLabelText'),
         btnMyText: $('btnMyText'),
+        myTextIcon: $('myTextIcon'),
         myTextLabel: $('myTextLabel'),
         skeleton: $('sentenceSkeleton'),
         sentence: $('sentence'),
@@ -42,6 +45,10 @@
         micLabel: $('micLabel'),
         btnNext: $('btnNext'),
         langButtons: Array.from(document.querySelectorAll('.lang-btn')),
+        // How it works (E10, H1)
+        btnHowHeader: $('btnHowHeader'),
+        btnTourAgain: $('btnTourAgain'),
+        btnMicCheck: $('btnMicCheck'),
         // My text
         myTextSheet: $('myTextSheet'),
         field: $('customText'),
@@ -59,14 +66,16 @@
 
     const state = {
         category: '1', // the level asked for: '1' easy, '2' medium, '3' hard, '0' random
-        mode: 'bank', // 'bank' or 'custom' (My text)
+        mode: 'bank', // 'bank', 'custom' (My text) or 'word' (a word to review, practised alone)
         text: '',
         ipa: '',
+        level: 1, // the bank sentence's own level (1-3): its points follow it (progress.js)
         ttsUrl: '', // the bank sentence's MP3
         ipaOpen: true,
         loading: false,
         loadController: null,
         loadFailed: false,
+        wordController: null, // the request for the IPA of a word practised alone
         offline: navigator.onLine === false,
         listen: 'idle', // the Listen button: 'idle', 'loading' or 'playing'
     };
@@ -75,8 +84,9 @@
 
     // ---------------------------------------------------------------- notices
     // One docked notice at a time (design-system §2.9): a failed new sentence
-    // (the learner just asked for it), then cannot record > offline > no voice.
-    const dock = new ui.Dock(els.dock, ['loadFailed', 'cannotRecord', 'offline', 'noVoice']);
+    // (the learner just asked for it), the welcome after "New learner" (it
+    // goes at the next action), then cannot record > offline > no voice.
+    const dock = new ui.Dock(els.dock, ['loadFailed', 'welcome', 'cannotRecord', 'offline', 'noVoice']);
 
     // Copy link in a notice (AIPT.inApp.copyControl): "Link copied" for 4 s,
     // then back to what it said; where the clipboard is refused, the address
@@ -124,13 +134,38 @@
         actions: [{ label: 'common.tryAgain', icon: 'refresh', onClick: () => loadSentence() }],
     });
 
+    // F5: after "New learner", with the tour one tap away.
+    const welcomeNotice = () => ui.notice({
+        kind: 'success', icon: 'check', title: 'notice.welcome.title', text: 'notice.welcome.text',
+        actions: [{
+            label: 'notice.welcome.tour',
+            icon: 'help',
+            onClick: () => {
+                dock.hide('welcome');
+                AIPT.tour.start(null);
+            },
+        }],
+    });
+
     // ---------------------------------------------------------------- the card
+    // The card's label and the button at its top right, by what it holds: a
+    // bank sentence ("Read this aloud", My text), the learner's own text (a
+    // "My text" badge, Edit) or a word to review (a badge, Back to sentences:
+    // wireframes F6).
+    const CARD_LABELS = {
+        bank: { label: 'card.eyebrow', icon: 'edit', button: 'card.myText', buttonIcon: 'edit' },
+        custom: { label: 'card.myText', icon: 'edit', button: 'card.edit', buttonIcon: 'edit', badge: true },
+        word: { label: 'card.wordToReview', icon: 'target', button: 'card.backToSentences', buttonIcon: 'close', badge: true },
+    };
+
     function renderCard() {
-        const custom = state.mode === 'custom';
-        els.cardLabel.classList.toggle('is-badge', custom);
-        i18n.text(els.cardLabelText, custom ? 'card.myText' : 'card.eyebrow');
-        i18n.text(els.myTextLabel, custom ? 'card.edit' : 'card.myText');
-        i18n.attr(els.btnMyText, 'aria-label', custom ? 'card.editLabel' : null);
+        const look = CARD_LABELS[state.mode] || CARD_LABELS.bank;
+        els.cardLabel.classList.toggle('is-badge', Boolean(look.badge));
+        els.cardLabelIcon.setAttribute('href', `#i-${look.icon}`);
+        i18n.text(els.cardLabelText, look.label);
+        els.myTextIcon.setAttribute('href', `#i-${look.buttonIcon}`);
+        i18n.text(els.myTextLabel, look.button);
+        i18n.attr(els.btnMyText, 'aria-label', state.mode === 'custom' ? 'card.editLabel' : null);
 
         const hasText = Boolean(state.text);
         els.card.setAttribute('aria-busy', String(state.loading));
@@ -152,18 +187,37 @@
         els.ipa.textContent = state.ipa ? `/ ${state.ipa} /` : '';
     }
 
-    function setSentence({ text, ipa, ttsUrl = '', mode }) {
+    function setSentence({ text, ipa, ttsUrl = '', mode, level = 1 }) {
         AIPT.audio.stop();
         AIPT.result.clear();
+        if (state.wordController) state.wordController.abort();
+        state.wordController = null;
         state.text = AIPT.normalizeText(text || '');
         state.ipa = ipa || '';
         state.ttsUrl = ttsUrl;
         state.mode = mode;
+        state.level = level;
         // Above 20 words the IPA starts folded, so the text stays near the top.
         state.ipaOpen = words(state.text) <= LONG_TEXT_WORDS;
         renderSentence();
         renderCard();
         renderControls();
+        // The first sentence of a first visit starts the tour (tour.js decides).
+        if (state.text) AIPT.tour.sentenceShown();
+    }
+
+    // The bank sentence's own level (1-3), which its points follow: the
+    // server names it (getSample's category, also for Random). An older server
+    // does not: then the level asked for, or for Random the bank's own rule
+    // (lambdaGetSample.getSentenceCategory): up to 8 words easy, up to 20
+    // medium, longer hard.
+    function sentenceLevel(given, text) {
+        const level = Number(given);
+        if (level === 1 || level === 2 || level === 3) return level;
+        if (state.category !== '0') return Number(state.category);
+        const count = String(text || '').split(/\s+/).filter(Boolean).length;
+        if (count <= 8) return 1;
+        return count <= 20 ? 2 : 3;
     }
 
     // ---------------------------------------------------------------- the controls
@@ -215,7 +269,10 @@
             if (state.loadController !== controller) return;
             state.loading = false;
             state.loadFailed = false;
-            setSentence({ text: data.real_transcript[0], ipa: data.ipa_transcript, ttsUrl: data.tts_url || '', mode: 'bank' });
+            const text = data.real_transcript[0];
+            setSentence({
+                text, ipa: data.ipa_transcript, ttsUrl: data.tts_url || '', mode: 'bank', level: sentenceLevel(data.category, text),
+            });
             ui.announce(t('card.ready'));
         } catch (err) {
             if (state.loadController !== controller || (err && err.name === 'AbortError')) return;
@@ -244,6 +301,45 @@
             goToBank();
         },
     });
+
+    // ---------------------------------------------------------------- a word to review
+    // A word of the progress sheet's list, practised alone (wireframes F6):
+    // the word is the text to read at once (the voice and the scoring take a
+    // single word), and its IPA follows from the server. Its result updates
+    // the list. Back to sentences, a level chip or Next go back to the bank.
+    function practiseWord(word) {
+        const text = AIPT.normalizeText(word || '');
+        if (!text) return;
+        if (state.loadController) state.loadController.abort();
+        state.loadController = null;
+        state.loading = false;
+        state.loadFailed = false;
+        dock.hide('loadFailed');
+        setSentence({ text, ipa: '', mode: 'word' });
+        levels.check(null);
+        ui.focus(els.sentence);
+        ui.announce(t('card.wordReady', { word: text }));
+        fetchWordIpa(text);
+    }
+
+    // The word's IPA, if it comes: without it the card shows the word alone.
+    async function fetchWordIpa(text) {
+        const controller = new AbortController();
+        state.wordController = controller;
+        try {
+            const data = await AIPT.postJSON(AIPT.API.custom, { text, language: AIPT.PRACTICE_LANGUAGE },
+                { signal: controller.signal, timeout: SAMPLE_TIMEOUT_MS });
+            if (state.wordController !== controller || state.mode !== 'word' || state.text !== text) return;
+            state.ipa = data.ipa_transcript || '';
+            // Only the IPA line: a result may already be on the word.
+            els.ipa.textContent = state.ipa ? `/ ${state.ipa} /` : '';
+            renderCard();
+        } catch (err) {
+            if (!err || err.name !== 'AbortError') console.warn('No IPA for this word', err);
+        } finally {
+            if (state.wordController === controller) state.wordController = null;
+        }
+    }
 
     // ---------------------------------------------------------------- the controls' actions
     // A control waiting for a sentence says why when tapped (it is aria-disabled).
@@ -475,7 +571,11 @@
         }
     });
     els.btnUseCustom.addEventListener('click', useMyText);
-    els.btnMyText.addEventListener('click', openMyText);
+    // My text, or Back to sentences while a word is practised alone (F6).
+    els.btnMyText.addEventListener('click', () => {
+        if (state.mode === 'word') goToBank();
+        else openMyText();
+    });
     window.addEventListener('resize', () => {
         if (myText.sheet.isOpen) autosize();
     });
@@ -496,23 +596,55 @@
     AIPT.recorder.init({
         getText: () => state.text,
         fallbackFocus: els.btnRecord,
-        // The score of the text on the card: a bank sentence or My text (state.mode).
+        // The score of the text on the card: a bank sentence (at its own
+        // level), My text or a word to review (state.mode).
         onResult: (data, buffer, text, take) => {
-            AIPT.result.render(data, { ...take, text, buffer, source: state.mode });
+            AIPT.result.render(data, { ...take, text, buffer, source: state.mode, level: state.level });
             renderControls();
         },
     });
     AIPT.result.init({ onRetry: (button) => record(button), onNext: next });
 
-    // Space starts recording when focus is not on a control (sheets handle
-    // their own keys).
+    // Space starts recording when focus is not on a control (sheets and the
+    // tour handle their own keys).
     document.addEventListener('keydown', (event) => {
         if (event.key !== ' ' || event.repeat || event.defaultPrevented) return;
         if (ui.sheetOpen || event.ctrlKey || event.metaKey || event.altKey) return;
         if (AIPT.isControl(event.target)) return;
         event.preventDefault();
+        dock.hide('welcome');
         record(els.btnRecord);
     });
+
+    // ---------------------------------------------------------------- progress, the tour, the microphone check
+    AIPT.progress.init({ onPractiseWord: practiseWord });
+    // "New learner" (F4, F5): the My text draft goes too, the language stays;
+    // the welcome docks above the controls, with the tour one tap away.
+    AIPT.progress.onReset(() => {
+        storage.remove(DRAFT_KEY);
+        els.field.value = '';
+        dock.show('welcome', welcomeNotice);
+        dock.reveal('welcome');
+    });
+    // The welcome goes at the learner's next action on the page.
+    els.app.addEventListener('click', (event) => {
+        const welcome = dock.get('welcome');
+        if (welcome && AIPT.isControl(event.target) && !welcome.el.contains(event.target)) dock.hide('welcome');
+    }, true);
+
+    // How it works (E10, H1): the tour again, and the microphone check, which
+    // a browser that cannot record does not have (its notice says why, §2.2).
+    function checkMicrophone(button) {
+        if (!env.canRecord) {
+            dock.reveal('cannotRecord');
+            return;
+        }
+        AIPT.micCheck.open(button);
+    }
+    AIPT.setDisabled(els.btnMicCheck, !env.canRecord);
+    els.btnMicCheck.addEventListener('click', () => checkMicrophone(els.btnMicCheck));
+    els.btnTourAgain.addEventListener('click', () => AIPT.tour.start(els.btnTourAgain));
+    els.btnHowHeader.addEventListener('click', () => AIPT.tour.start(els.btnHowHeader));
 
     // Offline: a notice above the controls; Next waits for the connection,
     // the mic stays usable.

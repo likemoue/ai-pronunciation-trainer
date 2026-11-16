@@ -5,10 +5,11 @@
 // sent anywhere to find out), the ways out of it (Open in Chrome on Android,
 // the app's ••• menu on iPhone), and Copy link, with the address in a field to
 // copy by hand where the clipboard is refused (design-system §6). The
-// recording sheet shows them when the microphone fails inside an app (B17,
-// B18; D9, D10); the page's banner (D1-D8) is made of the same pieces.
+// recording sheet and the microphone check show them when the microphone fails
+// inside an app (B17, B18; D9, D10; E9); the page's banner (banner.js, D1-D8)
+// is made of the same pieces.
 (() => {
-    const { el, i18n, ui, env } = AIPT;
+    const { el, icon, i18n, ui, env } = AIPT;
 
     // How long "Link copied" stays before the control offers Copy link again.
     const COPIED_MS = 4000;
@@ -70,12 +71,34 @@
     }
 
     // node says: open the page in Chrome, or tap ⋮ at the top right, then
-    // Open in browser (D5: an app may block the intent link).
-    function chromeOrMenu(node) {
-        return i18n.richText(node, 'inapp.chromeOrMenu', {
+    // Open in browser (D5: an app may block the intent link). key: the
+    // sheet's words, or the banner's ('banner.chromeOrMenu').
+    function chromeOrMenu(node, key = 'inapp.chromeOrMenu') {
+        return i18n.richText(node, key, {
             menu: ui.uibit({ icon: 'more-vert', key: 'inapp.menu' }),
             openInBrowser: ui.uibit({ key: 'inapp.openInBrowser' }),
         });
+    }
+
+    // What a sheet says when the microphone fails inside an app (B17, B18;
+    // D9, D10; the microphone check, E9): the keys of its title, first line
+    // and second line (params: the app's name), the ••• steps on iPhone
+    // (ios), the ⋮ menu as well (menu), and whether Open in Chrome can work.
+    function failureMessage() {
+        const guide = guidance() || { name: '', platform: env.platform, openChrome: false, menu: false };
+        if (guide.platform === 'ios') {
+            return { ios: true, title: 'inapp.iosTitle', lead: 'inapp.iosLead', text: 'inapp.iosHow', menu: false, openChrome: false };
+        }
+        const named = Boolean(guide.name);
+        return {
+            ios: false,
+            title: named ? 'inapp.title' : 'inapp.titleUnnamed',
+            lead: named ? 'inapp.lead' : 'inapp.leadUnnamed',
+            text: guide.openChrome ? 'inapp.chrome' : 'inapp.copyElsewhere',
+            params: named ? { app: guide.name } : undefined,
+            menu: guide.menu,
+            openChrome: guide.openChrome,
+        };
     }
 
     // Copy the page's address: true when the clipboard took it, false when
@@ -144,18 +167,22 @@
     }
 
     // The arrow to the app's ••• menu at the top right of the screen (D3,
-    // D10), drawn over the page and over a sheet's backdrop. Decorative: the
-    // steps say the same.
-    function pointer() {
+    // D10), drawn over the page and over a sheet's backdrop; with menu, to
+    // its ⋮ menu instead ("Or tap ⋮", D5). Decorative: the steps say the same.
+    function pointer({ menu = false } = {}) {
+        const label = el('span', { className: 'inapp-pointer-label' });
+        if (menu) i18n.richText(label, 'inapp.pointerMenu', { menu: icon('more-vert') });
+        else i18n.text(label, 'inapp.pointer');
         return el('div', { className: 'inapp-pointer', attrs: { 'aria-hidden': 'true' } }, [
             el('span', { className: 'inapp-pointer-arrow' }),
-            i18n.text(el('span', { className: 'inapp-pointer-label' }), 'inapp.pointer'),
+            label,
         ]);
     }
 
     AIPT.inApp = {
         COPIED_MS,
         guidance,
+        failureMessage,
         pageUrl,
         chromeIntentUrl,
         safariSteps,

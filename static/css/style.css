@@ -341,6 +341,166 @@ kbd {
 	display: none;
 }
 
+/* How it works, from 1024 px (wireframes H1): reopens the tour. */
+.text-btn.header-how {
+	display: none;
+}
+
+/* The progress chip (wireframes F1-F3, H1): today's points (12.5K from
+   10,000), and from 768 px "245 today · 3 days". A pill 36 px to see, 44 px
+   to tap; it opens the progress sheet. */
+.progress-chip {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	min-height: 36px;
+	padding: 4px 12px;
+	border: 1px solid var(--border-strong);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--text);
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 1.25;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.progress-chip::before {
+	content: "";
+	position: absolute;
+	inset: -5px 0;
+}
+
+.progress-chip:hover {
+	border-color: var(--primary);
+}
+
+.progress-chip .icon {
+	width: 16px;
+	height: 16px;
+	color: var(--primary);
+}
+
+.progress-chip-long {
+	display: none;
+	align-items: center;
+	gap: 4px;
+}
+
+.progress-chip-dot {
+	color: var(--text-3);
+}
+
+/* ============ In-app browser banner (§2.14, wireframes D1-D8) ============ */
+/* The first thing on the page, in its flow: a notice of the warning family
+   (success while "Link copied" shows, info when the address is to be copied
+   by hand), with ✕ at its top right, or with that corner kept free for the
+   arrow to the app's own menu (.has-pointer, dismissed by Not now). */
+.banner-slot {
+	max-width: var(--content-max);
+	margin: 0 auto;
+	padding: 8px 12px 0;
+}
+
+.banner {
+	position: relative;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: start;
+	gap: 4px 12px;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-left-width: 4px;
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+.banner.has-pointer {
+	padding-top: 40px;
+}
+
+.banner-body {
+	min-width: 0;
+}
+
+.banner-title,
+.banner-text {
+	margin: 0;
+}
+
+.banner-title {
+	font-weight: 700;
+}
+
+/* ✕ in the corner, 44 px to tap: only the title keeps clear of it, so the
+   text has the banner's whole width (a line less on a phone). */
+.banner:not(.has-pointer) .banner-title {
+	padding-right: 32px;
+}
+
+.banner-x {
+	position: absolute;
+	top: 0;
+	right: 0;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--text-2);
+	cursor: pointer;
+}
+
+.banner-x:hover {
+	background: var(--surface);
+	color: var(--text);
+}
+
+.banner-actions,
+.banner-field {
+	grid-column: 1 / -1;
+}
+
+.banner-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 4px;
+}
+
+.banner .text-btn {
+	margin: 0;
+}
+
+/* The arrow to the app's menu, in the banner's top band (D3-D5): it scrolls
+   away with the banner. Under a sheet (which has its own, D10) or the tour
+   it rests. */
+.banner .inapp-pointer {
+	position: absolute;
+	top: 4px;
+	right: 8px;
+	z-index: auto;
+}
+
+.sheet-open .banner .inapp-pointer {
+	visibility: hidden;
+}
+
+/* "Copied": the check in the success family's colour. */
+.btn.is-done .icon {
+	color: var(--good);
+}
+
 /* EN | VI (§2.6): two buttons with aria-pressed, 37 × 36 px, 44 px to tap. */
 .lang-switch {
 	display: inline-flex;
@@ -509,6 +669,18 @@ kbd {
 	background: var(--rec);
 	color: var(--on-rec);
 	box-shadow: 0 4px 14px var(--rec-glow);
+}
+
+/* Destructive (§2.1): the secondary look with a 2 px edge and the trash icon,
+   only inside a confirmation, never focused first (wireframes F4). */
+.btn-danger {
+	background: var(--surface);
+	border: 2px solid var(--text);
+	color: var(--text);
+}
+
+.btn-danger:hover {
+	background: var(--surface-2);
 }
 
 /* Disabled (§2.2): a dashed edge and a quieter label, never faded text. */
@@ -2295,6 +2467,365 @@ kbd {
 	margin: 0;
 }
 
+/* The tour again and the microphone check (wireframes E10); from 1024 px the
+   header's How it works reopens the tour, and only the check stays (H1). */
+.tips-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+/* ============ Progress sheet (wireframes F1-F7) ============ */
+.progress-icon {
+	color: var(--primary);
+}
+
+.progress-eyebrow {
+	margin: 0 0 8px;
+	line-height: 1.5;
+}
+
+.progress-stats {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	margin: 0 0 16px;
+	padding: 0;
+	list-style: none;
+}
+
+.progress-stat {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	min-width: 0;
+	padding: 8px 4px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+	text-align: center;
+}
+
+.progress-stat b {
+	max-width: 100%;
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.25;
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.progress-stat span {
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.5;
+	color: var(--text-2);
+}
+
+.progress-streak {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	font-size: 16px;
+	font-weight: 700;
+}
+
+.progress-streak .icon {
+	width: 20px;
+	height: 20px;
+	color: var(--primary);
+}
+
+.progress-hint {
+	margin: 4px 0 0;
+	font-size: 14px;
+	color: var(--text-2);
+}
+
+/* No word yet (F1): the line takes the list's place. */
+.progress-hint.is-empty {
+	margin: 0;
+	padding: 8px 4px;
+	text-align: center;
+}
+
+.progress-streak+.progress-hint+.progress-eyebrow,
+.progress-streak+.progress-eyebrow {
+	margin-top: 16px;
+}
+
+/* The last 7 days, today last: the day's name over a circle, ✓ and a solid
+   edge on a day with a scored sentence, and today outlined. */
+.week {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 4px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.week-day {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+}
+
+.week-name {
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	color: var(--text-2);
+}
+
+.week-mark {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border: 2px dashed var(--border-strong);
+	border-radius: 50%;
+}
+
+.week-mark .icon {
+	width: 18px;
+	height: 18px;
+}
+
+.week-day.is-done .week-mark {
+	border-style: solid;
+	border-color: var(--primary);
+	background: var(--primary-soft);
+	color: var(--primary);
+}
+
+.week-day.is-today .week-mark {
+	outline: 2px solid var(--text-2);
+	outline-offset: 2px;
+}
+
+.week-day.is-today .week-name {
+	color: var(--text);
+}
+
+/* "Saved in this browser only…" and the note under New learner. */
+.progress-note {
+	margin: 12px 0 0;
+	font-size: 13px;
+	font-style: italic;
+	color: var(--text-3);
+}
+
+.progress-sep {
+	margin: 16px 0 8px;
+	border: 0;
+	border-top: 1px solid var(--border);
+}
+
+.progress-new {
+	margin: 0 0 0 -8px;
+}
+
+.progress-new+.progress-note {
+	margin-top: 0;
+}
+
+/* ============ A confirmation over a sheet (§2.8, wireframes F4) ============ */
+/* A centred alertdialog at every width, above the sheet and its backdrop. */
+.confirm-root .backdrop {
+	z-index: calc(var(--z-confirm) - 1);
+}
+
+.confirm-root .sheet-frame {
+	z-index: var(--z-confirm);
+	align-items: center;
+	padding: 16px;
+}
+
+.confirm-root .sheet {
+	width: 440px;
+	max-width: 100%;
+	max-height: calc(100vh - 32px);
+	max-height: calc(100dvh - 32px);
+	border-radius: var(--radius-sheet);
+	animation: pop .2s ease-out;
+}
+
+.confirm-text {
+	margin: 0;
+}
+
+/* ============ Microphone check (wireframes E5-E9) ============ */
+/* The header shows the live dot while it listens, else the state's icon in
+   the colour of its family (§1.3). */
+.mic-check .sheet-icon {
+	width: 24px;
+	height: 24px;
+}
+
+.mic-check[data-tone="success"] .sheet-icon {
+	color: var(--good);
+}
+
+.mic-check[data-tone="warning"] .sheet-icon {
+	color: var(--ok-strong);
+}
+
+.mic-check-msg {
+	margin: 0 0 12px;
+}
+
+/* E7: the big ✓. */
+.mic-check-done {
+	display: grid;
+	place-items: center;
+	width: 56px;
+	height: 56px;
+	margin: 4px auto 12px;
+	border: 3px solid var(--good);
+	border-radius: 50%;
+	color: var(--good);
+}
+
+.mic-check-done .icon {
+	width: 32px;
+	height: 32px;
+}
+
+/* The level meter (§2.17): decorative, as many bars lit as the level reaches. */
+.meter {
+	display: flex;
+	align-items: flex-end;
+	gap: 4px;
+	height: 64px;
+	padding: 8px 12px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	background: var(--surface-2);
+}
+
+.meter i {
+	flex: 1;
+	height: 100%;
+	border-radius: 4px;
+	background: var(--border);
+}
+
+.meter i.is-lit {
+	background: var(--primary);
+}
+
+.mic-check .rec-hint {
+	min-height: 0;
+}
+
+.mic-tips {
+	margin-top: 12px;
+}
+
+/* ============ Tour (§2.18, wireframes E1-E4) ============ */
+/* A spotlight on the step's control, the rest dimmed by its shadow; the
+   shield under it takes the taps on the dimmed page. The callout is placed
+   by tour.js below or above the spotlight. */
+.tour {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-tour);
+}
+
+.tour-shield {
+	position: absolute;
+	inset: 0;
+}
+
+.tour-spot {
+	position: fixed;
+	border-radius: var(--radius);
+	outline: 3px solid var(--focus);
+	box-shadow: 0 0 0 200vmax var(--dim);
+	pointer-events: none;
+	transition: left .2s, top .2s, width .2s, height .2s;
+}
+
+.tour-callout {
+	position: fixed;
+	max-width: calc(100vw - 24px);
+	padding: 16px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--surface);
+	color: var(--text);
+	box-shadow: var(--shadow-lg);
+	animation: fadeUp .2s ease-out;
+}
+
+.tour-step {
+	margin: 0;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.5;
+	color: var(--text-3);
+}
+
+.tour-title {
+	margin: 4px 0;
+	font-size: 18px;
+	font-weight: 700;
+	line-height: 1.25;
+}
+
+.tour-text {
+	margin: 0 0 12px;
+	font-size: 14px;
+	color: var(--text-2);
+}
+
+.tour-text b {
+	color: var(--text);
+}
+
+.tour-text .wl {
+	color: var(--bad);
+}
+
+.tour-example {
+	font-weight: 600;
+	color: var(--text);
+	white-space: nowrap;
+}
+
+.tour-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.tour-actions .text-btn {
+	margin: 0 0 0 -8px;
+}
+
+.tour-pips {
+	display: inline-flex;
+	gap: 4px;
+	margin: 0 auto;
+}
+
+.tour-pips i {
+	width: 8px;
+	height: 8px;
+	border: 2px solid var(--text-2);
+	border-radius: 50%;
+}
+
+.tour-pips i.is-on {
+	border-color: var(--primary);
+	background: var(--primary);
+}
+
 .wide-only {
 	display: none;
 }
@@ -2404,6 +2935,18 @@ kbd {
 
 	.brand-sub {
 		display: block;
+	}
+
+	.progress-chip-short {
+		display: none;
+	}
+
+	.progress-chip-long {
+		display: inline-flex;
+	}
+
+	.banner-slot {
+		padding: 12px 24px 0;
 	}
 
 	.layout {
@@ -2560,5 +3103,14 @@ kbd {
 
 	.result-actions {
 		display: flex;
+	}
+
+	.text-btn.header-how {
+		display: inline-flex;
+		margin: 0;
+	}
+
+	.tips-actions .tips-tour {
+		display: none;
 	}
 }

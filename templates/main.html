@@ -33,14 +33,19 @@
     <script defer src="{{ asset_url('javascript/audio.js') }}"></script>
     <script defer src="{{ asset_url('javascript/recorder.js') }}"></script>
     <script defer src="{{ asset_url('javascript/result.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/progress.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/miccheck.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/tour.js') }}"></script>
+    <script defer src="{{ asset_url('javascript/banner.js') }}"></script>
     <script defer src="{{ asset_url('javascript/app.js') }}"></script>
 </head>
 
 <body>
     <!-- Icons (fill: currentColor). The warning, info, offline, clock, refresh, copy, chevron, check,
-         microphone-off, open-in-new, lock, tune, more-vertical and lightbulb icons are Material Icons paths
-         (Apache-2.0, THIRD_PARTY_NOTICES.md). The three status marks (design-system §1.3: ✓ Correct, ~ Almost,
-         ✗ Needs work) are strokes of their own, so that every device draws the same mark: Inter has no ✗. -->
+         microphone-off, open-in-new, lock, tune, more-vertical, lightbulb, help, star, flame, person-add and
+         delete icons are Material Icons paths (Apache-2.0, THIRD_PARTY_NOTICES.md). The three status marks
+         (design-system §1.3: ✓ Correct, ~ Almost, ✗ Needs work) are strokes of their own, so that every device
+         draws the same mark: Inter has no ✗. The target is three rings. -->
     <svg class="icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
         <symbol id="i-mic" viewBox="0 0 24 24">
             <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5.3-3a.75.75 0 0 1 1.5 0 6.8 6.8 0 0 1-6.05 6.76V20.5h2.5a.75.75 0 0 1 0 1.5h-6.5a.75.75 0 0 1 0-1.5h2.5v-2.74A6.8 6.8 0 0 1 5.2 11a.75.75 0 0 1 1.5 0 5.3 5.3 0 0 0 10.6 0Z" />
@@ -120,6 +125,24 @@
         <symbol id="i-needs-work" viewBox="0 0 24 24">
             <path d="M5.5 5.5l13 13M18.5 5.5l-13 13" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
         </symbol>
+        <symbol id="i-help" viewBox="0 0 24 24">
+            <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" />
+        </symbol>
+        <symbol id="i-star" viewBox="0 0 24 24">
+            <path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+        </symbol>
+        <symbol id="i-flame" viewBox="0 0 24 24">
+            <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z" />
+        </symbol>
+        <symbol id="i-person-add" viewBox="0 0 24 24">
+            <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+        </symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+        </symbol>
+        <symbol id="i-target" viewBox="0 0 24 24">
+            <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm0-14a6 6 0 1 0 0 12 6 6 0 0 0 0-12zm0 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm0-6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+        </symbol>
     </svg>
 
     <div class="app" id="app">
@@ -136,6 +159,12 @@
                     </div>
                 </div>
                 <div class="topbar-tools">
+                    <!-- From 1024 px: reopens the tour (design/wireframes/08-desktop.html H1). Phones and tablets
+                         have "Show the tour again" in How it works. -->
+                    <button type="button" class="text-btn header-how" id="btnHowHeader" aria-haspopup="dialog">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-help"></use></svg>
+                        <span data-i18n="how.title">{{ t['how.title'] }}</span>
+                    </button>
                     <div class="lang-switch" role="group" aria-label="{{ t['lang.label'] }}" data-i18n-attr="aria-label:lang.label">
                         <button type="button" class="lang-btn" data-lang="en" lang="en" aria-pressed="{{ 'true' if lang == 'en' else 'false' }}"
                             aria-label="{{ t['lang.en'] }}" data-i18n-attr="aria-label:lang.en"><span data-i18n="lang.enCode">{{ t['lang.enCode'] }}</span></button>
@@ -160,11 +189,11 @@
                 <section class="card sentence-card" id="sentenceCard" aria-labelledby="cardLabel" aria-busy="true">
                     <div class="card-top">
                         <p class="card-label" id="cardLabel">
-                            <svg class="icon card-label-icon" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>
+                            <svg class="icon card-label-icon" aria-hidden="true" focusable="false"><use id="cardLabelIcon" href="#i-edit"></use></svg>
                             <span id="cardLabelText" data-i18n="card.eyebrow">{{ t['card.eyebrow'] }}</span>
                         </p>
                         <button type="button" class="text-btn" id="btnMyText">
-                            <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-edit"></use></svg>
+                            <svg class="icon" aria-hidden="true" focusable="false"><use id="myTextIcon" href="#i-edit"></use></svg>
                             <span id="myTextLabel" data-i18n="card.myText">{{ t['card.myText'] }}</span>
                         </button>
                     </div>
@@ -374,6 +403,18 @@
                     <li data-i18n-rich="how.step2Wide">{% call(slot) rich('how.step2Wide') %}<kbd data-slot="space" data-i18n="controls.space">{{ t['controls.space'] }}</kbd>{% endcall %}</li>
                     <li data-i18n-rich="how.step3Wide">{% call(slot) rich('how.step3Wide') %}{% if slot == 'almost' %}<b class="tips-mark" data-slot="almost"><span class="mark mark-1" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-almost"></use></svg></span><span class="visually-hidden" data-i18n="status.almost">{{ t['status.almost'] }}</span></b>{% else %}<b class="tips-mark" data-slot="needsWork"><span class="mark mark-2" aria-hidden="true"><svg class="icon" focusable="false"><use href="#i-needs-work"></use></svg></span><span class="visually-hidden" data-i18n="status.needsWork">{{ t['status.needsWork'] }}</span></b>{% endif %}{% endcall %}</li>
                 </ol>
+                <!-- The tour and the microphone check, again (design/wireframes/05-onboarding.html E10). From 1024 px
+                     the header's How it works reopens the tour, so only the check stays here (H1). -->
+                <div class="tips-actions">
+                    <button type="button" class="btn btn-secondary btn-sm tips-tour" id="btnTourAgain" aria-haspopup="dialog">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-help"></use></svg>
+                        <span data-i18n="how.tourAgain">{{ t['how.tourAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnMicCheck" aria-haspopup="dialog">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg>
+                        <span data-i18n="how.micCheck">{{ t['how.micCheck'] }}</span>
+                    </button>
+                </div>
             </section>
         </main>
 
@@ -499,6 +540,153 @@
                         <span id="recCopyLabel" data-i18n="notice.copyLink">{{ t['notice.copyLink'] }}</span>
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress, kept in this browser only (design/wireframes/06-progress-sheet.html, F1-F7): a bottom sheet on
+         phones, a dialog from 768 px, opened from the progress chip in the header. progress.js fills it. -->
+    <div class="sheet-root progress-sheet" id="progressSheet" hidden>
+        <div class="backdrop"></div>
+        <div class="sheet-frame">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="progressTitle">
+                <div class="sheet-head">
+                    <svg class="icon sheet-icon progress-icon" aria-hidden="true" focusable="false"><use href="#i-star"></use></svg>
+                    <h2 class="sheet-title" id="progressTitle" tabindex="-1" data-i18n="progress.title">{{ t['progress.title'] }}</h2>
+                    <button type="button" class="sheet-x" data-sheet-close aria-label="{{ t['common.close'] }}" data-i18n-attr="aria-label:common.close">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+                    </button>
+                </div>
+                <div class="sheet-body">
+                    <h3 class="eyebrow progress-eyebrow" id="progressToday"></h3>
+                    <ul class="progress-stats">
+                        <li class="progress-stat"><b id="statPoints">0</b><span id="statPointsLabel"></span></li>
+                        <li class="progress-stat"><b id="statSentences">0</b><span id="statSentencesLabel"></span></li>
+                        <li class="progress-stat"><b id="statAverage">–</b><span data-i18n="progress.average">{{ t['progress.average'] }}</span></li>
+                    </ul>
+                    <p class="progress-streak">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-flame"></use></svg>
+                        <span id="progressStreak"></span>
+                    </p>
+                    <p class="progress-hint" id="progressStreakHint" hidden></p>
+                    <h3 class="eyebrow progress-eyebrow" data-i18n="progress.week">{{ t['progress.week'] }}</h3>
+                    <ol class="week" id="progressWeek"></ol>
+                    <h3 class="result-sub" id="reviewTitle" data-i18n="progress.review">{{ t['progress.review'] }}</h3>
+                    <div class="word-chips review-chips" id="reviewChips" role="group" aria-labelledby="reviewTitle" hidden></div>
+                    <p class="progress-hint" id="reviewHint"></p>
+                    <p class="progress-note" data-i18n="progress.local">{{ t['progress.local'] }}</p>
+                    <hr class="progress-sep">
+                    <button type="button" class="text-btn progress-new" id="btnNewLearner" aria-haspopup="dialog">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-person-add"></use></svg>
+                        <span data-i18n="progress.newLearner">{{ t['progress.newLearner'] }}</span>
+                    </button>
+                    <p class="progress-note" data-i18n="progress.newLearnerNote">{{ t['progress.newLearnerNote'] }}</p>
+                </div>
+                <div class="sheet-actions">
+                    <button type="button" class="btn btn-primary" data-sheet-close data-i18n="common.done">{{ t['common.done'] }}</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- "New learner" asks first (F4): an alertdialog over the progress sheet, focus on Cancel; the destructive
+         button has an icon and a heavier edge, never focus by default. -->
+    <div class="sheet-root confirm-root" id="confirmNewLearner" hidden>
+        <div class="backdrop"></div>
+        <div class="sheet-frame">
+            <div class="sheet confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+                <div class="sheet-head">
+                    <h2 class="sheet-title" id="confirmTitle" tabindex="-1" data-i18n="progress.confirmTitle">{{ t['progress.confirmTitle'] }}</h2>
+                </div>
+                <div class="sheet-body">
+                    <p class="confirm-text" id="confirmText" data-i18n="progress.confirmText">{{ t['progress.confirmText'] }}</p>
+                </div>
+                <div class="sheet-actions">
+                    <button type="button" class="btn btn-secondary" id="confirmCancel" data-confirm-cancel data-i18n="common.cancel">{{ t['common.cancel'] }}</button>
+                    <button type="button" class="btn btn-danger" id="confirmDelete">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"></use></svg>
+                        <span data-i18n="progress.confirmDelete">{{ t['progress.confirmDelete'] }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- The microphone check (design/wireframes/05-onboarding.html E5-E9): 3 s of level metering in the browser,
+         nothing recorded and nothing sent. miccheck.js runs it and names its state in data-state. -->
+    <div class="sheet-root mic-check" id="micCheck" data-state="idle" hidden>
+        <div class="backdrop"></div>
+        <div class="sheet-frame">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="micTitle">
+                <div class="sheet-head">
+                    <span class="rec-dot is-live" id="micDot" aria-hidden="true" hidden></span>
+                    <svg class="icon sheet-icon mic-check-icon" id="micIcon" aria-hidden="true" focusable="false"><use id="micIconUse" href="#i-mic"></use></svg>
+                    <h2 class="sheet-title" id="micTitle" tabindex="-1"></h2>
+                    <span class="rec-timer" id="micTimer" hidden></span>
+                    <button type="button" class="sheet-x" data-sheet-close aria-label="{{ t['common.close'] }}" data-i18n-attr="aria-label:common.close">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"></use></svg>
+                    </button>
+                </div>
+                <div class="sheet-body">
+                    <span class="mic-check-done" id="micDoneMark" aria-hidden="true" hidden><svg class="icon" focusable="false"><use href="#i-check"></use></svg></span>
+                    <p class="mic-check-msg" id="micMsg" hidden></p>
+                    <div class="meter" id="micMeter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                    <p class="rec-hint" id="micHint"></p>
+                    <ul class="rec-steps mic-tips" id="micTips" hidden></ul>
+                    <div class="rec-message" id="micMessage" hidden>
+                        <p class="rec-lead" id="micLead"></p>
+                        <p class="rec-text" id="micText"></p>
+                        <ol class="rec-steps" id="micSteps" hidden></ol>
+                        <div class="rec-copy" id="micCopyHelp" hidden>
+                            <p class="rec-copy-text" data-i18n="notice.copyBlocked.text">{{ t['notice.copyBlocked.text'] }}</p>
+                        </div>
+                    </div>
+                    <p class="visually-hidden" id="micStatus" role="status"></p>
+                    <p class="visually-hidden" id="micAlert" role="alert"></p>
+                </div>
+                <div class="sheet-actions" id="micActions">
+                    <button type="button" class="btn btn-secondary" id="micSkip" data-i18n="common.skip">{{ t['common.skip'] }}</button>
+                    <button type="button" class="btn btn-primary" id="micStart">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-mic"></use></svg>
+                        <span data-i18n="mic.start">{{ t['mic.start'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-primary" id="micTryAgain" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"></use></svg>
+                        <span data-i18n="common.tryAgain">{{ t['common.tryAgain'] }}</span>
+                    </button>
+                    <button type="button" class="btn btn-primary" id="micPractise" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+                        <span data-i18n="mic.startPractising">{{ t['mic.startPractising'] }}</span>
+                    </button>
+                    <a class="btn btn-primary" id="micOpenChrome" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-open"></use></svg>
+                        <span data-i18n="inapp.openChrome">{{ t['inapp.openChrome'] }}</span>
+                    </a>
+                    <button type="button" class="btn btn-secondary" id="micCopyLink" hidden>
+                        <svg class="icon" aria-hidden="true" focusable="false"><use id="micCopyIcon" href="#i-copy"></use></svg>
+                        <span id="micCopyLabel" data-i18n="notice.copyLink">{{ t['notice.copyLink'] }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- The tour (design/wireframes/05-onboarding.html E1-E4): a spotlight on the real control with the rest dimmed,
+         and a callout that is a modal dialog for assistive technology. tour.js names the step in data-step. -->
+    <div class="tour" id="tour" hidden>
+        <div class="tour-shield"></div>
+        <div class="tour-spot" id="tourSpot" aria-hidden="true"></div>
+        <div class="tour-callout" id="tourCallout" role="dialog" aria-modal="true" aria-labelledby="tourTitle" aria-describedby="tourText">
+            <p class="tour-step" id="tourStep"></p>
+            <h2 class="tour-title" id="tourTitle" tabindex="-1"></h2>
+            <p class="tour-text" id="tourText"></p>
+            <div class="tour-actions">
+                <button type="button" class="text-btn tour-skip" id="tourSkip" data-i18n="common.skip">{{ t['common.skip'] }}</button>
+                <span class="tour-pips" aria-hidden="true"><i></i><i></i><i></i></span>
+                <button type="button" class="btn btn-primary btn-sm" id="tourNext">
+                    <svg class="icon" aria-hidden="true" focusable="false"><use id="tourNextIcon" href="#i-next"></use></svg>
+                    <span id="tourNextLabel" data-i18n="tour.next">{{ t['tour.next'] }}</span>
+                </button>
             </div>
         </div>
     </div>

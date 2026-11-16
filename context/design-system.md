@@ -15,8 +15,8 @@
   design generator was used. What changes: AA contrast everywhere, a status palette that survives colour blindness,
   and no signal carried by colour alone.
 - **Stack:** Flask + one Jinja template (`templates/main.html`), vanilla JS (classic scripts in
-  `static/javascript/` that share one global, `AIPT`: core, i18n, ui, audio, recorder, result, app), one
-  stylesheet. No Tailwind, no component library, no icon font: icons are the inline SVG sprite in `main.html`
+  `static/javascript/` that share one global, `AIPT`: core, i18n, ui, inapp, audio, recorder, result, progress,
+  miccheck, tour, banner, app), one stylesheet. No Tailwind, no component library, no icon font: icons are the inline SVG sprite in `main.html`
   (`fill: currentColor`).
 
 ## 1. Tokens

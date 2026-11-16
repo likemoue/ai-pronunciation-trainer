@@ -132,7 +132,7 @@
 
     // The notices docked above the controls (§2.9): one at a time, the first
     // of `order` that is active. The dock is a polite live region, so a notice
-    // that comes in is read.
+    // that comes in is read. Each notice carries its name (data-notice).
     class Dock {
         constructor(container, order) {
             this.container = container;
@@ -144,7 +144,11 @@
 
         // Activate the notice `name`, made by build() the first time.
         show(name, build) {
-            if (!this.active.has(name)) this.active.set(name, build());
+            if (!this.active.has(name)) {
+                const item = build();
+                item.el.dataset.notice = name;
+                this.active.set(name, item);
+            }
             this.forced = '';
             this.render();
             return this.active.get(name);
@@ -185,19 +189,48 @@
     // fixed actions. While it is open the page behind is inert (a focus trap
     // where `inert` is missing); focus goes to the title, and back to the
     // opener on close. Escape and [data-sheet-close] dismiss it; a backdrop tap
-    // too when closeOnBackdrop. No sheet opens over another.
+    // too when closeOnBackdrop. No sheet opens over another: a confirmation is
+    // an alertdialog on top of it (Confirm), and nothing opens under the tour.
     const app = document.getElementById('app');
     const supportsInert = 'inert' in HTMLElement.prototype;
     let openSheet = null;
+    let openConfirm = null;
+    let covered = false; // the tour covers the page (cover)
 
-    function setPageInert(on) {
-        if (!app) return;
+    function setInert(node, on) {
+        if (!node) return;
         if (supportsInert) {
-            app.inert = on;
+            node.inert = on;
         } else if (on) {
-            app.setAttribute('aria-hidden', 'true');
+            node.setAttribute('aria-hidden', 'true');
         } else {
-            app.removeAttribute('aria-hidden');
+            node.removeAttribute('aria-hidden');
+        }
+    }
+
+    // The page behind a sheet or the tour is inert and does not scroll.
+    function updatePage() {
+        const on = Boolean(openSheet) || covered;
+        setInert(app, on);
+        document.body.classList.toggle('sheet-open', on);
+    }
+
+    // Tab kept inside root, for a layer whose surroundings may still take focus.
+    function trapTab(event, root) {
+        const items = focusables(root);
+        if (!items.length) {
+            event.preventDefault();
+            return;
+        }
+        const first = items[0];
+        const last = items[items.length - 1];
+        const inside = root.contains(document.activeElement);
+        if (event.shiftKey && (document.activeElement === first || !inside)) {
+            event.preventDefault();
+            focus(last);
+        } else if (!event.shiftKey && (document.activeElement === last || !inside)) {
+            event.preventDefault();
+            focus(first);
         }
     }
 
@@ -251,13 +284,12 @@
         }
 
         open(opener) {
-            if (openSheet) return false;
+            if (openSheet || covered) return false;
             openSheet = this;
             const active = opener || document.activeElement;
             this.opener = active && active !== document.body ? active : null;
             this.root.hidden = false;
-            setPageInert(true);
-            document.body.classList.add('sheet-open');
+            updatePage();
             watchViewport(this.root);
             focus(this.title, { preventScroll: true });
             return true;
@@ -268,10 +300,10 @@
         // to the caller.
         close({ focusTo = null, fallback = null, restoreFocus = true } = {}) {
             if (openSheet !== this) return;
+            if (openConfirm) openConfirm.close({ restoreFocus: false });
             openSheet = null;
             this.root.hidden = true;
-            setPageInert(false);
-            document.body.classList.remove('sheet-open');
+            updatePage();
             unwatchViewport(this.root);
             if (!restoreFocus) return;
             const opener = this.opener && document.contains(this.opener) ? this.opener : fallback;
@@ -284,35 +316,82 @@
         }
     }
 
+    // A confirmation over the open sheet (§2.8, wireframes F4): an alertdialog
+    // on top of it (--z-confirm), the sheet behind inert. Focus starts on its
+    // safe choice ([data-confirm-cancel]), never on the destructive one;
+    // Escape, that button and a backdrop tap cancel, and focus goes back to
+    // the control that asked. The owner wires the other button.
+    class Confirm {
+        constructor(root) {
+            this.root = root;
+            this.dialog = root.querySelector('[role="alertdialog"]');
+            this.cancel = root.querySelector('[data-confirm-cancel]');
+            this.opener = null;
+            this.under = null;
+            this.cancel.addEventListener('click', () => this.close());
+            const backdrop = root.querySelector('.backdrop');
+            backdrop.addEventListener('mousedown', (event) => event.preventDefault());
+            backdrop.addEventListener('click', () => this.close());
+        }
+
+        get isOpen() {
+            return openConfirm === this;
+        }
+
+        open(opener) {
+            if (openConfirm || !openSheet) return false;
+            openConfirm = this;
+            this.opener = opener || document.activeElement;
+            this.under = openSheet;
+            setInert(this.under.root, true);
+            this.root.hidden = false;
+            focus(this.cancel, { preventScroll: true });
+            return true;
+        }
+
+        close({ restoreFocus = true } = {}) {
+            if (openConfirm !== this) return;
+            openConfirm = null;
+            this.root.hidden = true;
+            if (this.under) setInert(this.under.root, false);
+            this.under = null;
+            if (restoreFocus && this.opener && document.contains(this.opener)) focus(this.opener);
+        }
+
+        dismiss() {
+            this.close();
+        }
+    }
+
     document.addEventListener('keydown', (event) => {
-        if (!openSheet) return;
+        const layer = openConfirm || openSheet;
+        if (!layer) return;
         if (event.key === 'Escape') {
             event.preventDefault();
-            openSheet.dismiss('escape');
+            layer.dismiss('escape');
             return;
         }
-        // Without inert, Tab would leave the sheet: keep it inside.
-        if (event.key === 'Tab' && !supportsInert) {
-            const items = focusables(openSheet.dialog);
-            if (!items.length) return;
-            const first = items[0];
-            const last = items[items.length - 1];
-            const inside = openSheet.dialog.contains(document.activeElement);
-            if (event.shiftKey && (document.activeElement === first || !inside)) {
-                event.preventDefault();
-                focus(last);
-            } else if (!event.shiftKey && (document.activeElement === last || !inside)) {
-                event.preventDefault();
-                focus(first);
-            }
-        }
+        // Without inert, Tab would leave the sheet: keep it inside. A
+        // confirmation keeps it inside in any browser.
+        if (event.key === 'Tab' && (openConfirm || !supportsInert)) trapTab(event, layer.dialog);
     });
 
     // Focus that lands outside the open sheet (a click on the page where
     // inert is missing, a screen reader's cursor) comes back to it.
     document.addEventListener('focusin', (event) => {
+        if (openConfirm) {
+            if (!openConfirm.root.contains(event.target)) focus(openConfirm.cancel, { preventScroll: true });
+            return;
+        }
         if (openSheet && !openSheet.root.contains(event.target)) focus(openSheet.title, { preventScroll: true });
     });
+
+    // The tour covers the page (tour.js): the page is inert and does not
+    // scroll, the page's shortcuts rest (sheetOpen), and no sheet opens.
+    function cover(on) {
+        covered = Boolean(on);
+        updatePage();
+    }
 
     // ---------------------------------------------------------------- radio group
     // Buttons with role="radio" in a role="radiogroup" (§2.5): one tab stop
@@ -362,15 +441,19 @@
     AIPT.ui = {
         focus,
         focusables,
+        trapTab,
         visibleBottom,
         announce,
         uibit,
         notice,
         Dock,
         Sheet,
+        Confirm,
+        cover,
         radioGroup,
+        // A sheet, or the tour, has the page: its shortcuts rest.
         get sheetOpen() {
-            return Boolean(openSheet);
+            return Boolean(openSheet) || covered;
         },
     };
 })();

@@ -172,10 +172,6 @@
             });
     }
 
-    // The sentence's own level, as the bank sorts it (lambdaGetSample.getSentenceCategory): 1 up to 8
-    // words, 2 up to 20, 3 above.
-    const levelOf = (count) => (count <= 8 ? 1 : count <= 20 ? 2 : 3);
-
     // ---------------------------------------------------------------- the sentence
     const statusText = (status) => t(STATUS_KEYS[status]);
 
@@ -516,14 +512,14 @@
     }
 
     // What the progress module keeps of a score (wireframes page 6): the text, where it came from ('bank',
-    // 'custom', or 'word' for a word practised alone), its own level, the score, whether it was another
-    // sentence (C6: it counts for nothing), and each word's status (0, 1 or 2), with reached: false for the
-    // words after a take stopped at 30 s (never read, so no word to review).
+    // 'custom', or 'word' for a word practised alone), the bank sentence's own level (1-3, from the page), the
+    // score, whether it was another sentence (C6: it counts for nothing), and each word's status (0, 1 or 2),
+    // with reached: false for the words after a take stopped at 30 s (never read, so no word to review).
     function scored() {
         const payload = {
             text: result.text,
             source: result.source,
-            level: levelOf(result.words.length),
+            level: result.level,
             accuracy: result.accuracy,
             different: result.different,
             words: result.words.map((word) => ({ word: word.plain, status: word.status, reached: word.reached })),
@@ -538,9 +534,12 @@
     }
 
     // data: the answer of /GetAccuracyFromRecordedAudio; text: the sentence that was scored; buffer: the
-    // take, decoded (or null); source: 'bank', 'custom' or 'word'; hitLimit: the take was stopped at 30 s;
-    // answeredAt: when the answer came (performance.now()), for the chime.
-    function render(data, { text, buffer = null, source = 'bank', hitLimit = false, answeredAt = performance.now() }) {
+    // take, decoded (or null); source: 'bank', 'custom' or 'word'; level: the bank sentence's own level (1-3);
+    // hitLimit: the take was stopped at 30 s; answeredAt: when the answer came (performance.now()), for the
+    // chime.
+    function render(data, {
+        text, buffer = null, source = 'bank', level = 1, hitLimit = false, answeredAt = performance.now(),
+    }) {
         const accuracy = Math.max(0, Math.min(100, parseInt(data.pronunciation_accuracy, 10) || 0));
         const words = parseWords(data, text);
         // B4: a take stopped by itself at 30 s can end before the text does. The words after the last one
@@ -559,6 +558,7 @@
         result = {
             text,
             source,
+            level,
             accuracy,
             words,
             different,

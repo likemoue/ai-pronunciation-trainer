@@ -300,8 +300,18 @@
         else Promise.resolve(ctx.resume()).then(play, () => {});
     }
 
+    // A microphone's level from the RMS of its samples (0-1, drawn by the
+    // recording sheet's waveform and the check's meter), and the level above
+    // which it counts as speech: under it for 3.5 s the recording sheet says
+    // "We can't hear you" (B3), and over 3 s the check "We didn't hear
+    // anything" (E8).
+    const SPEECH_LEVEL = 0.06;
+    const levelOf = (rms) => Math.min(1, Math.pow(rms * 6, 0.8));
+
     AIPT.audio = {
         SLOW_RATE,
+        SPEECH_LEVEL,
+        levelOf,
         context: getContext,
         speak,
         stop,
