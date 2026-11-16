@@ -1,5 +1,6 @@
 """The alignment of a transcript with its sentence (WordMatching.py)."""
 import random
+import re
 
 import numpy as np
 import pytest
@@ -212,6 +213,62 @@ def test_a_word_heard_with_a_known_mistake_is_never_correct(fake_asr):
     categories = lambdaSpeechToScore._build_response(result)['pair_accuracy_category'].split()
     # "book" is 80% of "books" and "tank" 80% of "thank": letters alone said Correct.
     assert categories == ['0', '0', '0', '0', '1', '0', '0', '1', '0']
+
+
+def scored(fake_asr, sentence, transcript):
+    """The response the page gets when Whisper writes transcript for sentence."""
+    import lambdaSpeechToScore
+    fake_asr.transcript = transcript
+    result = lambdaSpeechToScore._trainer_cache['en'].processAudioForGivenText(
+        np.zeros((1, 32000), dtype=np.float32), sentence)
+    return lambdaSpeechToScore._build_response(result)
+
+
+@pytest.mark.parametrize('sentence,transcript,kinds,categories', [
+    ('Mary has written three books.', 'Mary has written tree book.', '- - - th ending', '0 0 0 1 1'),
+    # A word not heard has no typical mistake; the words after it keep theirs.
+    ('Mary has written three books.', 'Mary has tree book.', '- - - th ending', '0 0 2 1 1'),
+    ('I want to wash my shirt.', 'I want to was my sirt.', '- - - sh - sh', '0 0 0 1 0 1'),
+    ('The ship is in the sea.', 'The sip is in the sea.', '- sh - - - -', '0 1 0 0 0 0'),
+    # One token per word of the sentence, however many words it is said as or heard as.
+    ('We need to get home before 2:30.', 'We need to get home before two thirty.', '- - - - - - -',
+     '0 0 0 0 0 0 0'),
+    ('We left at 3:30.', 'We left at tree thirty.', '- - - th', '0 0 0 1'),
+    ('We were next-door neighbours.', 'We were next door neighbors.', '- - - -', '0 0 0 0'),
+    ('Mary has written three books.', 'Mary has written three books.', '- - - - -', '0 0 0 0 0'),
+    # Named whatever the word's label: "i" is half of "is" (Needs work); the page decides where to say it.
+    ('He is here.', 'He i here.', '- ending -', '0 2 0'),
+])
+def test_the_response_names_each_words_typical_mistake(fake_asr, sentence, transcript, kinds, categories):
+    response = scored(fake_asr, sentence, transcript)
+    assert response['mistake_kinds'] == kinds
+    assert response['pair_accuracy_category'] == categories
+    assert len(kinds.split()) == len(response['real_transcripts'].split()) == len(sentence.split())
+
+
+def mistaken(word):
+    """The word with a typical mistake (th said as t, sh as s, an ending left out), if it can have one."""
+    for pattern, replacement in (('th', 't'), ('sh', 's'), (r'e?[sd](?=\W*$)', '')):
+        changed = re.sub(pattern, replacement, word, count=1)
+        if changed != word:
+            return changed
+    return word
+
+
+def test_no_correct_word_has_a_typical_mistake(fake_asr):
+    # The kinds are the scorer's own: a word they name is never Correct.
+    from evaluation import textsim
+    named = 0
+    for sentence in random.Random(5).sample(textsim.bank_sentences(), 100):
+        words = sentence.split()
+        response = scored(fake_asr, sentence, ' '.join(mistaken(word) for word in words))
+        kinds, categories = response['mistake_kinds'].split(), response['pair_accuracy_category'].split()
+        assert len(kinds) == len(categories) == len(words), sentence
+        for kind, category in zip(kinds, categories, strict=True):
+            assert kind in ('-', 'ending', 'th', 'sh'), sentence
+            assert kind == '-' or category != '0', sentence
+        named += sum(kind != '-' for kind in kinds)
+    assert named > 100
 
 
 def test_a_very_long_number_is_compared_as_written():

@@ -349,6 +349,17 @@ def test_scoring_happy_path(client, fake_asr, fmt, mime):
 
 
 @requires_ffmpeg
+def test_scoring_names_the_typical_mistake_of_each_word(client, fake_asr):
+    # For the page's hint: one token per word, in the order of pair_accuracy_category.
+    fake_asr.transcript = 'Mary has written tree book.'
+    response = score(client, 'Mary has written three books.', make_audio('webm'))
+    assert response.status_code == 200, response.get_data(as_text=True)
+    body = response.get_json()
+    assert body['mistake_kinds'] == '- - - th ending'
+    assert body['pair_accuracy_category'] == '0 0 0 1 1'
+
+
+@requires_ffmpeg
 def test_scoring_response_is_json_even_with_markup_in_title(client, fake_asr):
     title = '<img src=x onerror=alert(1)> hello'
     fake_asr.transcript = 'image source hello'
