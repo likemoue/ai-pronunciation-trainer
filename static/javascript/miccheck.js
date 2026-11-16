@@ -420,8 +420,9 @@
             ui.announce(t('mic.listeningAnnounce'), els.status);
         } else {
             ui.focus(primaryAction(), { preventScroll: true });
+            // Only what is shown: a hidden part (or one inside the hidden message) may keep an earlier failure's words.
             const parts = [els.title, els.msg, els.lead, els.text]
-                .filter((node) => !node.hidden && node.textContent.trim())
+                .filter((node) => !node.closest('[hidden]') && node.textContent.trim())
                 .map((node) => node.textContent.trim());
             if (state === 'works') ui.announce(parts.join(' '), els.status);
             else ui.announce(parts.join(' '), els.alert);
