@@ -60,6 +60,15 @@ jobs:
         run: scripts/lock.sh --check
       - name: ruff
         run: .venv/bin/ruff check .
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          cache: npm
+      - name: The page's scripts (ESLint) and the Node tools' known vulnerabilities
+        run: |
+          npm ci --no-audit --no-fund
+          npx eslint
+          npm audit --audit-level=high
       - name: shell scripts
         run: |
           scripts=(deploy/deploy.sh scripts/*.sh deploy/test/run.sh deploy/test/harness/*.sh deploy/test/harness/bin/*)
