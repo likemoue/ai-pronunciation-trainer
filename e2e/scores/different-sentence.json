@@ -1,0 +1,18 @@
+{
+  "sentence": "Mary has written three books about the history of my town.",
+  "heard": "Mary books.",
+  "answer": {
+    "real_transcript": "Mary books.",
+    "ipa_transcript": "ˈmɛri bʊks.",
+    "pronunciation_accuracy": "19",
+    "real_transcripts": "Mary has written three books about the history of my town.",
+    "matched_transcripts": "Mary - - - books - - - - - -",
+    "real_transcripts_ipa": "ˈmɛri həz ˈrɪtən θri bʊks əˈbaʊt ðə ˈhɪstəri əv maɪ taʊn.",
+    "matched_transcripts_ipa": "ˈmɛri    bʊks      ",
+    "pair_accuracy_category": "0 2 2 2 0 2 2 2 2 2 2",
+    "mistake_kinds": "- - - - - - - - - - -",
+    "start_time": "0.0 1.45 1.45 1.45 1.45 1.45 1.45 1.45 1.45 1.45 1.45",
+    "end_time": "1.55 2.9999375 2.9999375 2.9999375 2.9999375 2.9999375 2.9999375 2.9999375 2.9999375 2.9999375 2.9999375",
+    "is_letter_correct_all_words": "1111 000 0000000 00000 11111 00000 000 0000000 00 00 00001 "
+  }
+}

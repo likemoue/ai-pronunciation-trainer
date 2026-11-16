@@ -1,0 +1,18 @@
+{
+  "sentence": "She sells fish at the market.",
+  "heard": "See sell fit at a marked.",
+  "answer": {
+    "real_transcript": "See sell fit at a marked.",
+    "ipa_transcript": "si sɛl fɪt æt ə mɑrkt.",
+    "pronunciation_accuracy": "65",
+    "real_transcripts": "She sells fish at the market.",
+    "matched_transcripts": "See sell fit at a marked.",
+    "real_transcripts_ipa": "ʃi sɛlz fɪʃ æt ðə ˈmɑrkɪt.",
+    "matched_transcripts_ipa": "si sɛl fɪt æt ə mɑrkt.",
+    "pair_accuracy_category": "1 1 2 0 2 0",
+    "mistake_kinds": "- ending - - - -",
+    "start_time": "0.0 0.45 0.95 1.45 1.95 2.45",
+    "end_time": "0.55 1.05 1.55 2.05 2.55 2.9999375",
+    "is_letter_correct_all_words": "101 11110 1100 11 000 1111101 "
+  }
+}

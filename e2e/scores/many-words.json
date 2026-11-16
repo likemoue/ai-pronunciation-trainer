@@ -1,0 +1,18 @@
+{
+  "sentence": "Things are not as bad as Tom thinks they are.",
+  "heard": "Tink are bat Tom tink day.",
+  "answer": {
+    "real_transcript": "Tink are bat Tom tink day.",
+    "ipa_transcript": "tink ər bæt tɑm tink deɪ.",
+    "pronunciation_accuracy": "46",
+    "real_transcripts": "Things are not as bad as Tom thinks they are.",
+    "matched_transcripts": "Tink are - - bat - Tom tink day. -",
+    "real_transcripts_ipa": "θɪŋz ər nɑt ɛz bæd ɛz tɑm θɪŋks ðeɪ ər.",
+    "matched_transcripts_ipa": "tink ər   bæt  tɑm tink deɪ. ",
+    "pair_accuracy_category": "2 0 2 2 1 2 0 1 2 2",
+    "mistake_kinds": "- - - - - - - - - -",
+    "start_time": "0.0 0.45 2.45 2.45 0.95 2.45 1.45 1.95 2.45 2.45",
+    "end_time": "0.55 1.05 2.9999375 2.9999375 1.55 2.9999375 2.05 2.55 2.9999375 2.9999375",
+    "is_letter_correct_all_words": "101100 111 000 00 110 00 111 101110 0000 0001 "
+  }
+}

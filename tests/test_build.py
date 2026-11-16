@@ -494,3 +494,18 @@ def test_a_wrong_model_download_is_not_tried_again(model_server, tmp_path, first
         model_pins.fetch(url, str(dest), hashlib.sha256(BODY).hexdigest())
     assert len(requests) == 1
     assert not dest.exists() and not os.path.exists(f'{dest}.part')
+
+
+def test_the_browser_tests_score_with_answers_the_server_gives():
+    # e2e/result.spec.mjs answers the page's scoring request with e2e/scores/*.json, made
+    # by the server's own code (e2e/scores/make_scores.py): they must still be what it makes.
+    import importlib.util
+    import json
+    spec = importlib.util.spec_from_file_location('make_scores', os.path.join(ROOT, 'e2e', 'scores', 'make_scores.py'))
+    make_scores = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(make_scores)
+    files = sorted(glob.glob(os.path.join(ROOT, 'e2e', 'scores', '*.json')))
+    assert [os.path.basename(path)[:-5] for path in files] == sorted(make_scores.CASES)
+    for name, case in make_scores.cases().items():
+        with open(os.path.join(ROOT, 'e2e', 'scores', f'{name}.json'), encoding='utf-8') as f:
+            assert json.load(f) == case, f'{name}.json is stale: run python e2e/scores/make_scores.py'

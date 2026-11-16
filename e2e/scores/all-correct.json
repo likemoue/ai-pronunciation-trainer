@@ -1,0 +1,18 @@
+{
+  "sentence": "I have a cat and a dog at home.",
+  "heard": "I have a cat and a dog at home.",
+  "answer": {
+    "real_transcript": "I have a cat and a dog at home.",
+    "ipa_transcript": "aɪ hæv ə kæt ənd ə dɔg æt hoʊm.",
+    "pronunciation_accuracy": "100",
+    "real_transcripts": "I have a cat and a dog at home.",
+    "matched_transcripts": "I have a cat and a dog at home.",
+    "real_transcripts_ipa": "aɪ hæv ə kæt ənd ə dɔg æt hoʊm.",
+    "matched_transcripts_ipa": "aɪ hæv ə kæt ənd ə dɔg æt hoʊm.",
+    "pair_accuracy_category": "0 0 0 0 0 0 0 0 0",
+    "mistake_kinds": "- - - - - - - - -",
+    "start_time": "0.0 0.2833125 0.616625 0.9499375 1.28325 1.6165625 1.949875 2.2831875 2.6165",
+    "end_time": "0.3833125 0.716625 1.0499375 1.38325 1.7165625 2.049875 2.3831875 2.7165 2.9999375",
+    "is_letter_correct_all_words": "1 1111 1 111 111 1 111 11 11111 "
+  }
+}
