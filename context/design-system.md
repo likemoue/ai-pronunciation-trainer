@@ -1,7 +1,11 @@
 # Design system: AI Pronunciation Trainer
 
-> **Draft, pending the user's approval (2026-11-16).** Nothing in `static/` follows it yet: phase 4 applies it,
-> after the wireframes in `design/wireframes/` (start at `index.html`) are approved.
+> **Approved by the user on 2026-11-16**, together with the wireframes in `design/wireframes/` (start at
+> `index.html`). Nothing in `static/` follows it yet: phase 4 applies it.
+>
+> Decisions taken with it (2026-11-16): **Q1** the page follows the server's thresholds (§3), no scoring change;
+> **Q2** marks only on Almost and Needs-work words (§2.10); **Q3** the typical-mistake hint is part of phase 4
+> (§2.13); **Q4** Correct is teal-green `#0f766e`, with red `#b91c1c` for Needs work (§1.3).
 
 - **Source of truth:** `static/css/style.css` (the `:root` tokens and the `prefers-color-scheme: dark` block). When
   this file and the CSS disagree, trust the CSS and fix this file. Phase 4 adds the new tokens to the CSS before any
@@ -67,7 +71,7 @@ Only these colours mean a status. A new status gets a row here before any compon
 
 | Status (API code) | Mark | EN | VI | Text, light | Soft bg, light | Text, dark | Soft bg, dark | Cue without colour |
 |---|---|---|---|---|---|---|---|---|
-| Correct (`0`) | ✓ | Correct | Đúng | `--good` `#0f766e` | `--good-soft` `#e3f7ec` | `#2dd4bf` | `#12352a` | no mark in the sentence (question Q2); ✓ in badge, legend, accessible name |
+| Correct (`0`) | ✓ | Correct | Đúng | `--good` `#0f766e` | `--good-soft` `#e3f7ec` | `#2dd4bf` | `#12352a` | no mark in the sentence (Q2); ✓ in badge, legend, accessible name |
 | Almost (`1`) | ~ | Almost | Gần đúng | `--ok` `#b45309`; on soft bg `--ok-strong` `#92400e` | `--ok-soft` `#fdf1dc` | `#fbbf24` | `#3a2e12` | boxed ~ after the word |
 | Needs work (`2`) | ✗ | Needs work | Cần luyện | `--bad` `#b91c1c` | `--bad-soft` `#fde6e6` | `#f87171` | `#3d1a1d` | boxed ✗ after the word |
 | Wrong letter (`is_letter_correct` 0) | | | | `--bad` | | `--bad` | | weight 700 + 2 px dotted underline |
@@ -85,8 +89,8 @@ deuteranopia / tritanopia; Machado 2009 simulation at full severity; about 2 is 
 | Almost / Needs work, light | 24.8 / 18.4 / 9.5 / 11.7 | 16.2 / 10.9 / 5.8 / 8.2 |
 
 Almost and Needs work stay close for deutans in every amber/red pair that keeps the usual meanings; they are told
-apart by their mark (~ or ✗), never by colour. The stronger alternative for question Q4 is blue `#1d4ed8` for
-Correct (deuteranopia 60.9 against `#b91c1c`), at the cost of "blue = correct".
+apart by their mark (~ or ✗), never by colour. Q4 chose teal-green; the stronger alternative, blue `#1d4ed8` for
+Correct (deuteranopia 60.9 against `#b91c1c`), was turned down because "blue = correct" is unusual for children.
 
 Notices reuse the families: warning (in-app browser, offline, cannot record) = `--ok-soft` background, `--ok-strong`
 icon, `--text` text (15.39:1); error = `--bad-soft` + `--bad` icon (14.44:1); info = `--primary-soft` + `--primary`
@@ -210,7 +214,11 @@ are not spacing.
     practise" (at most 4 chips, ✗ first, then by score, one chip per word, "+N more"); the selected word's detail
     (Correct IPA + Listen | Heard IPA + Replay; a word not heard says *not heard* and Replay is disabled); My
     recording; "Heard: “…”" (3 lines, then more); the legend; on desktop, Try again + Next sentence. The worst word's
-    detail opens by itself.
+    detail opens by itself. **Typical-mistake hint (Q3):** when the server names the mistake of an Almost word
+    (`WordMatching.known_mistake`: `ending`, `th`, `sh`, in a new per-word field of the scoring response, added by the
+    backend first), the word's detail shows one hint line in the interface language, with Listen buttons for the word
+    as written and the word heard (wireframes page 3, C3/C4, and its copy table). One hint at a time; scores and labels
+    do not change.
 14. **In-app browser banner.** First thing on the page, in the flow, warning family, persistent and dismissible
     (✕, or "Not now" when the top right is kept for the pointer to the host app's menu). Actions: Open in Chrome
     (Android `intent://`), Copy link (with a selectable-field fallback when the clipboard is refused).
@@ -241,8 +249,8 @@ Correct can never get an amber ring: the sentence score is the letter-weighted m
 | fewer than 35% of the words heard | Needs-work colour, falling chime | That sounds like a different sentence | Hình như bạn đọc câu khác | |
 
 Meaning line: "The computer heard N% of the sentence as written." / "Máy nghe đúng N% câu so với câu mẫu." The chime
-never plays during a recording, and is skipped when it would come more than 500 ms late. Question Q1 asks whether to
-keep these thresholds or move server and page to 80/60 (a scoring change, with its own evaluation run).
+never plays during a recording, and is skipped when it would come more than 500 ms late. Q1 kept these thresholds, which
+are the server's; moving server and page to 80/60 would be a scoring change, with its own evaluation run.
 
 ## 4. Accessibility
 
