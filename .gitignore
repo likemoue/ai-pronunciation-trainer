@@ -133,3 +133,9 @@ models/
 
 # deploy.sh harness results
 deploy/test/out/
+
+# Node tools for the page (package.json): lint and browser tests
+node_modules/
+test-results/
+playwright-report/
+blob-report/

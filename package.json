@@ -1,0 +1,20 @@
+{
+  "name": "ai-pronunciation-trainer-page-tools",
+  "private": true,
+  "description": "Lint and browser tests for the page (static/javascript). The app itself needs no Node: nothing here goes into the image.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "eslint",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
+    "eslint": "10.14.0",
+    "globals": "17.14.0"
+  }
+}
