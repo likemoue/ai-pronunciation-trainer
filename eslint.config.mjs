@@ -7,7 +7,12 @@ import globals from 'globals';
 
 export default [
     {
-        ignores: ['node_modules/', 'design/', 'evaluation/', 'test-results/', 'playwright-report/', 'blob-report/'],
+        // Only the repository's own scripts: not a Python environment's packages (CI's lint job
+        // makes .venv at the root, and some packages carry JavaScript), nor generated reports.
+        ignores: [
+            'node_modules/', '.venv/', 'venv/', 'env/', 'models/', 'design/', 'evaluation/',
+            'test-results/', 'playwright-report/', 'blob-report/',
+        ],
     },
     js.configs.recommended,
     {
