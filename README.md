@@ -10,8 +10,9 @@ by Thiago Lobato, under the GNU Affero General Public License v3 ([LICENSE](LICE
 
 ## Features
 
-- **Practice sentences** from a bank of about 10,700 English sentences from [Tatoeba](https://tatoeba.org),
-  screened for school use, in three levels (up to 8 words, 9-20 words, longer).
+- **Practice sentences** from a bank of about 9,300 English sentences from [Tatoeba](https://tatoeba.org),
+  screened for school use and naming no person ("He is a student", not "Tom is a student"), in three levels
+  (up to 8 words, 9-20 words, longer).
 - **Your own text**: up to 300 characters or 60 words of English; the server gives its reference IPA.
 - **Recording popup** with a live waveform and timer. It warns when it hears nothing, stops after 30 seconds
   and shows progress while the recording is scored. A busy server gets the same recording again by itself;

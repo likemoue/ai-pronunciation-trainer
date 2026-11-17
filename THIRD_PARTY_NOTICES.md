@@ -12,7 +12,7 @@ Versions are those of `requirements.lock` and the image built from it (Debian 13
 | Whisper base, converted for CTranslate2: [Systran/faster-whisper-base](https://huggingface.co/Systran/faster-whisper-base) at commit `ebe41f7` (the weights of [openai/whisper-base](https://huggingface.co/openai/whisper-base)) | `/models/faster-whisper-base` in the image | MIT (the conversion's model card; OpenAI released Whisper's code and weights under MIT) |
 | Piper voice `en_US-ljspeech-medium`, [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices) v1.0.0 | `/models/piper` in the image | Voice collection MIT; trained on the [LJ Speech dataset](https://keithito.com/LJ-Speech-Dataset/), public domain |
 | [Silero VAD](https://github.com/snakers4/silero-vad) v6, bundled with `faster-whisper`: tells whether a recording holds speech before Whisper hears it | `faster_whisper/assets/silero_vad_v6.onnx` | MIT (Silero Team; the wheel ships no copy of the licence text) |
-| Practice sentences, [Tatoeba](https://tatoeba.org) | `databases/data_en.csv` | CC BY 2.0 FR |
+| Practice sentences, [Tatoeba](https://tatoeba.org) | `databases/data_en.csv` | CC BY 2.0 FR. Adapted in 2026-11: sentences screened for school use, a person's name at the start of a sentence replaced by He, She or They, other sentences naming a person removed |
 | CMU Pronouncing Dictionary, bundled with `eng_to_ipa` | `eng_to_ipa/resources` | BSD-style licence of Carnegie Mellon University |
 | eSpeak NG data and library, bundled with `piper-tts` | `piper/espeak-ng-data`, `piper/espeakbridge.so` | GPL-3.0-or-later |
 | Hebrew diacritics model Nakdimon (Elazar Gershuni), bundled with `piper-tts`, not used by this edition | `piper/hebrew/nakdimon.onnx` | MIT (`piper/hebrew/LICENSE`) |

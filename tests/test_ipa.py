@@ -107,5 +107,6 @@ def test_every_bank_sentence_and_word_matches(cmu, bank_sentences, indexed_eng_t
     mismatches = [s for s in bank_sentences if cmu.convert(s) != indexed_eng_to_ipa(s)]
     words = sorted({word for sentence in bank_sentences for word in sentence.split()})
     mismatches += [w for w in words if cmu.convert(w) != indexed_eng_to_ipa(w)]
-    assert len(bank_sentences) > 10000 and len(words) > 10000
+    # The whole bank was read (9,318 sentences since it lost its person names on 2026-11-17).
+    assert len(bank_sentences) > 9000 and len(words) > 9000
     assert not mismatches, mismatches[:20]

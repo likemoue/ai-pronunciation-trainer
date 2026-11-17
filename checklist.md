@@ -6,6 +6,18 @@ release without downtime, except the first deploy with the phase-1 deploy.sh, wh
 `deploy.sh --rollback-legacy` undoes that one, with downtime. "Auto" means a test, a CI job or a deploy step
 already checks it on every change.
 
+## Bank: no person names (2026-11)
+
+The school's rule: "He is a student", not "Tom is a student". 1,925 sentences that began with a name got He,
+She or They; 1,344 other sentences with a name were removed (9,318 left: 7,173 easy, 2,081 medium, 64 hard).
+The scoring does not change.
+
+- [ ] On the public site, Next a dozen times at each level (Easy, Medium, Hard, Random): no person names, and
+      the sentences read naturally ("He ...", "She ...", "They ...").
+- [ ] Listen on a changed sentence: its MP3 is made on the first request and plays.
+- [x] Auto: `tests/test_content.py` fails on a name (`PERSON_NAMES`), on duplicates and on a level with fewer
+      than 50 sentences; `tests/test_evaluation.py` checks the text simulation of the new bank.
+
 ## Footer: the iSMART credit (2026-11)
 
 The footer reads "© 2026 iSMART · Developed by Quí (IT Department)" ("Phát triển bởi" in Vietnamese)

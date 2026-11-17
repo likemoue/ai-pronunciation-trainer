@@ -55,7 +55,9 @@ trimmed to English. `README.md` describes it for readers; this file is the short
 - `databases/data_en.csv`: the sentence bank, from Tatoeba (CC BY 2.0 FR).
   It is screened for school use, and `tests/test_content.py` fails on blocked topics and on duplicates. A second
   review (2026-11) read every sentence; `tests/content_removed_en.tsv` lists the 357 it removed, which must not
-  come back.
+  come back. No sentence names a person (the school's rule, 2026-11-17): 1,925 sentences that began with a name
+  got He, She or They, 1,344 others with a name were removed, 9,318 are left; `test_content.PERSON_NAMES`
+  fails on a name. The evaluation set keeps its 44 recordings of bank sentences that named a person.
 - Frontend (phase 4, built from `design/wireframes/` and `context/design-system.md`, approved): `templates/main.html`,
   `static/css/style.css` and classic deferred scripts sharing `window.AIPT`, loaded in this order: `core.js`
   (requests, storage, `normalizeText` and `checkText`, which must stay in step with `validation.normalize_text` and
@@ -105,8 +107,8 @@ docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ai-pronunciati
 scripts/lock.sh [--upgrade | --check]   # requirements*.lock from requirements*.in (needs uv)
 
 # Scoring evaluation (evaluation/README.md): a full run belongs in the image (see there).
-python -m evaluation.harness rescore evaluation/runs/phase3-6-review.json --out evaluation/runs/<name>.json --every 1
-python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-6-review.json
+python -m evaluation.harness rescore evaluation/runs/bank-no-names.json --out evaluation/runs/<name>.json --every 1
+python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/bank-no-names.json
 python -m evaluation.harness report --committed   # evaluation/report.md from harness.REPORT
 ```
 
