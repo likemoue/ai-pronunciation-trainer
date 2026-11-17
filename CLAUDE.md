@@ -52,7 +52,7 @@ trimmed to English. `README.md` describes it for readers; this file is the short
     U+0096-0097) count as that punctuation, and zero-width characters and soft hyphens are dropped; other control
     characters and lone UTF-16 surrogates are refused.
   - Audio: up to 35 s, in a request of up to 4 MB.
-- `databases/data_en.csv`: the sentence bank, from Tatoeba (CC BY 2.0 FR, credited in the footer).
+- `databases/data_en.csv`: the sentence bank, from Tatoeba (CC BY 2.0 FR).
   It is screened for school use, and `tests/test_content.py` fails on blocked topics and on duplicates. A second
   review (2026-11) read every sentence; `tests/content_removed_en.tsv` lists the 357 it removed, which must not
   come back.

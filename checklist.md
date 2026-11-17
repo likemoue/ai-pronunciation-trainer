@@ -6,6 +6,15 @@ release without downtime, except the first deploy with the phase-1 deploy.sh, wh
 `deploy.sh --rollback-legacy` undoes that one, with downtime. "Auto" means a test, a CI job or a deploy step
 already checks it on every change.
 
+## Footer: the iSMART credit (2026-11)
+
+The footer reads "© 2026 iSMART · Developed by Quí (IT Department)" ("Phát triển bởi" in Vietnamese)
+in place of the credits to the original project, its source code and Tatoeba. Nothing else changes.
+
+- [ ] The footer in English and Vietnamese, on a phone and on a computer: one line of plain text, no links;
+      switching the language changes it in place.
+- [x] Auto: `tests/test_i18n.py` renders it in both languages.
+
 ## Phase 4: frontend, mobile, accessibility, in-app browsers (2026-11)
 
 Built from the approved wireframes (`design/wireframes/`) and `context/design-system.md`. The page is rebuilt; the

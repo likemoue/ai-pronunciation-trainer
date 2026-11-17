@@ -570,10 +570,6 @@ kbd {
 	margin: 0;
 }
 
-.footer a {
-	color: inherit;
-}
-
 /* ============ Level chips (§2.5) ============ */
 .levels {
 	display: flex;

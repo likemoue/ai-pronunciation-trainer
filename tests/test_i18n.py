@@ -248,8 +248,16 @@ def test_rich_texts_are_rendered_with_their_elements(client, lang):
     slow = f'<b data-slot="slow" data-i18n="card.slow">{strings["card.slow"]}</b>'
     before, _, after = strings['how.step1'].partition('{slow}')
     assert f'<li data-i18n-rich="how.step1">{before}{slow}{after}</li>' in page
-    # The footer's links keep their address in both languages.
-    assert 'href="https://tatoeba.org"' in page and f'>{strings["footer.source"]}</a>' in page
+
+
+@pytest.mark.parametrize('lang', ['en', 'vi'])
+def test_the_footer_credits_ismart(client, lang):
+    page = get_page(client, lang).get_data(as_text=True)
+    footer = re.search(r'<footer class="footer">(.*?)</footer>', page, re.S).group(1)
+    credits = i18n.dictionary(lang)['footer.credits']
+    assert credits.startswith('© 2026 iSMART · ')
+    assert f'<p data-i18n="footer.credits">{credits}</p>' in footer
+    assert '<a ' not in footer
 
 
 def write_pair(folder, en, vi):

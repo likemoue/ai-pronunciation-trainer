@@ -340,10 +340,7 @@
   "progress.confirmText": "This deletes the points, streak and words to review saved in this browser. It cannot be undone.",
   "progress.confirmDelete": "Delete progress",
 
-  "footer.credits": "Based on {original} by Thiago Lobato · {source} (AGPL-3.0) · Sentences from {tatoeba} (CC BY 2.0 FR)",
-  "footer.original": "AI Pronunciation Trainer",
-  "footer.source": "Source code",
-  "footer.tatoeba": "Tatoeba",
+  "footer.credits": "© 2026 iSMART · Developed by Quí (IT Department)",
 
   "error.text_too_long": "This text is too long. Keep it under 300 characters and 60 words.",
   "error.text_not_english": "Please type English text with A–Z letters.",
