@@ -29,7 +29,8 @@ it is scored against (`reference`), what was actually said (`said`), whether it 
 
 **Every recording is synthetic**: Piper's LJ Speech voice (public domain), the app's own reference voice. The
 sentences come from the bank (Tatoeba, CC BY 2.0 FR) or were written for the set (`source`), and pass the bank's
-screening (`tests/test_evaluation.py`). No learner's voice is in the set, and none may be added: the app never
+screening (`tests/test_evaluation.py`). 44 of those bank sentences name a person and left the bank on 2026-11-17,
+when it lost its names; the set keeps their recordings, which judge the scoring and are never shown to learners. No learner's voice is in the set, and none may be added: the app never
 stores recordings (CLAUDE.md). Consented recordings of real learners, marked by teachers, would be the next step,
 in a store of their own, not in this repository.
 
@@ -72,7 +73,7 @@ image of the commit and mount the set into it (Git Bash: `export MSYS_NO_PATHCON
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t aipt:eval .
 docker run --rm --network none --cpus 10 --memory 9g -v "$PWD/evaluation:/app/evaluation" -w /app \
   --entrypoint python aipt:eval -m evaluation.harness run --out evaluation/runs/<name>.json
-python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/phase3-6-review.json
+python -m evaluation.harness report evaluation/runs/<name>.json --against evaluation/runs/bank-no-names.json
 ```
 
 On the development machine a run scores the recordings in about 3.5 minutes (0.46 s each) and then simulates
@@ -89,7 +90,7 @@ machine.
 ## Judging a change
 
 - **Alignment, normalisation, IPA comparison** (anything after Whisper): `python -m evaluation.harness rescore
-  evaluation/runs/phase3-6-review.json --out evaluation/runs/<name>.json --every 1` (the last full run) scores what Whisper heard in
+  evaluation/runs/bank-no-names.json --out evaluation/runs/<name>.json --every 1` (the committed run) scores what Whisper heard in
   each recording again with the checkout's code, in seconds, and prints the words fixed and broken.
 - **Anything before or inside Whisper** (voice activity detection, scaling by a robust level instead of the peak,
   Whisper's settings): a full `run` in the image.
@@ -105,8 +106,9 @@ report; it cannot tell that a full run is due, so a change before Whisper must b
 1 and 2), then one per step of phase 3: `phase3-2-alignment` and `phase3-3-normalisation` (rescored from phase 2's
 run), `phase3-4-level-vad` (a full run: the step changed what Whisper hears), `phase3-5-known-mistakes`
 (rescored from it) and `phase3-6-review` (a full run with the review's fixes and the `long_take` recordings, the
-phase as merged). Each commit message gives the words its step fixed and broke. The runs before `phase3-6-review`
-lack the `long_take` recordings, except phase 2's, which has them.
+phase as merged), then `bank-no-names` (rescored from `phase3-6-review` on 2026-11-17: the same labels, and the
+text simulation of the bank without person names). Each commit message gives the words its step fixed and broke.
+The runs before `phase3-6-review` lack the `long_take` recordings, except phase 2's, which has them.
 
 ## Limits
 

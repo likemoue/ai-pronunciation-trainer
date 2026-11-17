@@ -12,6 +12,13 @@ has to be discussed first.
 A second review in 2026-11 read every sentence and removed 357 more, which the
 keywords had missed ("Semen is worth bottling."). content_removed_en.tsv lists
 them; CI fails if one comes back.
+
+No sentence names a person (2026-11-17, the school's rule: "He is a student",
+not "Tom is a student"). A sentence whose only names were at its very start
+("Tom ...", "Tom and Mary ...") got the pronoun (He, She, They); every other
+sentence with a name was removed. PERSON_NAMES lists the names, family names,
+characters and titles the bank had; CI fails if one comes back. Places,
+languages and days are not people and stay.
 """
 import csv
 import re
@@ -91,6 +98,23 @@ BLOCKLIST = {
 _PATTERNS = {name: re.compile(rf"\b(?:{pattern})\b", re.IGNORECASE) for name, pattern in BLOCKLIST.items()}
 REMOVED = Path(__file__).with_name('content_removed_en.tsv')
 
+# Case-sensitive: "Bill", "Mark", "Miss" and "Brown" are names or titles only when capitalised.
+PERSON_NAMES = re.compile(r"\b(?:" + '|'.join(sorted("""
+    Akiko Albert Alekhine Alex Alice Allan Andersen Andy Angela Ania Anne Axel Barbie Bauer Beth Bill Bob
+    Botwinnik Brown Bruno Capablanca Carlos Carmen Catherine Chabaud Charles Chewtarou Chizuru Cicero Dan
+    Danican Darcy Darwin Diana Dickens Diderot Dima Diogenes Dr Einstein Ellen Emily Federer Fischer Foster
+    Fran Frederick Gaga Galileo Garfield Garry Geiger George Giordano Gustav Hamlet Hanako Hansen Hashimoto
+    Heidi Henry Hillary Holmes Horace Horus Jack Jackson Jacksons Jane Jeff Jeffrey Jenkins Jenny Jensen
+    Jerzy Jill Jim John Jones Judit Judy Julius Juliet Karen Karima Kasparov Kate Keenan Ken Kenji Kepler
+    Lana Laurie Layla Lee Leyla Lincoln Lisa Louis Lucy Madonna Magdalena Maharaj Maria Marie Marika Marilla
+    Mario Mark Marlowe Mary Masao Mayuko Mecking Meier Melanie Merkel Michael Michelle Mike Miller Millers
+    Ming Miss Mogami Mona Mr Mrs Ms Murphy Naoko Neubronner Neumanns Niamh Ogawa Olya Orwell Paul Paulo Pedro
+    Peter Philidor Philip Pinocchio Pip Pizzaro Plato Prince Professor Rafael Rex Rin Roger Romeo Ron
+    Sachiko Sakura Salima Sami Santa Sara Scott Seneca Seuss Shakespeare Shivaji Skura Slim Smith Sophie
+    Spencer Spenser Steve Suzuki Tal Tanaka Tedros Thomas Tim Tom Tommy Tonya Trish Turner Weissman
+    Xiangzhi Xiao Xiaoming Yamada Yanni Yoko Yoshida Yumi Yuriko Zsuzsa
+""".split())) + r")\b")
+
 
 def _key(sentence):
     return validation.normalize_text(sentence).lower()
@@ -118,6 +142,18 @@ def test_no_sentence_removed_after_review_comes_back(sentences):
     assert len(removed) >= 350
     back = [(removed[_key(s)], s) for s in sentences if _key(s) in removed]
     assert not back, f'{len(back)} sentences removed after review are back, e.g. {back[:5]}'
+
+
+def test_no_sentence_names_a_person(sentences):
+    named = [s for s in sentences if PERSON_NAMES.search(s)]
+    assert not named, f'{len(named)} sentences name a person, e.g. {named[:5]}'
+
+
+def test_the_names_check_catches_the_bank_s_names():
+    for sentence in ('Tom is a student.', 'Mr. Jackson is our math teacher.', 'Ask Bill.', "Yanni's car."):
+        assert PERSON_NAMES.search(sentence), sentence
+    for sentence in ('He is a student.', 'Pay the bill.', 'I miss you.', 'It is brown.', 'December 24th is Christmas Eve.'):
+        assert not PERSON_NAMES.search(sentence), sentence
 
 
 def test_the_blocklist_still_catches_the_first_finding():

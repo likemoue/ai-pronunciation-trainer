@@ -44,7 +44,7 @@ FORMAT = 1
 # tests/test_evaluation.py checks that the run is what this checkout's
 # alignment and scoring make of what Whisper heard, and that report.md is its
 # report. A change to the scoring adds its own run here and points REPORT at it.
-REPORT = {'run': 'runs/phase3-6-review.json', 'against': 'runs/phase2-1c4813c.json',
+REPORT = {'run': 'runs/bank-no-names.json', 'against': 'runs/phase2-1c4813c.json',
           'against_name': 'phase 2 (main, 1c4813c)', 'markdown': 'report.md'}
 
 

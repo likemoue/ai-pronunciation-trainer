@@ -155,10 +155,14 @@ def test_the_sentences_are_fit_for_a_class():
 
 
 def test_bank_sentences_of_the_set_are_still_in_the_bank():
+    # Except those that name a person: the bank lost its names on 2026-11-17
+    # (test_content.PERSON_NAMES), and the set keeps those recordings to judge
+    # the scoring, which learners never see.
+    import test_content
     from evaluation import textsim
     bank = set(textsim.bank_sentences())
     for clip in MANIFEST.values():
-        if clip['source'] == 'bank':
+        if clip['source'] == 'bank' and not test_content.PERSON_NAMES.search(clip['reference']):
             assert clip['reference'] in bank, (clip['id'], clip['reference'])
 
 

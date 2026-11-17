@@ -1,6 +1,6 @@
 # Scoring evaluation
 
-Pipeline: phase 3 after its review: a level 50 ms of loud samples cannot set, VAD needs 96 ms of speech, numbers and compounds read alike. What Whisper heard comes from a run of `the commit that adds this run`: Python 3.12.16 on Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41 (16 CPUs, avx avx2 fma avx512f); faster_whisper 1.2.1, ctranslate2 4.8.5.
+Pipeline: phase 3 after its review, rescored on the bank without person names (2026-11-17): the same labels, the text simulation of 9318 sentences. What Whisper heard comes from a run of `the commit that adds this run`: Python 3.12.16 on Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41 (16 CPUs, avx avx2 fma avx512f); faster_whisper 1.2.1, ctranslate2 4.8.5.
 441 recordings, 0.4 s each (median), 175.8 s in all, one at a time.
 
 How to read it: `evaluation/README.md`. Each recording says what was said, word by word; a label agrees with the truth when a word said right is Correct, a mistaken word Almost or Needs work, and a word left out Needs work. Ranges in brackets are 95% intervals.
@@ -175,16 +175,16 @@ A mistake is caught when its word is Almost or Needs work. "Heard as the word" m
 
 ## Text simulation over the bank
 
-Known transcripts for 10671 bank sentences, without audio (`textsim.py`): the alignment and the scoring alone.
+Known transcripts for 9318 bank sentences, without audio (`textsim.py`): the alignment and the scoring alone.
 
 | transcript | sentences | every word right | words said right but flagged | a neighbour of the changed word flagged | changed word flagged | a red letter on a word said right |
 |---|---|---|---|---|---|---|
-| `exact` | 10671 | 10671/10671 (100.0%) | 0/76707 (0.0%) | - | - | 0/10671 (0.0%) |
-| `plain` | 10671 | 10668/10671 (100.0%) | 3/76707 (0.0%) | - | - | 1/10671 (0.0%) |
-| `drop` | 10641 | 10639/10641 (100.0%) | 2/66006 (0.0%) | 2/10641 (0.0%) | 10641/10641 (100.0%) | 1/10641 (0.0%) |
-| `add` | 10641 | 10641/10641 (100.0%) | 0/76647 (0.0%) | 0/10641 (0.0%) | - | 0/10641 (0.0%) |
-| `repeat` | 10641 | 10641/10641 (100.0%) | 0/76647 (0.0%) | 0/10641 (0.0%) | - | 0/10641 (0.0%) |
-| `substitute` | 10641 | 10632/10641 (99.9%) | 2/66006 (0.0%) | 2/10641 (0.0%) | 10634/10641 (99.9%) | 0/10641 (0.0%) |
+| `exact` | 9318 | 9318/9318 (100.0%) | 0/65678 (0.0%) | - | - | 0/9318 (0.0%) |
+| `plain` | 9318 | 9315/9318 (100.0%) | 3/65678 (0.0%) | - | - | 1/9318 (0.0%) |
+| `drop` | 9289 | 9287/9289 (100.0%) | 2/56331 (0.0%) | 2/9289 (0.0%) | 9289/9289 (100.0%) | 1/9289 (0.0%) |
+| `add` | 9289 | 9289/9289 (100.0%) | 0/65620 (0.0%) | 0/9289 (0.0%) | - | 0/9289 (0.0%) |
+| `repeat` | 9289 | 9289/9289 (100.0%) | 0/65620 (0.0%) | 0/9289 (0.0%) | - | 0/9289 (0.0%) |
+| `substitute` | 9289 | 9282/9289 (99.9%) | 2/56331 (0.0%) | 2/9289 (0.0%) | 9284/9289 (99.9%) | 0/9289 (0.0%) |
 
 ## Examples
 
