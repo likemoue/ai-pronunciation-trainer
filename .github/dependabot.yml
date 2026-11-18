@@ -1,0 +1,36 @@
+# Weekly dependency updates. Version updates wait 7 days after a release (cooldown);
+# security updates open a PR right away. Dependabot PRs wait for the owner to merge.
+#
+# Python packages are not here: requirements.lock (uv, pinned by sha256) is not a format
+# Dependabot updates, and scripts/lock.sh --upgrade already applies the same 7-day rule.
+version: 2
+
+updates:
+  # Lint and browser-test tools for the page; nothing here goes into the image.
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Asia/Ho_Chi_Minh }
+    cooldown: { default-days: 7 }
+    open-pull-requests-limit: 5
+    commit-message: { prefix: "chore(deps)" }
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Asia/Ho_Chi_Minh }
+    cooldown: { default-days: 7 }
+    commit-message: { prefix: "ci(deps)" }
+
+  # Base images, pinned by digest. Python stays on 3.12, the version requirements.lock is built for.
+  # The root Dockerfile names its image in ARG PYTHON_IMAGE, which Dependabot may not follow:
+  # when it bumps the harness images, bump that ARG to the same tag and digest.
+  - package-ecosystem: docker
+    directories: [/, /deploy/test/harness, /deploy/test/harness/app, /deploy/test/harness/caddy-fake]
+    schedule: { interval: weekly, day: monday, time: "07:00", timezone: Asia/Ho_Chi_Minh }
+    cooldown: { default-days: 7 }
+    commit-message: { prefix: "chore(deps)" }
+    ignore:
+      - dependency-name: python
+        update-types: [version-update:semver-major, version-update:semver-minor]
