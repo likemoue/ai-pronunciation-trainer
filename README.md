@@ -293,6 +293,9 @@ refactoring) and changes made for this edition from 2026-11-12 on. The main chan
   judged by it: edit-distance alignment (without dtwalign), words read as they are said, a robust recording
   level, Silero VAD before Whisper, and learners' typical mistakes never labelled Correct.
 
+The source code of the running version is linked from the small notice under the page footer, as section 13
+of the AGPL requires; the same line links the original project and credits Tatoeba.
+
 ## Licences
 
 The code is under the [GNU AGPL v3](LICENSE). The sentences come from Tatoeba (CC BY 2.0 FR), the voice is

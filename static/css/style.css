@@ -570,6 +570,19 @@ kbd {
 	margin: 0;
 }
 
+/* Licence notice (AGPL-3.0 source, CC BY sentences): kept on the page, as small and quiet as it can be. */
+.footer .footer-notice {
+	margin-top: 2px;
+	font-size: 10px;
+	line-height: 1.4;
+}
+
+.footer-notice a {
+	color: inherit;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 2px;
+}
+
 /* ============ Level chips (§2.5) ============ */
 .levels {
 	display: flex;
