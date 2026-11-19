@@ -257,7 +257,12 @@ def test_the_footer_credits_ismart(client, lang):
     credits = i18n.dictionary(lang)['footer.credits']
     assert credits.startswith('© 2026 iSMART · ')
     assert f'<p data-i18n="footer.credits">{credits}</p>' in footer
-    assert '<a ' not in footer
+    # Under it, the licence notice: the source code (AGPL-3.0), the original project and Tatoeba (CC BY).
+    assert '<p class="footer-notice" data-i18n-rich="footer.notice">' in footer
+    for href in ('https://github.com/likemoue/ai-pronunciation-trainer',
+                 'https://github.com/Thiagohgl/ai-pronunciation-trainer', 'https://tatoeba.org'):
+        assert f'href="{href}"' in footer
+    assert 'AGPL-3.0' in footer and 'CC BY 2.0 FR' in footer
 
 
 def write_pair(folder, en, vi):

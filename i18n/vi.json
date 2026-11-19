@@ -341,6 +341,10 @@
   "progress.confirmDelete": "Xoá tiến độ",
 
   "footer.credits": "© 2026 iSMART · Phát triển bởi Quí (IT Department)",
+  "footer.notice": "Dựa trên {original} · {source} (AGPL-3.0) · Câu mẫu: {tatoeba} (CC BY 2.0 FR)",
+  "footer.original": "AI Pronunciation Trainer",
+  "footer.source": "Mã nguồn",
+  "footer.tatoeba": "Tatoeba",
 
   "error.text_too_long": "Đoạn này quá dài. Hãy giữ dưới 300 ký tự và 60 từ.",
   "error.text_not_english": "Hãy nhập tiếng Anh bằng chữ cái A–Z.",

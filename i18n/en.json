@@ -341,6 +341,10 @@
   "progress.confirmDelete": "Delete progress",
 
   "footer.credits": "© 2026 iSMART · Developed by Quí (IT Department)",
+  "footer.notice": "Based on {original} · {source} (AGPL-3.0) · Sentences: {tatoeba} (CC BY 2.0 FR)",
+  "footer.original": "AI Pronunciation Trainer",
+  "footer.source": "Source code",
+  "footer.tatoeba": "Tatoeba",
 
   "error.text_too_long": "This text is too long. Keep it under 300 characters and 60 words.",
   "error.text_not_english": "Please type English text with A–Z letters.",

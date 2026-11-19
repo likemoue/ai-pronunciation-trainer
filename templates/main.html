@@ -420,6 +420,7 @@
 
         <footer class="footer">
             <p data-i18n="footer.credits">{{ t['footer.credits'] }}</p>
+            <p class="footer-notice" data-i18n-rich="footer.notice">{% call(slot) rich('footer.notice') %}{% if slot == 'original' %}<a href="https://github.com/Thiagohgl/ai-pronunciation-trainer" target="_blank" rel="noopener" data-slot="original" data-i18n="footer.original">{{ t['footer.original'] }}</a>{% elif slot == 'source' %}<a href="https://github.com/likemoue/ai-pronunciation-trainer" target="_blank" rel="noopener" data-slot="source" data-i18n="footer.source">{{ t['footer.source'] }}</a>{% else %}<a href="https://tatoeba.org" target="_blank" rel="noopener" data-slot="tatoeba" data-i18n="footer.tatoeba">{{ t['footer.tatoeba'] }}</a>{% endif %}{% endcall %}</p>
         </footer>
     </div>
 

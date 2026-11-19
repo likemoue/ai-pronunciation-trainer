@@ -27,6 +27,13 @@ in place of the credits to the original project, its source code and Tatoeba. No
       switching the language changes it in place.
 - [x] Auto: `tests/test_i18n.py` renders it in both languages.
 
+Under it, a 10 px line keeps the licence notice the AGPL-3.0 and CC BY 2.0 FR ask for: the original project,
+the source code and Tatoeba, as links.
+
+- [ ] The notice in English and Vietnamese, on a 320 px phone and on a computer: small, under the credit,
+      the three links open in a new tab; switching the language changes it in place.
+- [x] Auto: `tests/test_i18n.py` checks the three links and both licences in both languages.
+
 ## Phase 4: frontend, mobile, accessibility, in-app browsers (2026-11)
 
 Built from the approved wireframes (`design/wireframes/`) and `context/design-system.md`. The page is rebuilt; the
